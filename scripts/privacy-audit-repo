@@ -3,12 +3,14 @@
 
 require "fileutils"
 require "English"
+require "digest"
 require "shellwords"
 require "time"
 
 ROOT = File.expand_path("..", __dir__)
 DENYLIST_PATH = File.join(ROOT, ".private/anonymization-denylist.txt")
-REPORT_DIR = File.join(ROOT, "privacy-audits")
+DEFAULT_REPORT_DIR = File.join(Dir.home, ".cache", "autoresearch-genealogy", "privacy-audits")
+REPORT_DIR = ENV.fetch("PRIVACY_AUDIT_REPORT_DIR", DEFAULT_REPORT_DIR)
 EXCLUDED_PATHS = ["LICENSE"].freeze
 
 def run_git(*args)
@@ -39,6 +41,10 @@ def load_terms
   terms
 end
 
+def term_label(term)
+  "sha256:#{Digest::SHA256.hexdigest(term)[0, 12]} len:#{term.length}"
+end
+
 def current_head_findings(terms)
   findings = []
   tracked_text_files.each do |path|
@@ -48,11 +54,11 @@ def current_head_findings(terms)
     terms.each do |term|
       next unless text.include?(term)
 
-      line_numbers = text.lines.each_with_index.filter_map do |line, index|
+      line_numbers = text.lines.each_with_index.map do |line, index|
         index + 1 if line.include?(term)
-      end
+      end.compact
       findings << {
-        term: term,
+        term_label: term_label(term),
         path: path,
         lines: line_numbers
       }
@@ -66,12 +72,12 @@ def history_findings(terms)
   terms.each do |term|
     output, status = run_git("log", "--all", "--format=%H %s", "-S#{term}", "--", ".", ":(exclude)LICENSE")
     unless [0, 1].include?(status)
-      findings << { term: term, error: "git log failed: #{output.strip}" }
+        findings << { term_label: term_label(term), error: "git log failed: #{output.strip}" }
       next
     end
 
     commits = output.lines.map(&:strip).reject(&:empty?)
-    findings << { term: term, commits: commits } unless commits.empty?
+    findings << { term_label: term_label(term), commits: commits } unless commits.empty?
   end
   findings
 end
@@ -96,7 +102,7 @@ def write_report(terms, head_findings, git_history_findings)
     content << "None.\n\n"
   else
     head_findings.each do |finding|
-      content << "- `#{finding[:term]}` in `#{finding[:path]}` lines #{finding[:lines].join(', ')}\n"
+      content << "- `#{finding[:term_label]}` in `#{finding[:path]}` lines #{finding[:lines].join(', ')}\n"
     end
     content << "\n"
   end
@@ -107,9 +113,9 @@ def write_report(terms, head_findings, git_history_findings)
   else
     git_history_findings.each do |finding|
       if finding[:error]
-        content << "- `#{finding[:term]}`: #{finding[:error]}\n"
+        content << "- `#{finding[:term_label]}`: #{finding[:error]}\n"
       else
-        content << "- `#{finding[:term]}` appears in commits:\n"
+        content << "- `#{finding[:term_label]}` appears in commits:\n"
         finding[:commits].each { |commit| content << "  - #{commit}\n" }
       end
     end
@@ -134,9 +140,9 @@ report_path = write_report(terms, head_findings, git_history_findings)
 
 if head_findings.empty? && git_history_findings.empty?
   puts "privacy-audit-repo: ok"
-  puts "report: #{report_path.delete_prefix("#{ROOT}/")}"
+  puts "report: #{report_path}"
 else
   warn "privacy-audit-repo: #{head_findings.length + git_history_findings.length} finding group(s)"
-  warn "report: #{report_path.delete_prefix("#{ROOT}/")}"
+  warn "report: #{report_path}"
   exit 1
 end

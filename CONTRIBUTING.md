@@ -48,7 +48,13 @@ Before publishing, also run:
 scripts/privacy-audit-repo
 ```
 
-This scans both current `HEAD` and reachable Git history against the local denylist, excluding `LICENSE`, then writes a local ignored report under `privacy-audits/`.
+This scans both current `HEAD` and reachable Git history against the local denylist, excluding `LICENSE`. Reports are written outside the repo by default under `~/.cache/autoresearch-genealogy/privacy-audits/`, and matched private terms are shown only as fingerprints plus length.
+
+To choose a different report location, set:
+
+```bash
+PRIVACY_AUDIT_REPORT_DIR=/path/to/private/reports scripts/privacy-audit-repo
+```
 
 ## Archive Guides
 

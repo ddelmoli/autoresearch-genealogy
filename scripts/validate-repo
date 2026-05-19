@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "date"
+require "digest"
 require "shellwords"
 require "yaml"
 
@@ -49,6 +50,20 @@ CANONICAL_CORE_PATHS = {
   "witness_network.md" => "Witness_Network.md",
   "research_strategy.md" => "Research_Strategy.md"
 }.freeze
+PUBLIC_PRIVACY_PATTERNS = [
+  {
+    label: "absolute Matt home path",
+    pattern: Regexp.new("/Users/" + "mattprusak" + "/")
+  },
+  {
+    label: "private vault name",
+    pattern: Regexp.new(["Pru", "sak"].join + " Vault")
+  },
+  {
+    label: "US Social Security number pattern",
+    pattern: /\b\d{3}-\d{2}-\d{4}\b/
+  }
+].freeze
 
 @errors = []
 
@@ -62,6 +77,10 @@ end
 
 def read(path)
   File.read(File.join(ROOT, path))
+end
+
+def term_label(term)
+  "sha256:#{Digest::SHA256.hexdigest(term)[0, 12]} len:#{term.length}"
 end
 
 def frontmatter_for(path)
@@ -182,6 +201,19 @@ def check_fixtures
   error("fixtures: golden run must demonstrate living-person skip") unless fixture_text.match?(/Living/) && fixture_text.match?(/skip/i)
 end
 
+def check_public_privacy_patterns
+  tracked_text_files.each do |path|
+    next if path == "LICENSE"
+
+    text = File.read(File.join(ROOT, path))
+    PUBLIC_PRIVACY_PATTERNS.each do |rule|
+      next unless text.match?(rule[:pattern])
+
+      error("#{path}: contains #{rule[:label]}")
+    end
+  end
+end
+
 def check_review_cards
   prompt_paths = Dir[File.join(ROOT, "prompts/[0-9]*.md")].sort
   prompt_paths.each do |path|
@@ -228,7 +260,7 @@ def check_optional_privacy_denylist
 
     text = File.read(File.join(ROOT, path))
     terms.each do |term|
-      error("#{path}: contains private denylist term #{term.inspect}") if text.include?(term)
+      error("#{path}: contains private denylist term #{term_label(term)}") if text.include?(term)
     end
   end
 end
@@ -241,6 +273,7 @@ check_readme_counts
 check_fixtures
 check_review_cards
 check_normie_usability
+check_public_privacy_patterns
 check_optional_privacy_denylist
 
 if @errors.empty?

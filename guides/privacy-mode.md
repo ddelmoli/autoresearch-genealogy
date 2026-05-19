@@ -101,7 +101,9 @@ scripts/validate-repo
 scripts/privacy-audit-repo
 ```
 
-The validation script scans tracked files for local denylist terms. The privacy audit script also scans reachable Git history and writes an ignored local report under `privacy-audits/`.
+The validation script scans tracked files for local denylist terms. The privacy audit script also scans reachable Git history. Reports are written outside the repo by default under `~/.cache/autoresearch-genealogy/privacy-audits/`.
+
+Failed audit reports do not print the exact private term. They show a short fingerprint, term length, file path, and line number so you can fix the leak using your local denylist.
 
 ## Private Denylist Example
 
@@ -122,4 +124,3 @@ Do not commit that file.
 - Use the synthetic fixture under `fixtures/minimal-vault/`.
 - Use the [First Run Walkthrough](../walkthroughs/first-run.md).
 - Keep uncertain or sensitive material local.
-
