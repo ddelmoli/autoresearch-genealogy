@@ -39,6 +39,8 @@ Printable checklists cover [first-week setup](checklists/first-week-checklist.md
 
 For a privacy-safe dry run, use the [First Run Walkthrough](walkthroughs/first-run.md) with the synthetic fixture.
 
+Plain-language reference pages explain [source grades](guides/plain-language/source-grades.md), [evidence versus clues](guides/plain-language/evidence-vs-clues.md), [why AI can be wrong](guides/plain-language/why-ai-can-be-wrong.md), and [what counts as proof](guides/plain-language/what-counts-as-proof.md).
+
 ### Prompts (`prompts/`)
 
 12 autoresearch prompts designed for Claude Code's `/autoresearch` command. Each defines inputs to replace, a Goal, Metric, Direction, Verify condition, Guard rails, Iterations, and Protocol. They run autonomously: searching the web, updating your vault, and verifying their own work.

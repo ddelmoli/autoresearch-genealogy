@@ -2,6 +2,8 @@
 
 A framework for classifying genealogical claims by the strength of their evidence.
 
+For a beginner-friendly translation, see [Source Grades In Plain Language](../guides/plain-language/source-grades.md).
+
 ## The Three Tiers
 
 ### Strong Signal

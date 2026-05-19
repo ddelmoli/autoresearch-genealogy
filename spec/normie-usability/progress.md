@@ -8,15 +8,15 @@
 | 03 | Prompt Bundles | done | validate-repo, privacy-audit | 151a9c4 |
 | 04 | Checklists | done | validate-repo, privacy-audit | 6c24b15 |
 | 05 | Human Review Cards | done | validate-repo, privacy-audit | df20f95 |
-| 06 | Fictional Walkthrough | done | validate-repo, privacy-audit | pending |
-| 07 | Plain-Language Reference | pending | - | - |
+| 06 | Fictional Walkthrough | done | validate-repo, privacy-audit | 72c1405 |
+| 07 | Plain-Language Reference | done | validate-repo, privacy-audit | pending |
 | 08 | Obsidian-Lite Setup | pending | - | - |
 | 09 | Privacy Mode | pending | - | - |
 | 10 | Optional Static Site | deferred | - | - |
 
-## Current: Spec 07 - Plain-Language Reference
+## Current: Spec 08 - Obsidian-Lite Setup
 
-Spec 06 complete. Next build step is `guides/plain-language/`.
+Spec 07 complete. Next build step is `guides/no-obsidian-setup.md`.
 
 ## Implementation Order
 
@@ -41,3 +41,4 @@ Spec 06 complete. Next build step is `guides/plain-language/`.
 - 2026-05-19 Added six beginner checklists.
 - 2026-05-19 Added review cards for all twelve prompts and validator coverage.
 - 2026-05-19 Added a synthetic first-run walkthrough.
+- 2026-05-19 Added plain-language evidence and source guides.

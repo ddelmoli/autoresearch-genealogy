@@ -2,6 +2,8 @@
 
 When genealogical sources disagree, use this hierarchy to determine which source is more likely correct.
 
+If you want the shorter beginner version first, read [What Counts As Proof](../guides/plain-language/what-counts-as-proof.md).
+
 ## The Hierarchy
 
 ### Tier 1: Primary Sources (created at or near the time of the event by an official authority)
