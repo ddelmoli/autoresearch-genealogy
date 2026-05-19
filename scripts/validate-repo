@@ -160,6 +160,25 @@ def check_fixtures
   error("fixtures: golden run must demonstrate living-person skip") unless fixture_text.match?(/Living/) && fixture_text.match?(/skip/i)
 end
 
+def check_review_cards
+  prompt_paths = Dir[File.join(ROOT, "prompts/[0-9]*.md")].sort
+  prompt_paths.each do |path|
+    base = File.basename(path)
+    card_path = File.join(ROOT, "review-cards", base)
+    error("review-cards/#{base}: missing review card for #{rel(path)}") unless File.exist?(card_path)
+  end
+
+  card_paths = Dir[File.join(ROOT, "review-cards/[0-9]*.md")].sort
+  error("expected #{prompt_paths.length} review cards, found #{card_paths.length}") unless card_paths.length == prompt_paths.length
+
+  card_paths.each do |path|
+    text = File.read(path)
+    %w[Good\ Output Red\ Flags Verify\ Manually Reject\ The\ Result\ When Next\ Prompt].each do |heading|
+      error("#{rel(path)}: missing ## #{heading}") unless text.include?("## #{heading}")
+    end
+  end
+end
+
 def check_optional_privacy_denylist
   denylist_path = File.join(ROOT, ".private/anonymization-denylist.txt")
   return unless File.exist?(denylist_path)
@@ -185,6 +204,7 @@ check_archive_frontmatter
 check_markdown_links
 check_readme_counts
 check_fixtures
+check_review_cards
 check_optional_privacy_denylist
 
 if @errors.empty?

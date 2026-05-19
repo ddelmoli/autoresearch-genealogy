@@ -40,6 +40,25 @@ Run `03-findagrave-sweep` to locate Find a Grave memorials and extract data from
 **Want to export your tree?**
 Run `04-gedcom-completeness` to build or verify a GEDCOM file that matches your vault.
 
+## Human Review Cards
+
+Every prompt has a matching review card. Read the card after the prompt finishes and before accepting changes.
+
+| Prompt | Review card |
+|---|---|
+| 01 Tree Expansion | [review-cards/01-tree-expansion.md](../review-cards/01-tree-expansion.md) |
+| 02 Cross-Reference Audit | [review-cards/02-cross-reference-audit.md](../review-cards/02-cross-reference-audit.md) |
+| 03 Find a Grave Sweep | [review-cards/03-findagrave-sweep.md](../review-cards/03-findagrave-sweep.md) |
+| 04 GEDCOM Completeness | [review-cards/04-gedcom-completeness.md](../review-cards/04-gedcom-completeness.md) |
+| 05 Source Citation Audit | [review-cards/05-source-citation-audit.md](../review-cards/05-source-citation-audit.md) |
+| 06 Unresolved Persons | [review-cards/06-unresolved-persons.md](../review-cards/06-unresolved-persons.md) |
+| 07 Timeline Gap Analysis | [review-cards/07-timeline-gap-analysis.md](../review-cards/07-timeline-gap-analysis.md) |
+| 08 Open Question Resolution | [review-cards/08-open-question-resolution.md](../review-cards/08-open-question-resolution.md) |
+| 09 Local History Extraction | [review-cards/09-bygdebok-extraction.md](../review-cards/09-bygdebok-extraction.md) |
+| 10 Colonial Records Search | [review-cards/10-colonial-records-search.md](../review-cards/10-colonial-records-search.md) |
+| 11 Immigration Search | [review-cards/11-immigration-search.md](../review-cards/11-immigration-search.md) |
+| 12 DNA Chromosome Analysis | [review-cards/12-dna-chromosome-analysis.md](../review-cards/12-dna-chromosome-analysis.md) |
+
 ## Prerequisites
 
 | Prompt | Requires |
