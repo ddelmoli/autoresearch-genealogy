@@ -5,8 +5,8 @@
 | 00 | Overview | done | - | - |
 | 01 | Start Here | done | validate-repo, privacy-audit | 70d8812 |
 | 02 | Prompt Picker | done | validate-repo, privacy-audit | 7cd4729 |
-| 03 | Prompt Bundles | done | validate-repo, privacy-audit | pending |
-| 04 | Checklists | pending | - | - |
+| 03 | Prompt Bundles | done | validate-repo, privacy-audit | 151a9c4 |
+| 04 | Checklists | done | validate-repo, privacy-audit | pending |
 | 05 | Human Review Cards | pending | - | - |
 | 06 | Fictional Walkthrough | pending | - | - |
 | 07 | Plain-Language Reference | pending | - | - |
@@ -14,9 +14,9 @@
 | 09 | Privacy Mode | pending | - | - |
 | 10 | Optional Static Site | deferred | - | - |
 
-## Current: Spec 04 - Checklists
+## Current: Spec 05 - Human Review Cards
 
-Spec 03 complete. Next build step is `checklists/`.
+Spec 04 complete. Next build step is `review-cards/`.
 
 ## Implementation Order
 
@@ -38,3 +38,4 @@ Spec 03 complete. Next build step is `checklists/`.
 - 2026-05-19 Added `START_HERE.md` and routed README users to it.
 - 2026-05-19 Added prompt picker decision tree and prompt matrix.
 - 2026-05-19 Added five beginner workflow bundles.
+- 2026-05-19 Added six beginner checklists.
