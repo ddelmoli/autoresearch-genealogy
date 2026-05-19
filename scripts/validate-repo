@@ -1,0 +1,196 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "date"
+require "shellwords"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+REQUIRED_PROMPT_FIELDS = %w[Goal Metric Direction Verify Guard Iterations Protocol].freeze
+REQUIRED_FRONTMATTER = %w[type created tags].freeze
+REQUIRED_ARCHIVE_FRONTMATTER = %w[type title last_verified access_checked tags].freeze
+REQUIRED_FIXTURES = %w[
+  fixtures/minimal-vault/Family_Tree.md
+  fixtures/minimal-vault/Open_Questions.md
+  fixtures/minimal-vault/Research_Log.md
+  fixtures/minimal-vault/templates/person.md
+  fixtures/golden-runs/01-tree-expansion.md
+].freeze
+CANONICAL_CORE_PATHS = {
+  "unresolved_persons.md" => "Unresolved_Persons.md",
+  "chromosome_painting.md" => "Chromosome_Painting.md",
+  "family_tree.md" => "Family_Tree.md",
+  "open_questions.md" => "Open_Questions.md",
+  "research_log.md" => "Research_Log.md",
+  "data_inventory.md" => "Data_Inventory.md",
+  "genetic_profile.md" => "Genetic_Profile.md",
+  "witness_network.md" => "Witness_Network.md",
+  "research_strategy.md" => "Research_Strategy.md"
+}.freeze
+
+@errors = []
+
+def rel(path)
+  path.delete_prefix("#{ROOT}/")
+end
+
+def error(message)
+  @errors << message
+end
+
+def read(path)
+  File.read(File.join(ROOT, path))
+end
+
+def frontmatter_for(path)
+  text = File.read(path)
+  unless text.start_with?("---\n")
+    error("#{rel(path)}: missing YAML frontmatter")
+    return {}
+  end
+
+  parts = text.split(/^---\s*$/, 3)
+  yaml = parts[1]
+  YAML.safe_load(yaml, permitted_classes: [Date]) || {}
+rescue Psych::SyntaxError, Psych::DisallowedClass => e
+  error("#{rel(path)}: invalid YAML frontmatter: #{e.message}")
+  {}
+end
+
+def check_prompts
+  prompt_paths = Dir[File.join(ROOT, "prompts/[0-9]*.md")].sort
+  error("expected 12 numbered prompts, found #{prompt_paths.length}") unless prompt_paths.length == 12
+
+  prompt_paths.each do |path|
+    text = File.read(path)
+    REQUIRED_PROMPT_FIELDS.each do |field|
+      error("#{rel(path)}: missing **#{field}** field") unless text.match?(/^\*\*#{Regexp.escape(field)}\*\*:/)
+    end
+
+    input_pos = text.index("## Inputs To Replace")
+    config_pos = text.index("## Autoresearch Configuration")
+    if input_pos.nil?
+      error("#{rel(path)}: missing ## Inputs To Replace")
+    elsif config_pos && input_pos > config_pos
+      error("#{rel(path)}: Inputs To Replace must appear before Autoresearch Configuration")
+    end
+
+    CANONICAL_CORE_PATHS.each do |wrong, right|
+      error("#{rel(path)}: use #{right}, not #{wrong}") if text.include?(wrong)
+    end
+  end
+end
+
+def check_vault_frontmatter
+  Dir[File.join(ROOT, "vault-template/**/*.md")].sort.each do |path|
+    data = frontmatter_for(path)
+    REQUIRED_FRONTMATTER.each do |key|
+      error("#{rel(path)}: missing frontmatter key #{key}") unless data.key?(key)
+    end
+  end
+end
+
+def check_archive_frontmatter
+  Dir[File.join(ROOT, "archives/*.md")].sort.each do |path|
+    next if File.basename(path) == "README.md"
+
+    data = frontmatter_for(path)
+    REQUIRED_ARCHIVE_FRONTMATTER.each do |key|
+      error("#{rel(path)}: missing frontmatter key #{key}") unless data.key?(key)
+    end
+    error("#{rel(path)}: type must be archive-guide") unless data["type"] == "archive-guide"
+  end
+end
+
+def check_markdown_links
+  Dir[File.join(ROOT, "**/*.md")].each do |path|
+    text = File.read(path)
+    text.scan(/\[[^\]\n]+\]\(([^)]+)\)/).flatten.each do |link|
+      next if link.match?(/\A(?:https?:|mailto:|#)/)
+
+      target = link.split("#", 2).first
+      next if target.empty?
+
+      resolved = File.expand_path(target, File.dirname(path))
+      error("#{rel(path)}: broken markdown link #{link}") unless File.exist?(resolved)
+    end
+  end
+end
+
+def check_readme_counts
+  readme = read("README.md")
+  counts = {
+    "autoresearch prompts" => Dir[File.join(ROOT, "prompts/[0-9]*.md")].length,
+    "Vault Template" => Dir[File.join(ROOT, "vault-template/**/*.md")].length,
+    "Archive Guides" => Dir[File.join(ROOT, "archives/*.md")].reject { |p| File.basename(p) == "README.md" }.length,
+    "Reference Guides" => Dir[File.join(ROOT, "reference/*.md")].length,
+    "Workflows" => Dir[File.join(ROOT, "workflows/*.md")].length,
+    "Examples" => Dir[File.join(ROOT, "examples/*.md")].reject { |p| File.basename(p) == "README.md" }.length
+  }
+
+  {
+    "#{counts["autoresearch prompts"]} autoresearch prompts" => "prompt count",
+    "#{counts["Vault Template"]} files" => "vault-template file count",
+    "#{counts["Archive Guides"]} country and region-specific guides" => "archive guide count",
+    "#{counts["Reference Guides"]} methodology documents" => "reference guide count",
+    "#{counts["Workflows"]} step-by-step guides" => "workflow count",
+    "#{counts["Examples"]} anonymized worked examples" => "example count"
+  }.each do |needle, label|
+    error("README.md: missing or stale #{label}: expected '#{needle}'") unless readme.include?(needle)
+  end
+end
+
+def tracked_text_files
+  `git -C #{ROOT.shellescape} ls-files`.lines.map(&:strip).select do |path|
+    full_path = File.join(ROOT, path)
+    File.file?(full_path) && !File.binread(full_path, 1024).include?("\x00")
+  end
+end
+
+def check_fixtures
+  REQUIRED_FIXTURES.each do |path|
+    error("#{path}: missing required fixture") unless File.exist?(File.join(ROOT, path))
+  end
+
+  fixture_text = REQUIRED_FIXTURES.map do |path|
+    full_path = File.join(ROOT, path)
+    File.read(full_path) if File.exist?(full_path)
+  end.compact.join("\n")
+  error("fixtures: missing explicit fictional-data notice") unless fixture_text.match?(/fictional|synthetic/i)
+  error("fixtures: golden run must demonstrate living-person skip") unless fixture_text.match?(/Living/) && fixture_text.match?(/skip/i)
+end
+
+def check_optional_privacy_denylist
+  denylist_path = File.join(ROOT, ".private/anonymization-denylist.txt")
+  return unless File.exist?(denylist_path)
+
+  terms = File.readlines(denylist_path, chomp: true).map(&:strip).reject do |line|
+    line.empty? || line.start_with?("#")
+  end
+  return if terms.empty?
+
+  tracked_text_files.each do |path|
+    next if path == "LICENSE"
+
+    text = File.read(File.join(ROOT, path))
+    terms.each do |term|
+      error("#{path}: contains private denylist term #{term.inspect}") if text.include?(term)
+    end
+  end
+end
+
+check_prompts
+check_vault_frontmatter
+check_archive_frontmatter
+check_markdown_links
+check_readme_counts
+check_fixtures
+check_optional_privacy_denylist
+
+if @errors.empty?
+  puts "validate-repo: ok"
+else
+  warn "validate-repo: #{@errors.length} failure(s)"
+  @errors.each { |message| warn "- #{message}" }
+  exit 1
+end
