@@ -10,6 +10,7 @@ Initial sanitized public release.
 - Canonical vault file manifest and prompt path consistency rules.
 - Split evidence schema: `evidence_tier` for claim quality and `profile_status` for file completeness.
 - `scripts/validate-repo` plus GitHub Actions validation.
+- `scripts/privacy-audit-repo` for local denylist scans across current `HEAD` and reachable Git history.
 - Contribution guidance, including an optional local anonymization denylist.
 - Archive guide `last_verified` metadata.
 - Synthetic `fixtures/minimal-vault/` and `fixtures/golden-runs/01-tree-expansion.md` for safe prompt behavior review.

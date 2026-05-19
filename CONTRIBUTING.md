@@ -40,6 +40,14 @@ Do not include real family data in examples. Do not add exact birth dates, addre
 
 If you maintain a private source vault, create an untracked `.private/anonymization-denylist.txt` file with sensitive surnames, place names, and phrases. `scripts/validate-repo` will scan tracked public files against it. The `.private/` directory is gitignored and must never be committed.
 
+Before publishing, also run:
+
+```bash
+scripts/privacy-audit-repo
+```
+
+This scans both current `HEAD` and reachable Git history against the local denylist, excluding `LICENSE`, then writes a local ignored report under `privacy-audits/`.
+
 ## Archive Guides
 
 Archive guides must include `last_verified` metadata. Update it whenever you check URLs, pricing, login requirements, or AI accessibility.
