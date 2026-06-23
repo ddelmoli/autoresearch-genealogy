@@ -27,6 +27,7 @@ Colonial American records are fragmentary but certain record types survive well.
 ### Archive.org and Google Books
 - **Coverage**: Published county histories, genealogies, and compiled records
 - **Cost**: Free
+- **Note**: In-copyright digitized genealogies that aren't fully readable can often be **borrowed** through the Open Library (https://openlibrary.org) with a free account.
 - **AI accessibility**: AI-searchable and AI-readable
 
 ### DAR (Daughters of the American Revolution)
@@ -40,6 +41,14 @@ Colonial American records are fragmentary but certain record types survive well.
 - **Coverage**: Volunteer transcriptions of county records organized by state and county
 - **Cost**: Free
 - **AI accessibility**: AI-readable
+
+## Lineage Societies as Research Aids
+
+Hereditary societies vet and publish member lineages, which serve as compiled (secondary) sources — useful for orientation, but verify against primary records, since society applications sometimes perpetuate errors for decades.
+
+- **General Society of Mayflower Descendants (GSMD)**: the "Silver Books" (*Mayflower Families Through Five Generations*) document the first five generations of each Mayflower passenger's descendants — the standard starting point for Plymouth-colony Mayflower lines.
+- **DAR**: beyond the Patriot Index, the Genealogical Research System (GRS) links Revolutionary War patriots to documented descendant lineages.
+- **WikiTree project / Space pages** (e.g. the Mayflower project): free, sourced indexes into many of these society lineages — a quick way to locate a published line.
 
 ## Record Types by Survival Rate
 
