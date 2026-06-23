@@ -25,6 +25,18 @@ YOU (Living)
     └── [GRANDPARENT-4] (b. YYYY, d. YYYY)
 ```
 
+## Sharding & File Index
+
+A single `Family_Tree.md` is fine for a few hundred people. As a tree grows, keep this file to the recent core (e.g. Generations 1–N, plus this index) and split older or branch lineages into `Family_Tree_<Region>_<Branch>.md` shard files — one contiguous generation range per shard, grouped by geography or lineage. Delete this section if your tree is small enough to live in one file.
+
+The table below is both human navigation ("which file holds this branch?") and a machine-readable manifest. The **Region** column lets tooling group people by lineage: `scripts/shard_manifest.py` reads it, and `scripts/tree_locator.py` uses it to answer "which file is person X in?" by scanning the shards directly — no hand-maintained index required. A shard is matched to the longest `File` entry that is a prefix of its name, so a master row (`Family_Tree_Maternal`) automatically covers its children (`Family_Tree_Maternal_Highland`), while a more specific row overrides a broader one. Files not listed here fall back to a generic label.
+
+| File | Region | Content |
+|---|---|---|
+| [[Family_Tree_Paternal_Coastal]] | Coastal | [SURNAME-1], [SURNAME-2] ([place]; Gen 6–9) |
+| [[Family_Tree_Maternal_Highland]] | Highland | [SURNAME-3] ([place]; Gen 6–10) |
+| [[Family_Tree_Colonial_North]] | Colonial | [SURNAME-4], [SURNAME-5] ([place]; Gen 8–14) |
+
 ## [Paternal/Maternal] Line
 
 ### [SURNAME-1] Family
