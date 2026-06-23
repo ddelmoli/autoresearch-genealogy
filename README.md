@@ -74,7 +74,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Archive Guides (`archives/`)
 
-23 country and region-specific guides covering where to find records, what is free vs paid, and what AI tools can access directly vs what requires a browser.
+24 country and region-specific guides covering where to find records, what is free vs paid, and what AI tools can access directly vs what requires a browser.
 
 **Europe**: Ireland, England/Wales, Scotland, France, Italy, Spain/Portugal, Germany, Netherlands, Austria, Hungary, Norway, Sweden, Poland, Russia/Ukraine
 
