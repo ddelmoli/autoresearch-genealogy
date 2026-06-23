@@ -25,9 +25,6 @@ Modes:
                  * people appearing in >1 shard file (ambiguous / possible dup)
                  * shard files on disk not declared in the manifest (no region)
                  * manifest entries with no matching file on disk
-               and, only IF a Person_Index.md is present, an optional drift pass:
-                 * shard people with no Person_Index row
-                 * Person_Index names absent from every shard
                --check exits 1 when any issue is found, else 0.
 
 Generic: contains no project-specific names. Pairs with shard_manifest.py as the
@@ -46,7 +43,7 @@ import shard_manifest
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_VAULT = os.path.join(os.path.dirname(SCRIPT_DIR), "vault")
 
-# Bold-name narrative entry header — same shape used across the audit suite:
+# Bold-name narrative entry header — the convention this toolkit keys on:
 #   "**Full Name** ( ... )"  or  "**Full Name ( ... )**"
 # Require a proper-noun first token (Cap + lowercase) so all-caps labels
 # ("SECOND MARRIAGE", "FS-attached") are not mistaken for people.
@@ -154,31 +151,6 @@ def _flat(index):
     return rows
 
 
-# ----- lenient Person_Index parse (optional cross-check only) ----------------
-# Schema-tolerant: any markdown table row's FIRST cell is taken as the person
-# name. Does not assume a column count, so it works across index variants.
-_SEP_RE = re.compile(r"^\s*\|?[\s:\-|]+\|?\s*$")
-
-
-def read_person_index_names(vault):
-    """Return set of names from Person_Index.md, or None if the file is absent."""
-    path = os.path.join(vault, "Person_Index.md")
-    if not os.path.exists(path):
-        return None
-    names = set()
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            s = line.strip()
-            if not s.startswith("|") or _SEP_RE.match(line):
-                continue
-            first = s.strip("|").split("|", 1)[0].strip().strip("*").strip()
-            # skip the header row and empty cells
-            if not first or first.lower() in {"name", "person"}:
-                continue
-            names.add(first)
-    return names
-
-
 def main():
     ap = argparse.ArgumentParser(description="Derive a person->shard-file locator from a sharded family tree.")
     ap.add_argument("--vault", default=DEFAULT_VAULT, help="Path to the vault directory (default: ../vault).")
@@ -192,7 +164,7 @@ def main():
     index, manifest, files_on_disk = build_index(args.vault)
 
     if args.check:
-        return run_check(index, manifest, files_on_disk, args.vault)
+        return run_check(index, manifest, files_on_disk)
 
     rows = _flat(index)
     if args.region:
@@ -228,7 +200,7 @@ def main():
     return 0
 
 
-def run_check(index, manifest, files_on_disk, vault):
+def run_check(index, manifest, files_on_disk):
     issues = 0
 
     # 1. People appearing in more than one shard file (ambiguous / possible dup)
@@ -257,26 +229,6 @@ def run_check(index, manifest, files_on_disk, vault):
     for k in sorted(stale):
         print(f"    {k}  (region: {manifest[k]})")
     issues += len(stale)
-
-    # 4+5. Optional Person_Index drift (only if the file exists)
-    pi_names = read_person_index_names(vault)
-    if pi_names is None:
-        print("\n[4/5] Person_Index.md not present — skipping index drift check.")
-    else:
-        shard_names = set(index.keys())
-        shard_not_indexed = sorted(shard_names - pi_names)
-        indexed_not_in_shards = sorted(pi_names - shard_names)
-        print(f"\n[4] Shard people with no Person_Index row: {len(shard_not_indexed)}")
-        for n in shard_not_indexed[:40]:
-            print(f"    {n}")
-        if len(shard_not_indexed) > 40:
-            print(f"    ... and {len(shard_not_indexed) - 40} more")
-        print(f"\n[5] Person_Index names absent from every shard: {len(indexed_not_in_shards)}")
-        for n in indexed_not_in_shards[:40]:
-            print(f"    {n}")
-        if len(indexed_not_in_shards) > 40:
-            print(f"    ... and {len(indexed_not_in_shards) - 40} more")
-        # drift is advisory (name-matching is fuzzy); do not add to hard issues
 
     print(f"\n=== tree_locator --check: {issues} structural issue(s) "
           f"(dup-across-shards + manifest/disk mismatches) ===")

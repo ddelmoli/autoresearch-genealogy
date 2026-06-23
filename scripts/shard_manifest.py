@@ -23,7 +23,7 @@ Behavior:
 - If `Family_Tree.md` (or the File/Region table) is absent, `load_shard_manifest`
   returns {} and `region_for` falls back to a generic label. The scripts still
   run on a single un-sharded `Family_Tree.md` with no configuration.
-- `region_for` matches a Person_Index section header (a shard file basename) to
+- `region_for` matches a shard file basename to
   the LONGEST manifest key that is a prefix of it, so a master entry
   (`Family_Tree_Maternal`) covers its children (`Family_Tree_Maternal_Highland`)
   without listing each, while a more specific entry
@@ -107,18 +107,18 @@ def load_shard_manifest(vault_dir: str) -> dict:
     return manifest
 
 
-def region_for(section: str, manifest: dict) -> str:
-    """Classify a Person_Index section header (shard basename) into a region.
+def region_for(basename: str, manifest: dict) -> str:
+    """Classify a shard file basename into a region.
 
     Longest-prefix match against the manifest; generic fallback otherwise."""
-    section = section.strip()
+    basename = basename.strip()
     best_key = None
     for key in manifest:
-        if section == key or section.startswith(key + "_"):
+        if basename == key or basename.startswith(key + "_"):
             if best_key is None or len(key) > len(best_key):
                 best_key = key
     if best_key is not None:
         return manifest[best_key]
-    if section.startswith(TREE_PREFIX):
+    if basename.startswith(TREE_PREFIX):
         return MAIN_REGION
     return OTHER_REGION
