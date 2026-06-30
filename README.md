@@ -86,7 +86,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Reference Guides (`reference/`)
 
-11 methodology documents: confidence tiers, source hierarchy, vault file manifest, DNA interpretation guardrails, naming conventions (patronymics, farm names, przydomki), GEDCOM format guide, common pitfalls, glossary, AI capabilities assessment, GitHub triage lane, and the case for autoresearch in genealogy.
+12 methodology documents: confidence tiers, source hierarchy, vault file manifest, DNA interpretation guardrails, naming conventions (patronymics, farm names, przydomki), GEDCOM format guide, common pitfalls, glossary, AI capabilities assessment, GitHub triage lane, research techniques and tool pipelines, and the case for autoresearch in genealogy.
 
 ### Workflows (`workflows/`)
 
