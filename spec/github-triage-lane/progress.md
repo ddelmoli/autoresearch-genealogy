@@ -2,7 +2,7 @@
 | # | Spec | Status | Tests | Commit |
 |---|------|--------|-------|--------|
 | 00 | Overview | done | - | - |
-| 01 | Baseline And PR Gates | done | `scripts/validate-repo`, `LC_ALL=C scripts/validate-repo` | 4269031 |
+| 01 | Baseline And PR Gates | done | `scripts/validate-repo`, `LC_ALL=C scripts/validate-repo` | 1b3000c |
 | 02 | Durable Triage State | pending | - | - |
 | 03 | Issue Intake And Cleanup | pending | - | - |
 
