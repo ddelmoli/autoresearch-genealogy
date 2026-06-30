@@ -4,6 +4,8 @@ Exhaust an online image-only archive (digitized church books, civil registers, p
 
 This is the prompt for collections that are scanned but not transcribed or indexed. You cannot full-text search them. You have to open page images, narrow by date or image number, read handwriting, and crop the exact row. Pair it with [09 Local History Extraction](09-bygdebok-extraction.md) for printed books and [03 Find a Grave Sweep](03-findagrave-sweep.md) for indexed memorials.
 
+> **Sharded trees (optional):** if your `Family_Tree.md` has grown and been split into shard files (listed in its File Index — see `vault-template/Family_Tree.md`), treat every reference to `Family_Tree.md` in this prompt as also covering those shard files: read them all, and route new people to the shard whose Region matches their line. Un-sharded vaults can ignore this note.
+
 ## Inputs To Replace
 
 - `[VAULT_PATH]`: path to the genealogy vault folder
