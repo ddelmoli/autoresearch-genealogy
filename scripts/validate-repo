@@ -8,6 +8,14 @@ require "digest"
 require "shellwords"
 require "yaml"
 
+# Prompt and archive files legitimately contain UTF-8 characters (em dashes,
+# arrows). Without this, File.read inherits the locale's default external
+# encoding, so under an ASCII locale (e.g. LANG unset or LANG=C) the first
+# String#match? against a non-ASCII byte raises
+# "invalid byte sequence in US-ASCII". Force UTF-8 so validation is
+# locale-independent.
+Encoding.default_external = Encoding::UTF_8
+
 ROOT = File.expand_path("..", __dir__)
 REQUIRED_PROMPT_FIELDS = %w[Goal Metric Direction Verify Guard Iterations Protocol].freeze
 REQUIRED_FRONTMATTER = %w[type created tags].freeze
