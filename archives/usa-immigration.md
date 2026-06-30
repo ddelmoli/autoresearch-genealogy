@@ -19,17 +19,33 @@ Immigration and naturalization records are among the most valuable sources for f
 - **Searchable**: Yes (by name, year, age, origin)
 - **AI accessibility**: AI-searchable
 
-### Castle Garden
-- **URL**: https://www.castlegarden.org/
-- **Coverage**: New York arrivals, 1820 to 1892 (~11 million records)
+### Castle Garden (pre-Ellis NY arrivals, 1820–1892)
+- **Status**: castlegarden.org has gone offline. The same New York arrivals (~11 million, 1820–1891) are now on **FamilySearch collection 1849782** ("New York Passenger Lists, 1820–1891"), the practical successor.
 - **Cost**: Free
-- **Searchable**: Yes
-- **AI accessibility**: AI-searchable
+- **Searchable**: Yes — search by name and filter on birth year/place; the arrival-date filter is unreliable.
 
 ### FamilySearch (Passenger Lists)
 - **Coverage**: Multiple US and Canadian ports
 - **Cost**: Free
 - **AI accessibility**: Browser-only for individual records
+
+### Steve Morse One-Step
+- **URL**: https://stevemorse.org/
+- **Coverage**: Free search front-ends for the major arrival databases — a "Gold Form" for Ellis Island (1892–1924, querying the JewishGen Enhanced Ellis Island Database) and a "White Form" (1820–1957)
+- **Cost**: Free
+- **Note**: Offers phonetic, missing-manifest, and town/companion filters that the native search interfaces lack; often finds arrivals a plain name search misses.
+
+### Internet Archive — NARA Microfilm Page Images
+- **URL**: https://archive.org/ (National Archives passenger-microfilm reels, uploaded one item per reel)
+- **Coverage**: The full New York arrival microfilm — M237 (1820–1897) and T715 (1897–1957) — as page images; the Internet Archive reel number matches the NARA roll number
+- **Cost**: Free
+- **Note**: Gives the actual manifest IMAGES, not just an index — essential when a name was never indexed and you must browse by ship and date. The film carries the same physical damage (torn or cut-off frames) as any other copy of that roll.
+
+### NARA Bulk Passenger Data Files
+- **URL**: https://catalog.archives.gov/ (downloadable passenger datasets, e.g. the Castle Garden / Balch series)
+- **Coverage**: Pipe-delimited text with origin-town, ship, arrival-date, and birthplace fields — searchable locally with ordinary text tools
+- **Cost**: Free
+- **Note**: Coverage is partial (weighted toward Russia and Austria-Hungary; sparse for Romania and post-1897), but useful for bulk searching when web indexes fail to surface a garbled name.
 
 ### What Passenger Lists Contain
 
@@ -40,6 +56,20 @@ Immigration and naturalization records are among the most valuable sources for f
 **Post-1906**: Added: personal description (height, complexion, hair, eyes), birthplace (city and country), name and address of nearest relative in country of origin, name and address of person joining in US, whether a polygamist, whether an anarchist, physical and mental health.
 
 **Post-1906 manifests are extremely valuable** because they list the specific city of birth in the old country, not just the country name.
+
+## Departure (Emigration) Records
+
+US arrival manifests were transcribed from passenger lists prepared at the port of *departure*. The departure-side record is often cleaner than the garbled arrival index and preserves the original European spelling of the name — use it to recover the correct name, then re-search the arrival manifest with it.
+
+- **Hamburg Auswandererlisten** (1850–1934): the primary departure port for Eastern and Central Europe; indexed on subscription sites.
+- **Bremen**: a major departure port, but most lists were destroyed.
+- **Antwerp / Red Star Line**: departures from Belgium.
+- **Stadsarchief Rotterdam** (https://stadsarchief.rotterdam.nl/passagierslijsten): Holland America Line departures from Rotterdam, 1900 onward — free and name-indexed; gives ship, departure date, and the European given name.
+- **Scandinavia**: Norway (Digitalarkivet) and Sweden (Emihamn / EmiWeb) maintain emigration indexes.
+
+### Arrivals Outside the US
+
+Not every emigrant went to the United States. For lines whose emigrants went to South America, **CEMLA** (https://search.cemla.com) indexes arrivals at Buenos Aires, Argentina, 1882–1960 (free).
 
 ## Naturalization Records
 
@@ -80,6 +110,13 @@ Immigration and naturalization records are among the most valuable sources for f
 5. Search for naturalization records in the county where your ancestor lived
 6. For post-1906, the naturalization petition is usually more informative than the passenger list
 7. Check Canadian border crossings if US ports yield no results
+
+### When a manifest can't be found
+
+- **A manifest line can be garbled or never indexed.** No name, Soundex, or ship search will reach it. Confirm the person's identity from an *independent* source first (a departure-side index, a naturalization petition, a headstone), then go to the manifest IMAGE knowing the ship and date to look for.
+- **Spouses often emigrated separately.** A wife frequently arrived on a different voyage under her maiden name. Search both surnames; don't assume a couple traveled together.
+- **Pre-1820 US passenger lists are sparse to nonexistent.** Federal passenger lists begin in 1820; earlier arrivals must be reconstructed from other records.
+- **A later vital record can name the birthplace the manifest omitted.** A death or marriage certificate from the destination city often names the immigrant's specific town of origin and parents — check the destination's vital-records archive when the manifest gives only a country.
 
 ## Name Variation Tips
 
