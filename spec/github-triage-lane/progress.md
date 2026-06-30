@@ -4,7 +4,7 @@
 | 00 | Overview | done | - | - |
 | 01 | Baseline And PR Gates | done | `scripts/validate-repo`, `LC_ALL=C scripts/validate-repo` | 1b3000c |
 | 02 | Durable Triage State | done | `scripts/github-triage --help`, `scripts/github-triage report --refresh`, `scripts/validate-repo` | 8a02459 |
-| 03 | Issue Intake And Cleanup | done | `scripts/validate-repo`, `LC_ALL=C scripts/validate-repo`, YAML parse, Python smoke, triage report | pending |
+| 03 | Issue Intake And Cleanup | done | `scripts/validate-repo`, `LC_ALL=C scripts/validate-repo`, YAML parse, Python smoke, triage report | c630cd3 |
 
 ## Current: Complete
 All specs complete. Live GitHub cleanup will use the generated triage report and the maintainer branch that includes the accepted PR patches.
