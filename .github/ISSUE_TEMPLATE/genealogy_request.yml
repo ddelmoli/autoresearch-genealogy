@@ -1,0 +1,56 @@
+name: Genealogy Help Request
+description: Ask for help choosing a safe self-service path for a genealogy problem.
+title: "[genealogy help]: "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for redacted, deceased-person genealogy workflow questions. Do not post exact details for living or possibly living people.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I have removed exact birth dates, addresses, phone numbers, emails, and private documents for living or possibly living people.
+          required: true
+        - label: The people named below are deceased, fictional, or anonymized.
+          required: true
+  - type: input
+    id: research-goal
+    attributes:
+      label: Research goal
+      description: State the workflow help you need, not a request for public research into your private family.
+      placeholder: I need help choosing a prompt to verify a possible immigration record.
+    validations:
+      required: true
+  - type: textarea
+    id: redacted-context
+    attributes:
+      label: Redacted context
+      description: Include country, time period, broad locations, and relationship type. Use initials or placeholders if needed.
+      placeholder: Deceased ancestor, born about 1880 in a broad region, arrived in the US before 1915. I have a census lead and a possible passenger record.
+    validations:
+      required: true
+  - type: textarea
+    id: sources-tried
+    attributes:
+      label: Sources already checked
+      description: List databases, records, or toolkit files you have already tried. Negative searches are useful.
+      placeholder: FamilySearch census index, local vital records index, prompts/11-immigration-search.md.
+    validations:
+      required: true
+  - type: dropdown
+    id: best-fit
+    attributes:
+      label: Closest toolkit path
+      options:
+        - I only have names and stories
+        - I have old documents or photos
+        - I have DNA results
+        - I already have a family tree
+        - I want to check an AI finding
+        - I want to share or export safely
+    validations:
+      required: true

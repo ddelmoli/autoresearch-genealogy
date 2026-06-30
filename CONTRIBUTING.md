@@ -63,3 +63,21 @@ Archive guides must include `last_verified` metadata. Update it whenever you che
 ## Evidence Standards
 
 Use `evidence_tier` for claim quality and `profile_status` for file completeness. Do not collapse both into one confidence field.
+
+## Maintainer Triage
+
+For public issues and pull requests, start with the read-only triage lane:
+
+```bash
+scripts/github-triage report --repo mattprusak/autoresearch-genealogy --refresh
+```
+
+Use the report to decide labels, comments, closures, merges, or a maintainer branch. The script writes local state under `.github-triage/`, which is ignored because issue bodies can contain private genealogy details.
+
+Before merging a PR:
+
+- Run `scripts/validate-repo`.
+- If `scripts/validate-repo` changes, also run `LC_ALL=C scripts/validate-repo`.
+- For archive guides, verify links and source claims are generic and public.
+- For prompts, fixtures, and examples, reject real family data.
+- For public genealogy help issues, answer with self-service guidance. Do not research a private family in a public issue thread.

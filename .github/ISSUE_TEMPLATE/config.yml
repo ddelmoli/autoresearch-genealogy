@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Start Here
+    url: https://github.com/mattprusak/autoresearch-genealogy/blob/main/START_HERE.md
+    about: Pick the safest first workflow before opening an issue.
+  - name: Privacy Mode
+    url: https://github.com/mattprusak/autoresearch-genealogy/blob/main/guides/privacy-mode.md
+    about: Review what not to post publicly.

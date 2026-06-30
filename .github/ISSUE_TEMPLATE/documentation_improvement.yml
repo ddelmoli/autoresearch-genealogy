@@ -1,0 +1,36 @@
+name: Documentation Improvement
+description: Suggest a correction or addition to repository docs.
+title: "[docs]: "
+labels:
+  - documentation
+body:
+  - type: input
+    id: file
+    attributes:
+      label: File or section
+      placeholder: archives/usa-immigration.md
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Suggested change
+      description: Explain the correction, missing source, broken link, or confusing wording.
+      placeholder: This archive moved URLs, and the guide should point to the current collection.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Source or verification
+      description: Add a public source, current URL, or command you used to verify the change.
+      placeholder: Official archive page, access date, and any login or pricing caveat.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: This suggestion does not include real private family data.
+          required: true
