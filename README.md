@@ -47,7 +47,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Prompts (`prompts/`)
 
-13 autoresearch prompts designed for Claude Code's `/autoresearch` command. Each defines inputs to replace, a Goal, Metric, Direction, Verify condition, Guard rails, Iterations, and Protocol. They run autonomously: searching the web, browsing image archives, updating your vault, and verifying their own work.
+14 autoresearch prompts designed for Claude Code's `/autoresearch` command. Each defines inputs to replace, a Goal, Metric, Direction, Verify condition, Guard rails, Iterations, and Protocol. They run autonomously: searching the web, browsing image archives, updating your vault, and verifying their own work.
 
 | Prompt | Purpose |
 |---|---|
@@ -64,6 +64,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 | 11-immigration-search | Locate passenger manifests and naturalization records |
 | 12-dna-chromosome-analysis | Analyze per-chromosome ancestry data to map genetic segments |
 | 13-image-archive-deep-dive | Browse image-only archives, read entries, and save cropped evidence images |
+| 14-military-records-sweep | Add NARA AAD military service citations for US-resident ancestors |
 
 ### Vault Template (`vault-template/`)
 

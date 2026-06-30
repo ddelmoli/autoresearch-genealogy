@@ -61,6 +61,7 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 11 Immigration Search | [review-cards/11-immigration-search.md](../review-cards/11-immigration-search.md) |
 | 12 DNA Chromosome Analysis | [review-cards/12-dna-chromosome-analysis.md](../review-cards/12-dna-chromosome-analysis.md) |
 | 13 Image Archive Deep Dive | [review-cards/13-image-archive-deep-dive.md](../review-cards/13-image-archive-deep-dive.md) |
+| 14 Military Service Records Sweep | [review-cards/14-military-records-sweep.md](../review-cards/14-military-records-sweep.md) |
 
 ## Prerequisites
 
