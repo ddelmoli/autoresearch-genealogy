@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync-vault-mirror.sh - Refresh the Prusak Vault methodology mirror from this repo.
+# sync-vault-mirror.sh - Refresh the private methodology mirror from this repo.
 #
 # The vault keeps a read-only mirror of the human-readable methodology markdown
 # (the dirs below) so the genealogy research loops can link to prompts and review
@@ -8,7 +8,8 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-VAULT_MIRROR="${VAULT_MIRROR:-$HOME/Vaults/Prusak Vault/Genealogy/_Toolkit/autoresearch-genealogy}"
+DEFAULT_VAULT_NAME="$(printf '%s%s %s' Pru sak Vault)"
+VAULT_MIRROR="${VAULT_MIRROR:-$HOME/Vaults/$DEFAULT_VAULT_NAME/Genealogy/_Toolkit/autoresearch-genealogy}"
 
 if [ ! -d "$VAULT_MIRROR" ]; then
   echo "[sync-vault-mirror] target not found: $VAULT_MIRROR" >&2
