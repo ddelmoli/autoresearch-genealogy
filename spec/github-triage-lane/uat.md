@@ -4,7 +4,7 @@
 **Demo**: Repository validation is green before PR triage.
 - [ ] `scripts/validate-repo` prints `validate-repo: ok`.
 - [ ] `LC_ALL=C scripts/validate-repo` prints `validate-repo: ok`.
-- [ ] `rg "Prusak Vault|/Users/mattprusak" scripts spec/github-triage-lane` prints no matches.
+- [ ] `scripts/validate-repo` reports no public privacy-pattern failures.
 
 ## Spec 02: Durable Triage State
 **Demo**: The local triage script can sync and report GitHub state without mutating GitHub.
