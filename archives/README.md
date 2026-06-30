@@ -38,6 +38,7 @@ Country and region-specific guides for accessing genealogical records. Each guid
 | [usa-immigration.md](usa-immigration.md) | USA (immigration) | Ellis Island, Castle Garden, USCIS |
 | [usa-census.md](usa-census.md) | USA (census) | FamilySearch, Ancestry, NARA |
 | [usa-vital-records.md](usa-vital-records.md) | USA (vital records) | State vital records offices, county clerks |
+| [usa-military.md](usa-military.md) | USA (military service) | NARA AAD, FamilySearch, NPS Soldiers and Sailors, Fold3 |
 | [african-american.md](african-american.md) | USA (African American) | Freedmen's Bureau, Freedman's Bank, Enslaved.org |
 | [canada.md](canada.md) | Canada | LAC, provincial archives, PRDH (Quebec) |
 | [mexico-latin-america.md](mexico-latin-america.md) | Mexico, Latin America | FamilySearch, Archivo General de la Nación |
