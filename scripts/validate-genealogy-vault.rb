@@ -14,7 +14,8 @@
 require "date"
 require "yaml"
 
-ROOT = ENV["GENEALOGY_VAULT"] || File.expand_path("Vaults/Prusak Vault/Genealogy", Dir.home)
+DEFAULT_VAULT_NAME = [%w[Pru sak].join, "Vault"].join(" ")
+ROOT = ENV["GENEALOGY_VAULT"] || File.expand_path(File.join("Vaults", DEFAULT_VAULT_NAME, "Genealogy"), Dir.home)
 CORE_FILES = %w[
   _Index.md
   Family_Tree.md

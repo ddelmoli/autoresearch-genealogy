@@ -30,6 +30,8 @@ If you want the shorter beginner version first, read [What Counts As Proof](../g
 
 **Why less reliable**: The compiler may have misread, misinterpreted, or selectively edited the original source. Obituaries often contain errors in dates and relationships. Published genealogies may perpetuate earlier mistakes.
 
+**Obituary workflow note**: Treat obituaries as clue-rich secondary sources, not final proof. A structured obituary research workflow, such as the [FinalNotes Obituary Research Guide](https://www.finalnotes.page/obituary-research-guide/), can help extract names, dates, relationships, service details, and follow-up searches before validating those claims against Tier 1 records.
+
 **Caveat**: High-quality secondary sources (peer-reviewed genealogies, well-documented county histories) can be quite reliable. Evaluate each source on its specific merits.
 
 ### Tier 3: Tertiary Sources (compiled from secondary sources or from memory)

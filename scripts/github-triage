@@ -1,0 +1,367 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+Encoding.default_external = Encoding::UTF_8
+
+require "fileutils"
+require "json"
+require "open3"
+require "optparse"
+require "pstore"
+require "shellwords"
+require "time"
+
+ROOT = File.expand_path("..", __dir__)
+DEFAULT_STATE_PATH = File.join(ROOT, ".github-triage", "state.pstore")
+ISSUE_FIELDS = %w[number title body author labels createdAt updatedAt url].freeze
+PR_FIELDS = %w[
+  number title body author labels createdAt updatedAt url isDraft mergeable
+  headRefName baseRefName headRefOid changedFiles additions deletions files
+].freeze
+
+def usage
+  <<~USAGE
+    Usage:
+      scripts/github-triage sync [--repo owner/name] [--state path]
+      scripts/github-triage report [--repo owner/name] [--state path] [--refresh]
+
+    Commands:
+      sync     Fetch open issues and PRs through gh, classify them, and write local state.
+      report   Print a markdown report from local state. Use --refresh to sync first.
+
+    The default state path is .github-triage/state.pstore, which is gitignored.
+    The script is read-only against GitHub. It does not label, close, comment, or merge.
+  USAGE
+end
+
+def parse_options(argv)
+  options = {
+    repo: ENV["GITHUB_REPOSITORY"],
+    state_path: DEFAULT_STATE_PATH,
+    refresh: false
+  }
+
+  parser = OptionParser.new do |opts|
+    opts.banner = usage
+    opts.on("--repo REPO", "Repository in owner/name form") { |value| options[:repo] = value }
+    opts.on("--state PATH", "Local PStore state path") { |value| options[:state_path] = File.expand_path(value) }
+    opts.on("--refresh", "Refresh state before report") { options[:refresh] = true }
+    opts.on("-h", "--help", "Print help") do
+      puts usage
+      exit 0
+    end
+  end
+
+  parser.parse!(argv)
+  [argv.shift, options]
+end
+
+def infer_repo
+  output, error, status = Open3.capture3("git", "-C", ROOT, "config", "--get", "remote.origin.url")
+  abort "Could not infer repository from git remote: #{error.strip}" unless status.success?
+
+  remote = output.strip
+  match = remote.match(%r{github\.com[:/]([^/]+/[^/.]+)(?:\.git)?\z})
+  abort "Could not parse GitHub owner/name from remote: #{remote}" unless match
+
+  match[1]
+end
+
+def gh_json(*args)
+  output, error, status = Open3.capture3("gh", *args)
+  unless status.success?
+    warn output unless output.empty?
+    abort "gh #{args.shelljoin} failed:\n#{error}"
+  end
+
+  JSON.parse(output)
+end
+
+def label_names(item)
+  Array(item["labels"]).map { |label| label.is_a?(Hash) ? label["name"] : label }.compact
+end
+
+def author_login(item)
+  author = item["author"]
+  author.is_a?(Hash) ? author["login"] : author.to_s
+end
+
+def body_text(item)
+  [item["title"], item["body"]].compact.join("\n")
+end
+
+def privacy_signal?(text)
+  text.match?(/\b\d{4}-\d{2}-\d{2}\b/) ||
+    text.match?(/\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}\b/i) ||
+    text.match?(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i) ||
+    text.match?(/\b(?:\+?1[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b/)
+end
+
+def thin_issue?(issue)
+  title = issue["title"].to_s.strip
+  body = issue["body"].to_s.strip
+  return true if body.empty? && title.length <= 24
+  return true if body.empty? && title.match?(/\A(?:\d+|nu|ну)\z/i)
+  return true if body.length <= 40 && (body == title || title.length <= 40)
+
+  false
+end
+
+def duplicate_docs_paste?(issue)
+  title = issue["title"].to_s.strip.downcase
+  body = issue["body"].to_s
+  title.length <= 5 && body.include?("This kit helps you use AI for family history")
+end
+
+def classify_issue(issue)
+  text = body_text(issue)
+  down = text.downcase
+
+  if privacy_signal?(text)
+    return {
+      classification: "privacy-risk",
+      confidence: "high",
+      labels: %w[question],
+      recommended_action: "Ask the author to remove private details and continue only with redacted deceased-person facts."
+    }
+  end
+
+  if down.include?("solana") || down.include?("open api") || down.include?("sdk") || down.include?("meeet world")
+    return {
+      classification: "spam",
+      confidence: "high",
+      labels: %w[invalid wontfix],
+      recommended_action: "Close as unrelated promotion."
+    }
+  end
+
+  if duplicate_docs_paste?(issue)
+    return {
+      classification: "duplicate-docs-paste",
+      confidence: "high",
+      labels: %w[duplicate invalid],
+      recommended_action: "Close as accidental pasted documentation with no requested change."
+    }
+  end
+
+  if down.include?("family_tree.md") || down.include?("вопрос") || text.include?("?")
+    return {
+      classification: "usage-question",
+      confidence: "medium",
+      labels: %w[question documentation],
+      recommended_action: "Answer from the template guidance, then close if no docs gap remains."
+    }
+  end
+
+  if down.include?("create my genealogy tree") || down.include?("surname") ||
+     down.include?("genealogy") || down.include?("генеалог")
+    return {
+      classification: "needs-info",
+      confidence: "medium",
+      labels: %w[question],
+      recommended_action: "Request a redacted self-service intake. Do not research a private family in a public issue."
+    }
+  end
+
+  if thin_issue?(issue)
+    return {
+      classification: "needs-info",
+      confidence: "medium",
+      labels: %w[question],
+      recommended_action: "Ask for a clear question, expected outcome, and redacted context. Close if abandoned."
+    }
+  end
+
+  {
+    classification: "human-review",
+    confidence: "low",
+    labels: %w[question],
+    recommended_action: "Review manually before taking action."
+  }
+end
+
+def changed_paths(pr)
+  Array(pr["files"]).map { |file| file.is_a?(Hash) ? file["path"] : file }.compact
+end
+
+def docs_only?(paths)
+  return false if paths.empty?
+
+  paths.all? do |path|
+    path.end_with?(".md") ||
+      path.start_with?("archives/") ||
+      path.start_with?("reference/") ||
+      path.start_with?("guides/") ||
+      path.start_with?("workflows/") ||
+      path.start_with?("checklists/") ||
+      path.start_with?("review-cards/") ||
+      path == "README.md" ||
+      path == "START_HERE.md" ||
+      path == "CONTRIBUTING.md"
+  end
+end
+
+def classify_pr(pr)
+  text = body_text(pr)
+  down = text.downcase
+  paths = changed_paths(pr)
+
+  if pr["isDraft"]
+    return {
+      classification: "draft",
+      confidence: "high",
+      labels: %w[enhancement],
+      recommended_action: "Leave open until the author marks it ready."
+    }
+  end
+
+  if down.include?("stacks on #") || down.include?("companion to #")
+    return {
+      classification: "stacked",
+      confidence: "high",
+      labels: %w[enhancement],
+      recommended_action: "Merge or supersede the base PR first, then ask for a rebase."
+    }
+  end
+
+  if paths.include?("scripts/validate-repo") || down.include?("invalid byte sequence")
+    return {
+      classification: "repair-ready",
+      confidence: "high",
+      labels: %w[bug],
+      recommended_action: "Run validation under normal and C locales, then merge or include in maintainer branch."
+    }
+  end
+
+  if docs_only?(paths)
+    return {
+      classification: "docs-ready",
+      confidence: "medium",
+      labels: %w[documentation],
+      recommended_action: "Review sources and links, run validation, then merge or include in maintainer branch."
+    }
+  end
+
+  {
+    classification: "needs-human-review",
+    confidence: "medium",
+    labels: %w[enhancement],
+    recommended_action: "Inspect patch and run focused tests before deciding merge, changes requested, or superseded."
+  }
+end
+
+def fetch_snapshot(repo)
+  issues = gh_json(
+    "issue", "list",
+    "--repo", repo,
+    "--state", "open",
+    "--limit", "100",
+    "--json", ISSUE_FIELDS.join(",")
+  )
+  pull_requests = gh_json(
+    "pr", "list",
+    "--repo", repo,
+    "--state", "open",
+    "--limit", "100",
+    "--json", PR_FIELDS.join(",")
+  )
+
+  classifications = {}
+  issues.each { |issue| classifications["issue:#{issue["number"]}"] = classify_issue(issue) }
+  pull_requests.each { |pr| classifications["pr:#{pr["number"]}"] = classify_pr(pr) }
+
+  {
+    "repo" => repo,
+    "generated_at" => Time.now.utc.iso8601,
+    "issues" => issues,
+    "pull_requests" => pull_requests,
+    "classifications" => classifications
+  }
+end
+
+def write_state(path, snapshot)
+  FileUtils.mkdir_p(File.dirname(path))
+  store = PStore.new(path)
+  store.transaction do
+    store[:snapshot] = snapshot
+  end
+end
+
+def read_state(path)
+  abort "No triage state found at #{path}. Run scripts/github-triage sync first." unless File.exist?(path)
+
+  store = PStore.new(path)
+  store.transaction(true) { store[:snapshot] }
+end
+
+def pipe_escape(value)
+  value.to_s.gsub("|", "\\|").gsub("\n", " ")
+end
+
+def classification_for(snapshot, key)
+  snapshot.fetch("classifications").fetch(key)
+end
+
+def print_summary(snapshot)
+  counts = Hash.new(0)
+  snapshot["classifications"].each_value { |data| counts[data[:classification] || data["classification"]] += 1 }
+
+  puts "# GitHub Triage Report"
+  puts
+  puts "- Repo: `#{snapshot["repo"]}`"
+  puts "- Generated: `#{snapshot["generated_at"]}`"
+  puts "- Open issues: #{snapshot["issues"].length}"
+  puts "- Open PRs: #{snapshot["pull_requests"].length}"
+  puts
+  puts "## Classification Summary"
+  puts
+  puts "| Classification | Count |"
+  puts "|---|---:|"
+  counts.sort.each { |classification, count| puts "| #{pipe_escape(classification)} | #{count} |" }
+
+  puts
+  puts "## Pull Requests"
+  puts
+  puts "| PR | Author | Classification | Recommended Action | Labels |"
+  puts "|---|---|---|---|---|"
+  snapshot["pull_requests"].sort_by { |pr| pr["number"] }.each do |pr|
+    data = classification_for(snapshot, "pr:#{pr["number"]}")
+    labels = Array(data[:labels] || data["labels"]).join(", ")
+    puts "| [##{pr["number"]}](#{pr["url"]}) #{pipe_escape(pr["title"])} | #{pipe_escape(author_login(pr))} | #{pipe_escape(data[:classification] || data["classification"])} | #{pipe_escape(data[:recommended_action] || data["recommended_action"])} | #{pipe_escape(labels)} |"
+  end
+
+  puts
+  puts "## Issues"
+  puts
+  puts "| Issue | Author | Classification | Recommended Action | Labels |"
+  puts "|---|---|---|---|---|"
+  snapshot["issues"].sort_by { |issue| issue["number"] }.each do |issue|
+    data = classification_for(snapshot, "issue:#{issue["number"]}")
+    labels = Array(data[:labels] || data["labels"]).join(", ")
+    puts "| [##{issue["number"]}](#{issue["url"]}) #{pipe_escape(issue["title"])} | #{pipe_escape(author_login(issue))} | #{pipe_escape(data[:classification] || data["classification"])} | #{pipe_escape(data[:recommended_action] || data["recommended_action"])} | #{pipe_escape(labels)} |"
+  end
+end
+
+command, options = parse_options(ARGV)
+if command.nil? || !%w[sync report].include?(command)
+  warn usage
+  exit 1
+end
+
+repo = options[:repo] || infer_repo
+
+case command
+when "sync"
+  snapshot = fetch_snapshot(repo)
+  write_state(options[:state_path], snapshot)
+  puts "github-triage: synced #{snapshot["issues"].length} issue(s) and #{snapshot["pull_requests"].length} PR(s)"
+  puts "state: #{options[:state_path]}"
+when "report"
+  if options[:refresh]
+    snapshot = fetch_snapshot(repo)
+    write_state(options[:state_path], snapshot)
+  else
+    snapshot = read_state(options[:state_path])
+  end
+  print_summary(snapshot)
+end

@@ -74,7 +74,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Archive Guides (`archives/`)
 
-23 country and region-specific guides covering where to find records, what is free vs paid, and what AI tools can access directly vs what requires a browser.
+24 country and region-specific guides covering where to find records, what is free vs paid, and what AI tools can access directly vs what requires a browser.
 
 **Europe**: Ireland, England/Wales, Scotland, France, Italy, Spain/Portugal, Germany, Netherlands, Austria, Hungary, Norway, Sweden, Poland, Russia/Ukraine
 
@@ -86,7 +86,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Reference Guides (`reference/`)
 
-10 methodology documents: confidence tiers, source hierarchy, vault file manifest, DNA interpretation guardrails, naming conventions (patronymics, farm names, przydomki), GEDCOM format guide, common pitfalls, glossary, AI capabilities assessment, and the case for autoresearch in genealogy.
+11 methodology documents: confidence tiers, source hierarchy, vault file manifest, DNA interpretation guardrails, naming conventions (patronymics, farm names, przydomki), GEDCOM format guide, common pitfalls, glossary, AI capabilities assessment, GitHub triage lane, and the case for autoresearch in genealogy.
 
 ### Workflows (`workflows/`)
 

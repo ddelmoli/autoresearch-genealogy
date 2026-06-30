@@ -117,6 +117,15 @@ Jewish immigration to the Americas, South Africa, Palestine/Israel, and Australi
 
 Immigrant mutual aid societies organized by town of origin. Members who came from the same shtetl formed organizations that maintained membership rolls, cemetery sections, benefit records, and community newsletters. Many deposited their archives with YIVO Institute for Jewish Research in New York (https://www.yivo.org/). These records can identify individuals' towns of origin and connect immigrant families to their pre-migration communities.
 
+### Cemetery Records as Origin Clues
+
+Because those societies owned the cemetery plots, where a person is buried can reveal the family's town of origin:
+
+- **The society / section name points to the town.** Many large urban Jewish cemeteries publish searchable interment databases; the burial record's society or section field often names a hometown society (e.g. "First [Townname]er") that identifies the shtetl.
+- **Plot adjacency groups families.** Neighboring graves frequently identify spouses and disambiguate same-name individuals.
+- **Caveat:** a married woman was usually buried in her husband's society plot, so it indicates the household's (his) town, not necessarily her own birthplace.
+- **Hebrew headstones name the father.** The Hebrew inscription "[name] ben/bat [father's name]" gives the patronymic — recovering a generation for free, often corroborated by a firstborn child named for that ancestor.
+
 ## The Pale of Settlement
 
 From 1791 to 1917, most Jews in the Russian Empire were restricted to the Pale of Settlement: present-day Lithuania, Belarus, Ukraine, Moldova, and eastern Poland. Understanding the Pale is essential for Eastern European Jewish research because:
@@ -163,6 +172,7 @@ Sephardic and Mizrachi Jewish ancestry is harder to detect genetically because t
 ## Common Pitfalls
 
 - **Assuming all records were destroyed in the Holocaust.** Many survived in state archives, particularly in Lithuania, Ukraine, and Poland. Soviet-era archives preserved metric books as government property. JewishGen's databases index many of these surviving records.
+- **Conversely, confirm the records actually survive before an exhaustive hunt.** Some district registers genuinely were lost. Resources like Gesher Galicia's district inventories tell you whether a town's pre-war Jewish registers still exist; "town identified, records lost" is a valid, documentable endpoint — not a cue to keep re-searching a dead collection.
 - **Not using the Daitch-Mokotoff Soundex.** Standard Soundex was designed for English-language names and misses most Eastern European Jewish name variants. Always search with Daitch-Mokotoff, which is built into JewishGen's search tools.
 - **Overlooking Yizkor books.** These community memorial books are irreplaceable. If your ancestor's town has a Yizkor book, it may contain family names, photographs, and community history that survive nowhere else.
 - **Not distinguishing between Ashkenazi, Sephardic, and Mizrachi research.** These are fundamentally different research paths: different regions, different languages, different archives, different databases. JewishGen is strongest for Ashkenazi research. Sephardic research involves Iberian, Ottoman, and North African archives. Mizrachi research involves Middle Eastern and Central Asian archives.
