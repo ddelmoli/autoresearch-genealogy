@@ -153,13 +153,17 @@ def _flat(index):
 
 def main():
     ap = argparse.ArgumentParser(description="Derive a person->shard-file locator from a sharded family tree.")
-    ap.add_argument("--vault", default=DEFAULT_VAULT, help="Path to the vault directory (default: ../vault).")
+    ap.add_argument("--vault", default=None, help="Path to the vault directory (default: $AUTORESEARCH_VAULT, else ../vault).")
     ap.add_argument("--by-file", action="store_true", help="Group output by shard file.")
     ap.add_argument("--by-region", action="store_true", help="Group output by manifest region.")
     ap.add_argument("--region", help="Filter to a region substring.")
     ap.add_argument("--csv", action="store_true", help="Emit CSV: name,file,generation,region.")
     ap.add_argument("--check", action="store_true", help="Integrity report; exit 1 if any issue.")
     args = ap.parse_args()
+    # Vault precedence (standalone — no dependency on the local toolkit):
+    # AUTORESEARCH_VAULT env var -> --vault arg -> the ../vault sibling default.
+    _env = os.environ.get("AUTORESEARCH_VAULT")
+    args.vault = os.path.expanduser(_env) if _env else (args.vault or DEFAULT_VAULT)
 
     index, manifest, files_on_disk = build_index(args.vault)
 
