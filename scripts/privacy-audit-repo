@@ -7,6 +7,14 @@ require "digest"
 require "shellwords"
 require "time"
 
+# Denylist terms and tracked files legitimately contain UTF-8 characters (accented
+# names, diacritics). Without this, Shellwords#shelljoin (building the `git log
+# -S<term>` history query) and File.read inherit the locale's default external
+# encoding, so under an ASCII locale (e.g. LANG unset or LANG=C) the first
+# non-ASCII byte raises "invalid byte sequence in US-ASCII". Force UTF-8 so the
+# audit is locale-independent. (Companion to the same fix in validate-repo, #17.)
+Encoding.default_external = Encoding::UTF_8
+
 ROOT = File.expand_path("..", __dir__)
 DENYLIST_PATH = File.join(ROOT, ".private/anonymization-denylist.txt")
 DEFAULT_REPORT_DIR = File.join(Dir.home, ".cache", "autoresearch-genealogy", "privacy-audits")
