@@ -13,7 +13,7 @@ Locate a Find a Grave memorial for every deceased person in your family tree.
 
 ## Autoresearch Configuration
 
-**Goal**: For every deceased person in `[VAULT_PATH]/Family_Tree.md`, search Find a Grave for their memorial. Extract all available data and update the vault.
+**Goal**: For every deceased person in the vault (`[VAULT_PATH]/Family_Tree*.md` entries with `life_status: deceased`), search Find a Grave for their memorial. Extract all available data and update the vault.
 
 **Metric**: Number of deceased persons WITHOUT a Find a Grave memorial link
 
@@ -30,7 +30,7 @@ Locate a Find a Grave memorial for every deceased person in your family tree.
 
 **Protocol**:
 
-1. **Build the deceased list**: Read `[VAULT_PATH]/Family_Tree.md`. List every person with a death date or "deceased" notation. For each, note:
+1. **Build the deceased list**: Read the vault's `[VAULT_PATH]/Family_Tree*.md` entries (or the on-demand roster: `python3 scripts/gen_person_index.py --write /tmp/roster.md`). List every person with `life_status: deceased` (or a death date). For each, note:
    - Full name (all known variants)
    - Birth and death dates (even approximate)
    - Expected burial location (city, state, or cemetery if known)
@@ -55,7 +55,7 @@ Locate a Find a Grave memorial for every deceased person in your family tree.
    - Extract: full name as listed, birth/death dates, burial location (cemetery name and city/state), spouse(s), parents, children, linked records (Ancestry, FamilySearch)
    - Compare against vault data. Note any discrepancies.
    - Update the person file with the memorial link and any new data
-   - Update Family_Tree.md if the memorial reveals new relationships
+   - Update the appropriate Family Tree shard (per the File Index in `Family_Tree.md`) if the memorial reveals new relationships
 
 6. **When a memorial is NOT found**:
    - Log as NO_MEMORIAL_FOUND with all search terms tried

@@ -73,3 +73,14 @@ Every person in your tree should have at least two independent sources. A person
 
 ### Ignoring Discrepancies
 When two sources disagree, do not quietly pick one. Document both, note which is more reliable and why, and mark the discrepancy for future resolution. Silent choices become invisible errors.
+
+## Search Strategy Pitfalls
+
+### Skipping the FS Source Citation Check Before Gap-Fill Scans
+When a person's death date (or other event) is unknown, the instinct is to launch register scans across a plausible date window: 1816, 1817, 1818, ... year by year. This can burn days or weeks of scanning if the underlying hypothesis is wrong.
+
+Before launching any gap-fill scan of a known archive (Antenati ARKs, FamilySearch image collections), open the target person's FamilySearch profile (or other community-tree profile), open the Sources tab, toggle Detail View on, and check each attached source for a "Web Page (Link to the Record)" field. Community contributors often paste the direct archive URL to the source image. That image is often part of an adjacent fascicolo (e.g., an Italian matrimoni processetti bundle containing certified extracts of birth, death, and consent records for both spouses and their parents) — drilling 5-10 adjacent pages may surface documents that resolve the question in one pass.
+
+This single check takes minutes; skipping it can cost weeks of scans on the wrong hypothesis. Worked example: one Italian ancestor (b. ~1770) accumulated roughly 1,200 negative *atti* scans across an 1816-1850 death-register window before a single FS source-citation trace on his wife's profile led straight to an 1852 *matrimoni processetti* page proving him still alive at age 82 — the death-window hypothesis had been off by decades.
+
+The pattern generalizes to any record system where contributors attach source images to person profiles: Antenati (via FamilySearch), Geneteka (Polish), ScotlandsPeople (Scottish), etc. See [workflows/source-citation-trace.md](../workflows/source-citation-trace.md) for the step-by-step trace procedure.

@@ -2,7 +2,7 @@
 
 Autoresearch prompts for AI-assisted genealogy research. Designed for Claude Code's `/autoresearch` command but adaptable to any AI tool that supports autonomous iteration.
 
-> **Sharded trees (optional):** if your `Family_Tree.md` has grown and been split into shard files (listed in its File Index — see `vault-template/Family_Tree.md`), treat every reference to `Family_Tree.md` in this prompt as also covering those shard files: read them all, and route new people to the shard whose Region matches their line. Un-sharded vaults can ignore this note.
+> **Sharded trees (optional):** if your `Family_Tree.md` has grown and been split into shard files (listed in its File Index — see `vault-template/Family_Tree.md`), treat every reference to `Family_Tree.md` in these prompts as also covering those shard files: read them all, and route new people to the shard whose Region matches their line. Un-sharded vaults can ignore this note.
 
 ## How to Use
 
@@ -42,6 +42,17 @@ Run `03-findagrave-sweep` to locate Find a Grave memorials and extract data from
 **Want to export your tree?**
 Run `04-gedcom-completeness` to build or verify a GEDCOM file that matches your vault.
 
+**Want to focus tree expansion on a subset of lines?**
+Run `01-tree-expansion` with its optional `[SCOPE]` input set to the shard files / Region you want to focus on (e.g. one branch), rather than the whole tree.
+
+**Want to add primary-source military service citations?**
+Run `16-aad-military-sweep` to check NARA's Access to Archival Databases (https://aad.archives.gov/aad/) for every US-resident ancestor of military age during WWII, Korea, Vietnam, or later conflicts.
+
+**Want to push vault-confirmed people up into the FamilySearch tree?**
+Run `17-familysearch-tree-contribution` to contribute new persons and relationships from `Family_Tree*.md` into FamilySearch (anchored at subject [SUBJECT_PID]), attaching primary sources per the tiered source-minimum and writing the new FS PID back to the vault's `- meta:` block. Capped at 5 persons / 10 sources per iteration. Requires a logged-in Claude in Chrome FamilySearch session.
+
+**Want to pull the sources already on your ancestors' FamilySearch profiles down into the vault?**
+Run `19-fs-source-harvest` to harvest each FS-PID-bearing entry's FS-attached primary-source ARKs (census, vital, immigration, register images, external archive links) into its `**FS-attached sources**` bullet, raising independent-source coverage on entries that cite few or no records. Read-only on FamilySearch (no operator gate); the FS→vault direction of "Recipe-S". Requires a logged-in Claude in Chrome FamilySearch session. This is the standalone coverage pass; prompt 17 folds the same harvest in as its step 8.5 when contributing.
 ## Human Review Cards
 
 Every prompt has a matching review card. Read the card after the prompt finishes and before accepting changes.
@@ -70,6 +81,9 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 02-cross-reference-audit | A populated `Family_Tree.md` plus person files or transcription notes |
 | 03-findagrave-sweep | A `Family_Tree.md` with death dates or "deceased" notations |
 | 04-gedcom-completeness | A `Family_Tree.md` and optionally an existing `.ged` file |
+| 16-aad-military-sweep | Populated `Family_Tree*.md` with deceased US-resident persons born ~1888-1985 (entries carry `- meta:` blocks; `life_status: deceased` only) |
+| 17-familysearch-tree-contribution | Populated `Family_Tree*.md` (entries with `fs: TBD` meta = the worklist); logged-in FamilySearch Chrome session (subject [SUBJECT_PID]); ≥1 attachable primary source per candidate |
+| 19-fs-source-harvest | Populated `Family_Tree*.md` (entries carry `- meta:` blocks with `fs:` PIDs = the worklist); logged-in FamilySearch Chrome session; optional coverage-audit helper to rank SOURCE_GAP targets |
 
 ## Placeholders
 
