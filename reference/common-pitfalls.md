@@ -84,3 +84,11 @@ Before launching any gap-fill scan of a known archive (Antenati ARKs, FamilySear
 This single check takes minutes; skipping it can cost weeks of scans on the wrong hypothesis. Worked example: one Italian ancestor (b. ~1770) accumulated roughly 1,200 negative *atti* scans across an 1816-1850 death-register window before a single FS source-citation trace on his wife's profile led straight to an 1852 *matrimoni processetti* page proving him still alive at age 82 — the death-window hypothesis had been off by decades.
 
 The pattern generalizes to any record system where contributors attach source images to person profiles: Antenati (via FamilySearch), Geneteka (Polish), ScotlandsPeople (Scottish), etc. See [workflows/source-citation-trace.md](../workflows/source-citation-trace.md) for the step-by-step trace procedure.
+
+## Privacy Pitfalls
+
+### Treating "skip living people" as one rule for every destination
+The safe default is to withhold living (and possibly-living) people from research and publication. But "publish" is not one thing: contributing a person to a **public shared tree** (FamilySearch, WikiTree) exposes their name, dates, and relationships to everyone, while adding the same person to your **own private tree** (a personal Ancestry-style tree only you can see) does not. The gate that matters is not "is this person living?" alone but "am I writing a living person to a *public* destination?" Decide it from the destination's visibility, not from a blanket rule — a public destination denies living and unknown people; a private one may include them. The failure mode is a helper or workflow that hard-codes "always skip living" and then, when a private destination is added later, either needlessly blocks legitimate private-tree work or (far worse) is quietly relaxed everywhere and leaks a living person onto a public tree. Keep the decision in one place and make it depend on the target.
+
+### Writing before you know the destination's visibility
+Before any write-back, confirm what kind of tree you are writing to. If a workflow can target more than one repository, resolve the specific target first, then apply the living-person gate for *that* target. Never carry a "public tree" assumption into a private-tree write, or a "private is fine" assumption into a public one.
