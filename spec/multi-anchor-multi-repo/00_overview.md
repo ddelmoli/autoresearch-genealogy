@@ -19,6 +19,9 @@
 ## Interface Summary
 Spec 01 produces the three config blocks and their loaders. Spec 02 consumes `anchor`. Spec 03 consumes `hosts` and produces the record/locator grammar plus a provider-neutral coverage metric. Spec 04 consumes `repositories` and the Spec 03 locator model to route source and person write-backs to any enabled target under the correct privacy gate.
 
+## Two-repo model and vault adoption
+Every spec has two sides: a **framework** change (scripts, templates, prompts, docs in this public repo) and a **vault-adoption** step that applies the change to the live vault. The live vault is a separate local-only git repository; its config values and any data migration are committed there, not here. Per-family facts (the anchor people, the repository credentials, the host list) live in the vault's own gitignored `.autoresearch.json` and in the private instance doc, never in this public spec. Each spec therefore carries a **Vault adoption** acceptance criterion that references the live vault generically (`$AUTORESEARCH_VAULT`); the concrete values are filled in on the private side. A spec is not done until both the framework side passes and the live vault has adopted it.
+
 ## Non-goals
 - No database. The vault stays flat Markdown; the record/locator model is a bullet convention, not a schema migration.
 - No new provider integrations are built here (no Ancestry or WikiTree API client). This lane defines the model and gates; a specific provider's write client is a later lane.

@@ -30,6 +30,7 @@
 - [ ] A person write-back records the new external id under the correct meta key for the target.
 - [ ] A source write-back adds the target's `host:locator` to the record per Spec 03.
 - [ ] `scripts/validate-repo` passes under UTF-8 and `LC_ALL=C`.
+- [ ] **Vault adoption:** the live vault's `.autoresearch.json` `repositories` block is set (the default `fs` target, plus any schema-capable-but-disabled targets the operator wants documented), committed in the vault repo, and the per-target privacy gate is confirmed against `$AUTORESEARCH_VAULT` (a public target still skips the vault's `living`/`unknown` entries).
 
 ## Test Plan
 - Gate unit table: cross `life_status` in {living, deceased, unknown} with visibility in {public, private}; assert allow/deny.

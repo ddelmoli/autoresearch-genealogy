@@ -36,6 +36,7 @@
 - [ ] Migration converts existing FS-attached-source bullets with no loss of counted coverage; the run logs each change.
 - [ ] An unknown host in a locator is a warning, not a crash.
 - [ ] `scripts/validate-repo` passes under UTF-8 and `LC_ALL=C`.
+- [ ] **Vault adoption:** the migration runs over the live vault's narrative files (`$AUTORESEARCH_VAULT`), the relabeled `Sources` bullets and `host:locator` lists are committed in the vault repo, and `harvest_sources.py` reports the same or better per-record coverage as before the migration (no silent loss). Run against the vault's existing structural-gap allowlist so exempt entries stay exempt.
 
 ## Test Plan
 - Fixtures: one single-host record, one multi-host record, one legacy flat-ARK bullet, one unknown-host locator.

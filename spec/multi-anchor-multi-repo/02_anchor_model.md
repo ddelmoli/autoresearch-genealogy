@@ -26,6 +26,7 @@
 - [ ] Converting a fixture vault from `individual` to `couple` leaves all pre-existing generation numbers unchanged.
 - [ ] Generation counting produces Generation 1 = anchor set, Generation 2 = union of both people's parents.
 - [ ] `scripts/gen_person_index.py --integrity` passes on a couple-anchor fixture.
+- [ ] **Vault adoption:** the live vault is converted to its true `couple` anchor (its two Generation 1 people, named on the private side in the vault config and instance doc), pre-existing generation numbers are confirmed unchanged, and `--integrity` passes against `$AUTORESEARCH_VAULT`. The generation-anchor table and subject line in the private instance doc are updated to the couple form.
 
 ## Test Plan
 - Build a small couple-anchor fixture (two Generation 1 people, disjoint parents) and run the roster and integrity check.

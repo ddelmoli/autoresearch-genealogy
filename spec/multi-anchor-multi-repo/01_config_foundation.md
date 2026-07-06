@@ -28,6 +28,7 @@
 - [ ] A vault with each block populated yields the parsed values.
 - [ ] `scripts/gen_person_index.py --integrity` and `scripts/harvest_sources.py` still run unchanged (no consumer wired yet).
 - [ ] `scripts/validate-repo` passes under UTF-8 and `LC_ALL=C`.
+- [ ] **Vault adoption:** the live vault's `.autoresearch.json` gains the three blocks (an `anchor` seeded from its existing `subject`, the default `fs` repository, and the seed `hosts` map), committed in the vault repo, with the loaders returning those values against `$AUTORESEARCH_VAULT`. The concrete anchor identity is recorded on the private side (instance doc), not here.
 
 ## Test Plan
 - Unit-style smoke: load a fixture config with all three blocks and assert parsed shape; load an empty config and assert each default.
