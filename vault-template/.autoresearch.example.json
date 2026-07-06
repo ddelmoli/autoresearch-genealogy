@@ -1,0 +1,58 @@
+{
+  "_comment": "Example .autoresearch.json. Copy to your vault as .autoresearch.json and edit. This file is strict JSON (no // comments); documentation lives in '_comment' keys, which the loader ignores. Every block below is OPTIONAL: omit a block to accept the documented default in scripts/vault_config.py. See CLAUDE.method.md.",
+
+  "vault_name": "Smith-Jones",
+  "_comment_subject": "Legacy single-subject label. If 'anchor.people' is empty, the loader synthesizes one anchor person from this string.",
+  "subject": "Pat Smith (Gen 1)",
+  "gedcom": "SmithJones.ged",
+
+  "_comment_anchor": "The vault's Generation 1. kind 'individual' = one person; kind 'couple' = the married couple (two people, both Gen 1). Converting individual to couple adds a second person's ancestry as new Gen-2+ entries and never renumbers existing entries.",
+  "anchor": {
+    "kind": "couple",
+    "people": [
+      { "id": "P-XXXXXX", "name": "Pat Smith", "fs": "XXXX-XXX" },
+      { "id": "P-YYYYYY", "name": "Chris Jones", "fs": "YYYY-YYY" }
+    ]
+  },
+
+  "_comment_repositories": "Where the toolkit reads from and writes back to. Read and write auth are separate. visibility drives the living-person gate: a 'public' target skips living/unknown people; a 'private' target may include them. A write target ships enabled:false unless you opt in, so e.g. WikiTree stays corroboration-only by default.",
+  "repositories": {
+    "fs": {
+      "kind": "shared-tree",
+      "read":  { "autonomous": true },
+      "write": { "enabled": true, "operator_gated": true, "visibility": "public" }
+    },
+    "wt": {
+      "_comment": "Schema-capable but write-disabled by default: WikiTree stays read/corroboration-only until you set write.enabled true.",
+      "kind": "corroboration",
+      "read":  { "autonomous": false },
+      "write": { "enabled": false, "operator_gated": true, "visibility": "public" }
+    },
+    "anc": {
+      "_comment": "A PRIVATE personal tree can legally hold living people a public shared tree cannot, hence visibility 'private'.",
+      "kind": "personal-tree",
+      "read":  { "autonomous": false },
+      "write": { "enabled": false, "operator_gated": true, "visibility": "private" }
+    }
+  },
+
+  "_comment_hosts": "Where a source record can be hosted. locator_kind 'ark' when the host mints ARKs (self-describing via the NAAN prefix), else 'url' or 'id'. Seeded with the hosts harvest_sources.py recognizes.",
+  "hosts": {
+    "familysearch":     { "label": "FamilySearch",           "ark_naan": "61903", "locator_kind": "ark" },
+    "antenati":         { "label": "Portale Antenati",       "ark_naan": "12657", "locator_kind": "ark" },
+    "metryki":          { "label": "Metryki (genealodzy.pl)", "url_pattern": "metryki.genealodzy.pl", "locator_kind": "url" },
+    "szukajwarchiwach": { "label": "Szukaj w Archiwach",     "url_pattern": "szukajwarchiwach.gov.pl", "locator_kind": "url" },
+    "agad":             { "label": "AGAD (Fond 300)",        "url_pattern": "agadd2.home.net.pl",      "locator_kind": "id" }
+  },
+
+  "_comment_structural_gap": "Entries that can essentially never acquire an indexed ARK (deep pre-registration lines). deep_gen_threshold: Gen >= this is peerage/visitation-documented. rules: region- or PID-scoped exemptions from the SOURCE_GAP to-do count.",
+  "structural_gap": {
+    "deep_gen_threshold": 16,
+    "rules": [
+      { "label": "example: pre-1866 parish-resident line, registers not digitized online", "region": "Somewhere", "pid_prefixes": ["ABC"] }
+    ]
+  },
+
+  "known_dup_fs_pids": { "count": 0, "note": "advisory baseline for the DUP_FS_PID display" },
+  "dup_fs_pid_overrides": {}
+}

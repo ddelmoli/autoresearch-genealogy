@@ -7,10 +7,10 @@
   - `anchor`: `{ "kind": "individual" | "couple", "people": [ { "id", "name", "fs"? } ] }`. One person for `individual`, two for `couple`. Consumed by Spec 02.
   - `repositories`: a map of repository id to `{ "kind": "shared-tree" | "personal-tree" | "corroboration", "read": { "autonomous": bool }, "write": { "enabled": bool, "operator_gated": bool, "visibility": "public" | "private" } }`. Consumed by Spec 04.
   - `hosts`: a map of host id to `{ "label", "ark_naan"?, "url_pattern"?, "locator_kind": "ark" | "url" | "id" }`. Consumed by Spec 03. Seeded with the hosts already recognized by `harvest_sources.py` (familysearch NAAN 61903, antenati NAAN 12657, metryki, szukajwarchiwach).
-- Add loader functions in `scripts/vault_config.py`, each returning a documented default when its block is absent:
-  - `get_anchor(cfg)`: defaults to a single-person anchor synthesized from the legacy subject convention (an `individual` anchor with an empty people list is acceptable as the null default).
-  - `get_repositories(cfg)`: defaults to a single `fs` repository, `shared-tree`, read autonomous, write enabled and operator-gated, visibility public. This exactly reproduces today's FamilySearch-only behavior.
-  - `get_hosts(cfg)`: defaults to the four hosts hardcoded in `harvest_sources.py` today.
+- Add loader functions in `scripts/vault_config.py`, each taking `vault_dir` (matching the existing `structural_gap` / `gedcom_path` convention) and returning a documented default when its block is absent:
+  - `get_anchor(vault_dir)`: defaults to an `individual` anchor synthesized from the legacy `subject` string (a single person, empty people list acceptable as the null default).
+  - `get_repositories(vault_dir)`: defaults to a single `fs` repository, `shared-tree`, read autonomous, write enabled and operator-gated, visibility public. This exactly reproduces today's FamilySearch-only behavior.
+  - `get_hosts(vault_dir)`: defaults to the hosts hardcoded in `harvest_sources.py` today (familysearch, antenati, metryki, szukajwarchiwach, agad).
 - Defaults must be defined once and shared, so a fresh vault with no `.autoresearch.json` and a legacy vault with a partial one both behave like the current framework.
 - The default `repositories` map is FamilySearch only. A vault may add a WikiTree entry, but it ships **write-disabled** (`write.enabled: false`), so WikiTree stays corroboration-only unless a vault explicitly opts in (see Spec 04). The example config shows a disabled `wt` entry to document the shape without enabling it.
 
@@ -28,7 +28,7 @@
 - [ ] A vault with each block populated yields the parsed values.
 - [ ] `scripts/gen_person_index.py --integrity` and `scripts/harvest_sources.py` still run unchanged (no consumer wired yet).
 - [ ] `scripts/validate-repo` passes under UTF-8 and `LC_ALL=C`.
-- [ ] **Vault adoption:** the live vault's `.autoresearch.json` gains the three blocks (an `anchor` seeded from its existing `subject`, the default `fs` repository, and the seed `hosts` map), committed in the vault repo, with the loaders returning those values against `$AUTORESEARCH_VAULT`. The concrete anchor identity is recorded on the private side (instance doc), not here.
+- [ ] **Vault adoption:** the loaders resolve correctly against the live vault (`$AUTORESEARCH_VAULT`): `get_anchor` synthesizes the existing single subject, `get_repositories`/`get_hosts` return the seed defaults, and `gen_person_index --integrity` + `harvest_sources` still run unchanged. Because omitting a block accepts its default, the vault config is NOT bloated with redundant default `repositories`/`hosts` blocks; the explicit `anchor` declaration (its couple form) lands in Spec 02, and any host or repository override is written only when the vault deviates from the seed.
 
 ## Test Plan
 - Unit-style smoke: load a fixture config with all three blocks and assert parsed shape; load an empty config and assert each default.
