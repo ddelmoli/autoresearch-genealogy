@@ -17,6 +17,11 @@
 - Modify: `CLAUDE.method.md` and the tracked generation-counting guidance
 - Modify: any script that hardcodes a single Generation 1 anchor (enumerate during implementation)
 
+## Implementation notes (found during Spec 02)
+- Generation *numbering* is already couple-safe: `generation` is a stored per-person field, not computed from a subject, so two people can both be `generation: 1` and `gen_person_index --integrity` is unaffected. The live vault already carries two Generation 1 entries (the anchor couple), both `life_status: living`.
+- The only code with a single-root assumption was `prose_audit.build_relation_map`, which derives "paternal grandmother"-style descriptors from an ASCII tree in `Family_Tree.md`. Its father/mother detection was a GLOBAL count, so a second anchor root mislabeled the spouse's first parent as "mother". Fixed to track father/mother PER depth-0 root (reset at each root), which is behavior-identical for a single-root diagram and correct for a two-root couple diagram. Verified with a synthetic two-root fixture.
+- Adding the spouse's ASCII subtree as a second depth-0 root in the vault's `Family_Tree.md` is VAULT-ADOPTION content (extends descriptor coverage to the spouse's line); the framework fix makes that diagram parse correctly once present.
+
 ## Boundary Map
 - **Produces**: an anchor-set generation model and prompt inputs that accept one or two anchor people.
 - **Consumes**: `get_anchor` from Spec 01.

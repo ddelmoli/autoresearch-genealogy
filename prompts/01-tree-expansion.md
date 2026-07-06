@@ -15,7 +15,7 @@ Find source-backed candidate relationships for deceased ancestors without treati
 - `[BIRTH YEAR]`: known or approximate birth year
 - `[SURNAME]`: family surname or historical surname variant
 - `[FS_GROUP_TREE]`: URL of your FamilySearch group/family tree, if you use one (configure in your local project instructions)
-- `[SUBJECT_PID]`: the starting person's FamilySearch PID (configure in your local project instructions)
+- `[SUBJECT_PID]`: the starting person's FamilySearch PID (configure in your local project instructions). A vault anchored on a married couple has one anchor person per spouse; run the expansion from each anchor's PID in turn.
 - `[SCOPE]` (optional): a subset of shard files / a Region to focus on; leave unset to expand the whole tree
 
 ## Autoresearch Configuration
