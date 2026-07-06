@@ -4,7 +4,7 @@
 | 00 | Overview | planned | - | - |
 | 01 | Config Foundation | done | loader smoke test (defaults/synthesis/couple/copy-safety), `gen_person_index --integrity`, `harvest_sources` | pending |
 | 02 | Anchor Model | done | prose_audit regression + synthetic two-root fixture; vault get_anchor=couple; vault pre-commit integrity | 15c6d59 (fw) / vault 4bc2933 |
-| 03 | Source Locator Model | steps 1-2 done, step 3 (vault --apply) pending | harvest_sources record/host fixtures + byte-identical vault CSV; migrate_sources fixtures + 700-bullet dry-run | private scripts / vault template 68d5d06 |
+| 03 | Source Locator Model | done (Phase A); Phase B backlog (98 flags) | fixtures + byte-identical pre-migration CSV; migrated vault coverage-neutral (categories identical, 0 inflation); vault pre-commit integrity | private scripts / vault template 68d5d06, migration 5c266d6 |
 | 04 | Repository Write-Back | planned | - | - |
 
 ## Current: Specs 01 and 02 done; 03 and 04 planned
@@ -20,7 +20,11 @@ Spec 03 step 1 done (framework tooling, private scripts, fixtures only — no va
 
 Step 2 done (writers/docs): the vault `templates/person_narrative.md` (vault commit 68d5d06), local prompts 17/19, and `CLAUDE.method.md` Rule 8 now emit/describe the `**Sources**` record/host:locator grammar, with the transitional dual-label note and a pointer to `migrate_sources.py`.
 
-Step 3 pending (PAUSED for review): run `migrate_sources.py --apply` over the 28 vault files (700 bullets, 98 flags), confirm `harvest_sources` shows no coverage loss, and commit in the vault repo. This is the one big vault-data change; held for a go-ahead.
+Step 3 done (Phase A vault adoption, vault commit 5c266d6): ran `migrate_sources.py --apply` over 24 files (700 bullets). Diagnosed and fixed a counting bug found during verification — `count_records` counted record LINES, so pre-existing duplicate ARKs (the same source cited in a person's bullet and a children note) that the legacy set-based count deduped were inflating the migrated count (e.g. 40->51). Fix: a record's identity is its SET of `host:locator` tokens, deduped. After the fix the migrated vault is provably coverage-neutral: `harvest_sources` categories are IDENTICAL to pre-migration (SOURCE_GAP 17, LOW 176, WELL 618, STRUCTURAL 147), with 0 increases and only merge-driven decreases. Idempotent (second `--apply` = 0 changes); pre-commit integrity 0 HARD.
+
+Phase B (incremental, ongoing, NOT this spec): 98 flagged bullets (48 freeform + 50 merge-hint) each carry a preserved `note (pre-migration)` line — re-attach per-record descriptors and confirm any same-record locator merges. Burn down opportunistically when editing a file.
+
+Spec 03 complete. Next: Spec 04 (repository write-back + per-target privacy gate).
 
 Next: Spec 03 (source-locator model) — the load-bearing change that unlocks Spec 04. Vault impact measured (06 JUL 2026): ~697 `FS-attached sources` bullets across 28 files, ~7,900 locator tokens, ~40+ multi-locator-same-record spots. Folded into Spec 03 as its Vault Adoption section. Migration approach = **(b)**: Phase A mechanical pass (relabel + host-prefix + one-record-per-locator) that AUTO-MERGES high-confidence pairs (persona/household, index/image) and FLAGS ambiguous cases for a later incremental Phase B. Dual-label parser makes it gradual and non-destructive.
 
@@ -44,3 +48,4 @@ Each spec has two sides: a framework change (this public repo) and a vault-adopt
 - 2026-07-06 Measured Spec 03 vault impact against the live vault and folded it into the spec as a Vault Adoption section. Chose migration approach (b): Phase A auto-merges high-confidence multi-locator pairs and flags ambiguous ones for incremental Phase B. Added acceptance criteria + test-plan cases for the auto-merge/flag and idempotent dry-run/apply migration.
 - 2026-07-06 Spec 03 step 1 (tooling): rewrote harvest_sources.py to count records + per-host (byte-identical vault CSV proves backward-compat) and added migrate_sources.py (approach-b migration, dry-run/apply/idempotent). Fixtures pass; 700-bullet vault dry-run: 7091 locators -> 7090 records, 98 flagged. Private scripts (OneDrive-backed).
 - 2026-07-06 Spec 03 step 2 (writers/docs): vault person-narrative template (vault 68d5d06), local prompts 17/19, and CLAUDE.method.md Rule 8 now emit/describe the **Sources** record/host:locator grammar with the transitional dual-label note. Step 3 (vault --apply migration) paused for review.
+- 2026-07-06 Spec 03 step 3 (Phase A migration, vault 5c266d6): --apply over 24 files. Fixed a count_records line-vs-set inflation bug found in verification (dedupe records by host:locator token-set). Migrated vault coverage-neutral (categories identical to pre-migration, 0 inflation), idempotent, pre-commit 0 HARD. Spec 03 done; Phase B backlog = 98 flagged bullets with preserved pre-migration notes.
