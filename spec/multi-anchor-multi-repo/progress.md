@@ -14,7 +14,7 @@ Spec 02 done (framework + vault adoption). Framework: generation numbering was a
 
 Deferred follow-up (not blocking): extend `Family_Tree.md`'s ASCII diagram with the second anchor's ancestry as a second root, so prose_audit's relationship descriptors cover that spouse's lines too.
 
-Next: Spec 03 (source-locator model) — the load-bearing change that unlocks Spec 04.
+Next: Spec 03 (source-locator model) — the load-bearing change that unlocks Spec 04. Vault impact measured (06 JUL 2026): ~697 `FS-attached sources` bullets across 28 files, ~7,900 locator tokens, ~40+ multi-locator-same-record spots. Folded into Spec 03 as its Vault Adoption section. Migration approach = **(b)**: Phase A mechanical pass (relabel + host-prefix + one-record-per-locator) that AUTO-MERGES high-confidence pairs (persona/household, index/image) and FLAGS ambiguous cases for a later incremental Phase B. Dual-label parser makes it gradual and non-destructive.
 
 ## Design drafted, awaiting review
 Specs written, no code yet. Dependency order is 01 (foundation), then 02 and 03 in parallel, then 04. Item 1 (Spec 02) is the smallest and lowest-risk and can land first as a quick win. Spec 03 is the load-bearing change that unlocks Spec 04.
@@ -33,3 +33,4 @@ Each spec has two sides: a framework change (this public repo) and a vault-adopt
 - 2026-07-06 Implemented Spec 01: added get_anchor/get_repositories/get_hosts loaders + DEFAULTS to vault_config.py, vault-template/.autoresearch.example.json, and CLAUDE.method.md docs. Smoke test passes (defaults, subject-synthesis, couple parse, WikiTree-disabled, cache-copy safety); gen_person_index --integrity and harvest_sources unchanged on the live vault. No vault edit needed (defaults suffice).
 - 2026-07-06 Spec 02 framework: fixed prose_audit.build_relation_map father/mother detection to be per-root (couple-safe); single-root regression byte-identical on the live vault, synthetic two-root couple fixture labels both subtrees correctly. Added a couple-anchor note to prompt 01.
 - 2026-07-06 Spec 02 vault adoption: wrote anchor:couple (the two anchor people, ids + PIDs only) into the vault's .autoresearch.json (vault commit 4bc2933; pre-commit integrity 0 HARD) and updated the private instance doc to couple framing. Spec 02 done. ASCII-diagram second root deferred.
+- 2026-07-06 Measured Spec 03 vault impact against the live vault and folded it into the spec as a Vault Adoption section. Chose migration approach (b): Phase A auto-merges high-confidence multi-locator pairs and flags ambiguous ones for incremental Phase B. Added acceptance criteria + test-plan cases for the auto-merge/flag and idempotent dry-run/apply migration.
