@@ -4,7 +4,7 @@
 | 00 | Overview | planned | - | - |
 | 01 | Config Foundation | done | loader smoke test (defaults/synthesis/couple/copy-safety), `gen_person_index --integrity`, `harvest_sources` | pending |
 | 02 | Anchor Model | done | prose_audit regression + synthetic two-root fixture; vault get_anchor=couple; vault pre-commit integrity | 15c6d59 (fw) / vault 4bc2933 |
-| 03 | Source Locator Model | planned | - | - |
+| 03 | Source Locator Model | step 1 done (tooling), steps 2-3 pending | harvest_sources record/host fixtures + byte-identical vault CSV; migrate_sources fixtures + 700-bullet dry-run | pending (private scripts) |
 | 04 | Repository Write-Back | planned | - | - |
 
 ## Current: Specs 01 and 02 done; 03 and 04 planned
@@ -13,6 +13,12 @@ Spec 01 landed the config foundation: `get_anchor` / `get_repositories` / `get_h
 Spec 02 done (framework + vault adoption). Framework: generation numbering was already couple-safe; fixed the one single-root assumption in `prose_audit.build_relation_map` (per-root father/mother tracking) and noted couple anchors in prompt 01. Vault adoption: wrote `anchor: couple` (two ids + PIDs, no living names) into the vault's `.autoresearch.json` (committed 4bc2933, pre-commit integrity passed) and updated the private instance doc to the couple framing. `get_anchor` returns the couple.
 
 Deferred follow-up (not blocking): extend `Family_Tree.md`'s ASCII diagram with the second anchor's ancestry as a second root, so prose_audit's relationship descriptors cover that spouse's lines too.
+
+Spec 03 step 1 done (framework tooling, private scripts, fixtures only — no vault touched):
+- `harvest_sources.py` now counts RECORDS not locator tokens and prints a per-host locator breakdown. Backward-compat proven: on the all-legacy vault the `--csv` output is byte-identical to the pre-change baseline (record_count == old ark_count until a file migrates). Record/host semantics unit-tested on fixtures (legacy flat, multi-host single record, mixed migrated+stray, prose-colon false-positive).
+- `migrate_sources.py` (new): relabel `FS-attached sources` -> `Sources`, host-prefix every locator (namespace preserved so it stays recountable), approach-b grouping — auto-merge persona/household pairs, freeform bullets get locators + a preserved pre-migration note + a flag, structured merge-hint bullets flagged. Dry-run default, `--apply`, idempotent. Fixtures pass; a full dry-run over the live vault processed all 700 bullets: 7091 locators -> 7090 records, 98 flagged for Phase B (48 freeform + 50 merge-hint). No vault write.
+
+Steps 2-3 pending: update the writers (vault `templates/person_narrative.md`, local prompts 17/19, CLAUDE.method.md Rule 8), then run the migration `--apply` over the vault and commit in the vault repo.
 
 Next: Spec 03 (source-locator model) — the load-bearing change that unlocks Spec 04. Vault impact measured (06 JUL 2026): ~697 `FS-attached sources` bullets across 28 files, ~7,900 locator tokens, ~40+ multi-locator-same-record spots. Folded into Spec 03 as its Vault Adoption section. Migration approach = **(b)**: Phase A mechanical pass (relabel + host-prefix + one-record-per-locator) that AUTO-MERGES high-confidence pairs (persona/household, index/image) and FLAGS ambiguous cases for a later incremental Phase B. Dual-label parser makes it gradual and non-destructive.
 
@@ -34,3 +40,4 @@ Each spec has two sides: a framework change (this public repo) and a vault-adopt
 - 2026-07-06 Spec 02 framework: fixed prose_audit.build_relation_map father/mother detection to be per-root (couple-safe); single-root regression byte-identical on the live vault, synthetic two-root couple fixture labels both subtrees correctly. Added a couple-anchor note to prompt 01.
 - 2026-07-06 Spec 02 vault adoption: wrote anchor:couple (the two anchor people, ids + PIDs only) into the vault's .autoresearch.json (vault commit 4bc2933; pre-commit integrity 0 HARD) and updated the private instance doc to couple framing. Spec 02 done. ASCII-diagram second root deferred.
 - 2026-07-06 Measured Spec 03 vault impact against the live vault and folded it into the spec as a Vault Adoption section. Chose migration approach (b): Phase A auto-merges high-confidence multi-locator pairs and flags ambiguous ones for incremental Phase B. Added acceptance criteria + test-plan cases for the auto-merge/flag and idempotent dry-run/apply migration.
+- 2026-07-06 Spec 03 step 1 (tooling): rewrote harvest_sources.py to count records + per-host (byte-identical vault CSV proves backward-compat) and added migrate_sources.py (approach-b migration, dry-run/apply/idempotent). Fixtures pass; 700-bullet vault dry-run: 7091 locators -> 7090 records, 98 flagged. Private scripts (OneDrive-backed). Steps 2-3 (writers/docs + vault --apply) pending.
