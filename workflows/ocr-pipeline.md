@@ -46,6 +46,42 @@ Sort every scanned file into one of four categories:
 | **Mixed** | Postcards (printed front, handwritten back), annotated documents | Layered: Tesseract for printed portions, Claude for handwritten |
 | **Photo only** | Portraits, group photos, buildings, landscapes | No OCR; catalog metadata only |
 
+## Stage 2.5: Validate (always, before any processing)
+
+Network downloads can return error pages (HTML, JSON error blobs, Cloudflare challenge pages) with a `.jpg` extension. These are typically a few KB of ASCII text. Running `sips`, `tesseract`, or the multimodal `Read` tool on such a file produces cryptic errors or silently bad output, and any "OCR negative" finding from such a batch is unreliable. Validate every image before processing.
+
+**Single-file check** (returns just the MIME type; `image/jpeg` means valid):
+
+```bash
+file --mime-type -b path/to/image.jpg
+```
+
+**Batch validation** (lists every file in a directory that is NOT a real JPEG, with its size):
+
+```bash
+for f in path/to/dir/*.jpg; do
+  mime=$(file --mime-type -b "$f")
+  if [ "$mime" != "image/jpeg" ]; then
+    echo "INVALID: $f ($mime, $(wc -c < "$f") bytes)"
+  fi
+done
+```
+
+If the batch validator produces no output, every file is a real JPEG and processing can proceed. Any line of output is a file that must be re-downloaded (or deleted) before continuing — do NOT attempt to crop, OCR, or visually read it.
+
+**Quick alternative** (faster to type, slightly noisier output):
+
+```bash
+file path/to/dir/*.jpg | grep -v "JPEG image data"
+```
+
+**Size sanity** (complement to magic-byte check). For known image sources, a too-small file is almost always a failed download:
+- Antenati IIIF at `full/1723,/0/default.jpg` → expect 150-300 KB per page
+- FamilySearch DeepZoom tile downloads → expect 100-500 KB per page
+- A file under ~10 KB labeled `.jpg` is almost always an error page or partial body
+
+Apply this step to every batch download before moving on to Stage 3.
+
 ## Stage 3: OCR and Transcribe
 
 ### Printed Text (Tesseract)

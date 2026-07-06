@@ -48,6 +48,14 @@ For records predating state registration, the county clerk or recorder of deeds 
 - **Cost**: Varies ($5 to $25 per record)
 - **AI accessibility**: In-person, phone, or mail request
 
+### NYC Historical Vital Records (NYC Municipal Archives / DORIS)
+- **URL**: https://a860-historicalvitalrecords.nyc.gov
+- **Coverage**: ~13.3 million NYC **birth, death, and marriage** certificate IMAGES (78% digitized as of 19 JUN 2026), all five boroughs (Kings/Brooklyn, Bronx, Manhattan, Queens, Richmond/Staten Island). Typical public ranges: **births to ~1909, marriages to ~1949, deaths to ~1948** (rolling; recent years restricted).
+- **Cost**: **Free** — full certificate images viewable AND downloadable, no account required.
+- **Search**: by **Last Name** (+ certificate type + borough + year) OR directly by **Certificate Number** (if known from a FamilySearch index or another cert). Browse mode also available by type/borough/year.
+- **AI accessibility**: **Browser-only** (DORIS image viewer; WebFetch returns 503). Drive it in a browser; download the certificate JPG/PDF, then read the image with your AI tool.
+- **Why it matters**: these are the *actual certificate images*, which carry data the FamilySearch *index* omits — e.g. **mother's maiden name on a birth cert**, **the deceased's parents on a death cert**. This is the source that resolves NYC maiden-name disputes and breaks Gen-5 brick walls on NYC immigrant-family lines. Pair it with the FamilySearch index (which gives the certificate number to look up here).
+
 ## Record Types
 
 ### Birth Certificates
