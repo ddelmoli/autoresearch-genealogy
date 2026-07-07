@@ -6,3 +6,10 @@
 .private/
 .github-triage/
 privacy-audits/
+
+# Python environment (managed by uv; reproduced from uv.lock, never committed).
+# Especially important here: this repo lives in OneDrive — a synced .venv would
+# upload thousands of interpreter files with machine-specific absolute paths.
+.venv/
+__pycache__/
+*.pyc

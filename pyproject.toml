@@ -1,0 +1,17 @@
+[project]
+name = "autoresearch-genealogy"
+version = "0.1.0"
+description = "Zero-dependency-by-design Python toolkit for the autoresearch-genealogy vault workflow."
+requires-python = ">=3.10"
+# The scripts are pure-stdlib except for PyYAML, which is imported defensively
+# (try/except) in gen_person_index.py and person_store.py. It is pinned here so a
+# synced environment always has the richer YAML meta-block parsing available.
+dependencies = [
+    "PyYAML>=6",
+]
+
+# This is a script toolkit, not an installable library: the modules under scripts/
+# import each other by co-location (sys.path[0]), not as an installed package.
+# Tell uv to manage the environment without trying to build/install this project.
+[tool.uv]
+package = false

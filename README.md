@@ -96,6 +96,44 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 5 anonymized worked examples showing autoresearch in action: tree expansion session, cross-reference audit, DNA-to-genealogy mapping, name resolution, colonial deep dive.
 
+## Scripts & Python Environment
+
+The `scripts/` toolkit is **pure Python standard library by design** — the only third-party
+package is **PyYAML**, and even that is imported defensively (the scripts degrade gracefully
+without it). Requirements are declared in `pyproject.toml` and pinned in `uv.lock`.
+
+- **Python:** 3.10+ (the environment pins 3.12 via `.python-version`).
+- **Tooling:** [uv](https://docs.astral.sh/uv/). Install with `brew install uv`.
+
+### First-time setup
+
+```bash
+uv sync          # creates .venv from uv.lock (installs PyYAML); reproducible on any machine
+```
+
+### Running a script
+
+Every script needs a vault (there is no default): set `AUTORESEARCH_VAULT` or pass `--vault`.
+
+```bash
+# one-off, no activation needed:
+AUTORESEARCH_VAULT=~/vaults/<name> uv run scripts/gen_person_index.py --integrity
+
+# or activate once, then the existing `python3 scripts/...` docs work verbatim:
+source .venv/bin/activate
+export AUTORESEARCH_VAULT=~/vaults/<name>
+python3 scripts/gen_person_index.py --integrity
+```
+
+### Notes
+
+- **Do not `pip install` globally.** The env is managed entirely through `uv sync` /
+  `uv.lock`. Add a dependency with `uv add <pkg>` (commit the updated lockfile).
+- **OneDrive:** `.venv/` is git-ignored because this repo lives in OneDrive — a synced venv
+  would upload thousands of interpreter files with machine-specific paths. Each machine runs
+  its own `uv sync`. To keep the venv out of OneDrive entirely, point it elsewhere:
+  `export UV_PROJECT_ENVIRONMENT=$HOME/.venvs/autoresearch-genealogy` before `uv sync`.
+
 ## Philosophy
 
 **Structured autonomous research with mechanical verification, not AI guessing.**
