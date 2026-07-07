@@ -102,7 +102,9 @@ The `scripts/` toolkit is **pure Python standard library by design** — the onl
 package is **PyYAML**, and even that is imported defensively (the scripts degrade gracefully
 without it). Requirements are declared in `pyproject.toml` and pinned in `uv.lock`.
 
-- **Python:** 3.10+ (the environment pins 3.12 via `.python-version`).
+- **Python:** 3.10+ — **no version is pinned**. `uv sync` uses the newest interpreter
+  available on your machine that satisfies the `>=3.10` floor (ride-latest). Upgrading your
+  system Python and re-running `uv sync` rebuilds the environment on the newer version.
 - **Tooling:** [uv](https://docs.astral.sh/uv/). Install with `brew install uv`.
 
 ### First-time setup
