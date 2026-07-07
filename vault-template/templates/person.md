@@ -7,6 +7,11 @@ life_status: living | deceased | unknown
 family: "[Surname]"
 evidence_tier: strong_signal | moderate_signal | speculative
 profile_status: complete | partial | stub
+id: P-XXXXXX              # vault-owned stable key: "P-" + 6 Crockford base32 (no I/L/O/U)
+generation: N             # integer, counted from the anchor/subject
+parents: []               # list of parent ids, e.g. [P-AAAAAA, P-BBBBBB]
+spouse: []                # list of spouse ids
+flags: []                 # e.g. [Q12, dup]
 sources:
   - "[Source 1]"
   - "[Source 2]"

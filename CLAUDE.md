@@ -27,6 +27,7 @@ Each numbered prompt must include an `Inputs To Replace` section before `## Auto
 
 - All vault files use YAML frontmatter with at minimum: `type`, `created`, `tags`
 - Person files add: `name`, `born`, `died`, `life_status`, `family`, `evidence_tier`, `profile_status`, `sources`
+- Person files may optionally add: `id` (stable vault key), `generation`, `parents`, `spouse`, `flags` — identity and graph fields, safe to omit
 - Transcription files add: `source`, `document_type`, `person`, `date`, `ocr_method`, `ocr_quality`
 - Region and surname files add: `evidence_tier`
 - Wikilinks (`[[File_Name]]`) connect files within the vault
