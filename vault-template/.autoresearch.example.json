@@ -6,6 +6,9 @@
   "subject": "Pat Smith (Gen 1)",
   "gedcom": "SmithJones.ged",
 
+  "_comment_person_model": "How person records are stored on disk. 'file' (default) = one Markdown file per person (the upstream/legacy model). 'narrative' = many people per lineage file, each a bold-name entry with an inline '- meta:' block. Both hold the same fields; omit this key to accept 'file'.",
+  "person_model": "file",
+
   "_comment_anchor": "The vault's Generation 1. kind 'individual' = one person; kind 'couple' = the married couple (two people, both Gen 1). Converting individual to couple adds a second person's ancestry as new Gen-2+ entries and never renumbers existing entries.",
   "anchor": {
     "kind": "couple",
