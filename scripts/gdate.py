@@ -501,7 +501,10 @@ def split_dual_year(prose):
         return None
     # The phrase is the original DATE notation only — the trailing place or
     # commentary belongs in `residue`, not in a PHRASE about the date.
-    phrase = (m.group("head") + y1 + "/" + y2raw).strip().strip(",;( ")
+    # The phrase is the original notation, but leading punctuation is a
+    # vitals-parser artifact on BOTH sides — the value side already strips it in
+    # _rewrite, so a phrase reading ". 13 MAR 1567/68" is just untidy noise.
+    phrase = re.sub(r"\A[.,;:/\s]+", "", m.group("head") + y1 + "/" + y2raw).strip().strip(",;( ")
     return (value, phrase, residue)
 
 
