@@ -67,7 +67,7 @@ _PRIVATE_LS = frozenset({"living", "unknown"})
 # classified the bare `?` (8 live values) as a place-leak instead of an absence
 # marker. The same trap is documented in check_narrative_privacy's _VITAL_MARKER.
 _ABSENCE = re.compile(
-    r"\A\s*(?:(?:unknown|unk|deceased|dead|none|n/?a|tbd)\b|\?+|[-–—]+)", re.I)
+    r"\A\s*(?:(?:unknown|unk|deceased|dead|none|n/?a|tbd|young)\b|\?+|[-–—]+)", re.I)
 _MODIFIER_WORD = re.compile(r"\A\s*(?:before|after|about|circa|abt|say|probably|likely|"
                             r"possibly|early|mid|late|by|between)\b", re.I)
 _HAS_YEAR = re.compile(r"\b\d{3,4}\b")
@@ -93,7 +93,10 @@ def classify(value):
 
 
 CLASS_NOTE = {
-    "absence": "Omit the key. Absence = unknown; never store `unknown`/`?` as a value.",
+    "absence": "Omit the key. Absence = unknown; never store `unknown`/`?` as a value. "
+               "`young` is here too: it is not a date, and one live case is a parser "
+               "artifact where `died` matched inside a prose aside about a DIFFERENT "
+               "person, so nothing may be attached to that entry at all.",
     "place-leak": "A PLACE has leaked into the date slot. Content fix on the header; "
                   "flagged, never auto-edited.",
     "dual-year": "Old Style / New Style dual year. Mechanical and lossless via "
@@ -131,7 +134,11 @@ def build_plan(vault, only_file=None, include_living=False, dual_year=False):
         header = dict(zip(("born", "died"), raw.get("header_vitals") or (None, None)))
         had = set(raw.get("meta_date_keys") or ())
         for key in ("born", "died"):
-            if key in had:
+            # A `<key>_phrase` with no date key is a DECISION, not a gap: it is the
+            # recorded disposition for a value the grammar cannot express ("early
+            # 1621"). Without this the worklist keeps listing settled entries as
+            # outstanding work, which is how a residue list loses its meaning.
+            if key in had or f"{key}_phrase" in had:
                 plan.skipped_existing += 1      # already migrated -> idempotent
                 continue
             source = header.get(key)

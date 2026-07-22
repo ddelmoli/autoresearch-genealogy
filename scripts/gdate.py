@@ -309,14 +309,20 @@ def is_day_precise(value):
 # vault's existing convention and a junk value would defeat it.
 _ABSENCE = re.compile(
     r"\A\s*(?:unknown|unk|not\s+known|no\s+date[sd]?|none|n/?a|tbd|\?+|[-–—]+|"
-    r"living|alive|deceased|dead|died|d\.)\b", re.I)
+    r"living|alive|deceased|dead|died|young|d\.)\b", re.I)
 
 _MONTH_WORDS = {
     "JANUARY": "JAN", "FEBRUARY": "FEB", "MARCH": "MAR", "APRIL": "APR",
     "MAY": "MAY", "JUNE": "JUN", "JULY": "JUL", "AUGUST": "AUG",
     "SEPTEMBER": "SEP", "SEPT": "SEP", "OCTOBER": "OCT", "NOVEMBER": "NOV",
     "DECEMBER": "DEC",
+    # Italian, because these vaults read Italian civil registration directly and
+    # "Marzo 1862" is ordinary source text there, not an exotic case.
+    "GENNAIO": "JAN", "FEBBRAIO": "FEB", "MARZO": "MAR", "APRILE": "APR",
+    "MAGGIO": "MAY", "GIUGNO": "JUN", "LUGLIO": "JUL", "AGOSTO": "AUG",
+    "SETTEMBRE": "SEP", "OTTOBRE": "OCT", "NOVEMBRE": "NOV", "DICEMBRE": "DEC",
 }
+_MONTH_WORD_ALT = "|".join(sorted(_MONTH_WORDS, key=len, reverse=True))
 _KEYWORDS = ("ABT", "CAL", "EST", "BET", "AND", "BEF", "AFT", "FROM", "TO", "BCE") + CALENDARS
 
 # A residue that STARTS like a continuation of the date means the "value" is a
@@ -372,7 +378,8 @@ def _rewrite(s):
         if w in _MONTH_WORDS:
             return _MONTH_WORDS[w]
         return w if w in _MONTHS_GREG else m.group(0)
-    s = re.sub(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?", _mon, s, flags=re.I)
+    s = re.sub(rf"\b(?:{_MONTH_WORD_ALT}|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?",
+               _mon, s, flags=re.I)
     # Approximation markers. `~1750`, `c.1750`, `ca 1750`, `about 1750`, `circa 1750`.
     # …and the same lookahead widening the bounds get below: an approximation can
     # sit in front of a MONTH, not just a year ("~NOV 1698"). The month rewrite has
@@ -391,18 +398,43 @@ def _rewrite(s):
     # full day-month-year bound ("bet. 9 JUL 1744 and 3 MAR 1747").
     s = re.sub(rf"\bbet(?:ween|\.)\s+(?=\d|(?:{_MON_ALT})\b)", "BET ", s, flags=re.I)
     s = re.sub(r"\bfrom\s+(?=\d)", "FROM ", s, flags=re.I)
+    # A two-digit range end: "1750-56" -> 1750-1756. Guarded to a plausible
+    # within-century span so it cannot fire on unrelated digit pairs.
+    s = re.sub(r"\b(\d{2})(\d{2})\s*[-–]\s*(\d{2})\b",
+               lambda m: f"{m.group(1)}{m.group(2)}-{m.group(1)}{m.group(3)}"
+               if int(m.group(3)) > int(m.group(2)) else m.group(0), s)
     # `1810-1830` / `1810–1830` -> `BET 1810 AND 1830`. Guarded: both sides 3-4
     # digits and the second not earlier, so a stray `1780-09` or a PID fragment
     # cannot become a range.
     s = re.sub(r"\b(\d{3,4})\s*[-–—]\s*(\d{3,4})\b",
                lambda m: f"BET {m.group(1)} AND {m.group(2)}"
                if int(m.group(2)) >= int(m.group(1)) else m.group(0), s)
+    # A MONTH range in one year: "NOV-DEC 1638", "September/October 1920".
+    s = re.sub(rf"\b({_MON_ALT})\s*[-–/]\s*({_MON_ALT})\s+(\d{{3,4}})\b",
+               r"BET \1 \3 AND \2 \3", s)
+    # A DAY range in one month: "12/13 JUL 783", "20-21 MAR 1879", "21 or 22 MAR
+    # 1837". The word form is the dangerous one: it left a residue starting with
+    # "or", which the truncation guard below does not recognise, so the value came
+    # out as the bare "year" 21. That is in the live vault as `died: '21'`.
+    s = re.sub(rf"\b(\d{{1,2}})\s+or\s+(\d{{1,2}})\s+({_MON_ALT})\s+(\d{{3,4}})\b",
+               r"BET \1 \3 \4 AND \2 \3 \4", s, flags=re.I)
+    s = re.sub(rf"\b(\d{{1,2}})\s*[-–/]\s*(\d{{1,2}})\s+({_MON_ALT})\s+(\d{{3,4}})\b",
+               r"BET \1 \3 \4 AND \2 \3 \4", s)
+    # An approximation written AFTER the day and month: "18 JUL c.640". The
+    # keyword belongs in front of the whole date, per the grammar.
+    s = re.sub(rf"\b(\d{{1,2}}\s+(?:{_MON_ALT}))\s+(ABT|CAL|EST)\s+(\d{{3,4}})\b",
+               r"\2 \1 \3", s)
     # `~1877-1881` rewrites to `ABT BET 1877 AND 1881`, which is not grammatical.
     # An approximate span IS a span: drop the redundant ABT.
     s = re.sub(r"\bABT\s+BET\b", "BET", s, flags=re.I)
     # Now that BET exists, its connector must be the keyword.
     s = re.sub(r"(?<=\d)\s+and\s+(?=\d)", " AND ", s, flags=re.I)
     s = re.sub(r"(?<=\d)\s+to\s+(?=\d)", " TO ", s, flags=re.I)
+    # "BET 3 JUN AND 18 SEP 1682" states the year once, on the second bound. The
+    # grammar needs it on both; borrowing it is reading the source, not guessing.
+    s = re.sub(rf"\bBET\s+((?:\d{{1,2}}\s+)?(?:{_MON_ALT}))\s+AND\s+"
+               rf"((?:\d{{1,2}}\s+)?(?:{_MON_ALT})\s+(\d{{3,4}}))\b",
+               r"BET \1 \3 AND \2", s)
     for kw in _KEYWORDS:
         s = re.sub(rf"\b{kw}\b", kw, s, flags=re.I)
     return re.sub(r"\s+", " ", s).strip()
@@ -440,6 +472,13 @@ def normalise(prose):
     tail = s[got[2]:].strip()
     if _CONTINUATION.match(tail) and not _TIME_OF_DAY.match(tail):
         return (None, original.strip())   # the value is a truncation -> refuse, don't guess
+    value_so_far = s[:got[2]].strip()
+    if tail and re.fullmatch(r"\d{1,2}", value_so_far):
+        # A bare one- or two-digit YEAR with text still trailing. The grammar
+        # allows year 21, but in genealogical prose it is always the front of
+        # something longer ("21 or 22 MAR 1837") that this normaliser could not
+        # read. Refuse rather than store a year in the first century.
+        return (None, original.strip())
     residue = tail.lstrip(",;( ").strip()
     return (value, residue)
 

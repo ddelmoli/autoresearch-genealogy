@@ -159,6 +159,17 @@ NORMALISE = [
     ("17 APR 1875 14:15 pomeridiane", "17 APR 1875", "14:15 pomeridiane"),  # REGRESSION
     ("27 MAR 1899 8 pm", "27 MAR 1899", "8 pm"),       # REGRESSION
     ("~1877-1881", "BET 1877 AND 1881", ""),           # an approximate span IS a span
+    # ranges a source writes compactly, which the grammar spells as BET…AND
+    ("NOV-DEC 1638", "BET NOV 1638 AND DEC 1638", ""),          # month range
+    ("~September/October 1920", "BET SEP 1920 AND OCT 1920", ""),
+    ("12/13 JUL 783", "BET 12 JUL 783 AND 13 JUL 783", ""),     # day range
+    ("~20-21 MAR 1879", "BET 20 MAR 1879 AND 21 MAR 1879", ""),
+    ("21 or 22 MAR 1837", "BET 21 MAR 1837 AND 22 MAR 1837", ""),  # REGRESSION: '21'
+    ("~1750-56", "BET 1750 AND 1756", ""),                      # 2-digit range end
+    ("18 JUL c.640", "ABT 18 JUL 640", ""),                     # approximation hoisted
+    ("BET 3 JUN AND 18 SEP 1682", "BET 3 JUN 1682 AND 18 SEP 1682", ""),  # year borrowed
+    ("~Marzo 1862", "ABT MAR 1862", ""),                        # Italian month
+    ("15 Giugno 1863", "15 JUN 1863", ""),                      # REGRESSION: '15'
 ]
 for prose, want_value, want_residue in NORMALISE:
     v, r = gdate.normalise(prose)
@@ -174,11 +185,8 @@ REFUSED = [
     "early 1621",                   # a qualifier that is not ABT
     "probably 30 JUN 1842 Parishtown, age 59",
     "2 APR c.747/748",              # REGRESSION: used to return the year TWO
-    "18 JUL c.640, Someplace",     # REGRESSION: used to return 18
     "6 FEB 1712/13",                # REGRESSION: dual date, used to be halved
     "c.985/990",                    # NOT consecutive: a span, not a dual year
-    "~1750-56",                     # truncated range
-    "~20-21 MAR 1879",              # used to return ABT 20
 ]
 for prose in REFUSED:
     v, r = gdate.normalise(prose)
