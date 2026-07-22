@@ -4,6 +4,7 @@
 require "date"
 require "digest"
 require "shellwords"
+require "set"
 require "yaml"
 
 # Prompt and archive files legitimately contain UTF-8 characters (em dashes,
@@ -134,11 +135,53 @@ rescue Psych::SyntaxError, Psych::DisallowedClass => e
   {}
 end
 
-def check_prompts
-  prompt_paths = Dir[File.join(ROOT, "prompts/[0-9]*.md")].sort
-  error("expected 13 numbered prompts, found #{prompt_paths.length}") unless prompt_paths.length == 13
+# --------------------------------------------------------------------------
+# WHAT THIS VALIDATOR SEES.
+#
+# Repo-CONTRACT checks (counts, README figures, prompt<->review-card pairing,
+# link integrity) must read the files GIT TRACKS, not the working tree. Reading
+# the working tree conflates the repository with whatever else happens to sit in
+# the checkout, and two things routinely do:
+#
+#   * a live VAULT directory. `Dir[ROOT/**/*.md]` walked into it and reported
+#     "broken link" for every reference in write-once session logs to files that
+#     were legitimately retired or archived — 11 findings, none of them defects,
+#     all of them in a directory this repo does not own.
+#   * LOCAL-ONLY drafts. A private prompt kept out of the repo via
+#     .git/info/exclude counted toward the prompt total, so every one of them
+#     read as a missing review card and a stale README count.
+#
+# CONTENT lint (the 7 required prompt fields, Inputs To Replace) still runs over
+# every numbered prompt ON DISK, tracked or not: those rules describe how a
+# prompt must be written, and a local draft is still a prompt.
+#
+# Falls back to the filesystem when git is unavailable or this is not a checkout
+# (a tarball download, a vendored copy), so behaviour degrades to the old
+# semantics rather than silently validating nothing.
+TRACKED = begin
+  out = IO.popen(["git", "-C", ROOT, "ls-files", "-z"], err: File::NULL, &:read)
+  raise "not a git checkout" unless $?.success? && out && !out.empty?
 
-  prompt_paths.each do |path|
+  out.split("\0").reject(&:empty?).map { |r| File.join(ROOT, r) }.to_set
+rescue StandardError
+  nil
+end
+
+# Tracked paths matching a glob, or every matching path when TRACKED is nil.
+def tracked(glob)
+  paths = Dir[File.join(ROOT, glob)].sort
+  return paths if TRACKED.nil?
+
+  paths.select { |p| TRACKED.include?(p) }
+end
+
+def check_prompts
+  # The COUNT is a repo contract, so it counts tracked prompts…
+  error("expected 13 numbered prompts, found #{tracked("prompts/[0-9]*.md").length}") unless tracked("prompts/[0-9]*.md").length == 13
+
+  # …while the field lint runs over every numbered prompt on disk, including
+  # local-only drafts: these rules are about how a prompt is written.
+  Dir[File.join(ROOT, "prompts/[0-9]*.md")].sort.each do |path|
     text = File.read(path)
     REQUIRED_PROMPT_FIELDS.each do |field|
       error("#{rel(path)}: missing **#{field}** field") unless text.match?(/^\*\*#{Regexp.escape(field)}\*\*:/)
@@ -159,7 +202,7 @@ def check_prompts
 end
 
 def check_vault_frontmatter
-  Dir[File.join(ROOT, "vault-template/**/*.md")].sort.each do |path|
+  tracked("vault-template/**/*.md").each do |path|
     data = frontmatter_for(path)
     REQUIRED_FRONTMATTER.each do |key|
       error("#{rel(path)}: missing frontmatter key #{key}") unless data.key?(key)
@@ -168,7 +211,7 @@ def check_vault_frontmatter
 end
 
 def check_archive_frontmatter
-  Dir[File.join(ROOT, "archives/*.md")].sort.each do |path|
+  tracked("archives/*.md").each do |path|
     next if File.basename(path) == "README.md"
 
     data = frontmatter_for(path)
@@ -180,7 +223,7 @@ def check_archive_frontmatter
 end
 
 def check_markdown_links
-  Dir[File.join(ROOT, "**/*.md")].each do |path|
+  tracked("**/*.md").each do |path|
     text = File.read(path)
     text.scan(/\[[^\]\n]+\]\(([^)]+)\)/).flatten.each do |link|
       next if link.match?(/\A(?:https?:|mailto:|#)/)
@@ -197,12 +240,12 @@ end
 def check_readme_counts
   readme = read("README.md")
   counts = {
-    "autoresearch prompts" => Dir[File.join(ROOT, "prompts/[0-9]*.md")].length,
-    "Vault Template" => Dir[File.join(ROOT, "vault-template/**/*.md")].length,
-    "Archive Guides" => Dir[File.join(ROOT, "archives/*.md")].reject { |p| File.basename(p) == "README.md" }.length,
-    "Reference Guides" => Dir[File.join(ROOT, "reference/*.md")].length,
-    "Workflows" => Dir[File.join(ROOT, "workflows/*.md")].length,
-    "Examples" => Dir[File.join(ROOT, "examples/*.md")].reject { |p| File.basename(p) == "README.md" }.length
+    "autoresearch prompts" => tracked("prompts/[0-9]*.md").length,
+    "Vault Template" => tracked("vault-template/**/*.md").length,
+    "Archive Guides" => tracked("archives/*.md").reject { |p| File.basename(p) == "README.md" }.length,
+    "Reference Guides" => tracked("reference/*.md").length,
+    "Workflows" => tracked("workflows/*.md").length,
+    "Examples" => tracked("examples/*.md").reject { |p| File.basename(p) == "README.md" }.length
   }
 
   {
@@ -251,14 +294,17 @@ def check_public_privacy_patterns
 end
 
 def check_review_cards
-  prompt_paths = Dir[File.join(ROOT, "prompts/[0-9]*.md")].sort
+  # Pairing is a repo contract: a TRACKED prompt needs a TRACKED card. A local
+  # draft needs neither, and demanding one would be asking the public repo to
+  # carry a card for a prompt it does not contain.
+  prompt_paths = tracked("prompts/[0-9]*.md")
   prompt_paths.each do |path|
     base = File.basename(path)
     card_path = File.join(ROOT, "review-cards", base)
     error("review-cards/#{base}: missing review card for #{rel(path)}") unless File.exist?(card_path)
   end
 
-  card_paths = Dir[File.join(ROOT, "review-cards/[0-9]*.md")].sort
+  card_paths = tracked("review-cards/[0-9]*.md")
   error("expected #{prompt_paths.length} review cards, found #{card_paths.length}") unless card_paths.length == prompt_paths.length
 
   card_paths.each do |path|
