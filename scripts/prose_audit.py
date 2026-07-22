@@ -516,7 +516,15 @@ def gen_for_relation(rel_word, subject_gen=1):
 # Main check loop
 # ============================================================
 
-def main():
+def main(argv=None):
+    # DATE_DRIFT was advisory at first landing (spec/structured-dates Spec 06) and
+    # is BLOCKING as of 22 JUL 2026, the promotion the spec called for once the
+    # baseline was 0 and the Spec 04 residue was triaged. It is the only blocking
+    # metric in this script: prose ERROR/WARN stay advisory, because they judge
+    # PROSE, which a human writes and may legitimately phrase loosely. A DATE_DRIFT
+    # finding is different in kind — two machine-readable copies of one fact
+    # disagreeing on the year, where one of them is simply wrong.
+    strict_dates = "--no-strict-dates" not in (argv if argv is not None else sys.argv[1:])
     rows = parse_person_index()
     canon = build_canonical_map(rows)
     pid_map = build_pid_map(rows)
@@ -821,7 +829,8 @@ def main():
     print(f"  WARN issues:   {len(by_severity['WARN'])}")
     dd = [i for i in issues if i[3] == "DATE_DRIFT"]
     cov = DATE_DRIFT_COVERAGE
-    print(f"  DATE_DRIFT:    {len(dd)}   [advisory]"
+    print(f"  DATE_DRIFT:    {len(dd)}   "
+          f"[{'BLOCKING' if strict_dates else 'advisory (--no-strict-dates)'}]"
           f"  (coverage: field missing {cov['field_missing']}, "
           f"header missing {cov['header_missing']}, neither {cov['both_missing']})")
 
@@ -832,5 +841,15 @@ def main():
         for fname, lineno, _, kind, msg in by_severity[sev]:
             print(f"  {fname}:{lineno} [{kind}] {msg}")
 
+    if dd and strict_dates:
+        print(f"\nDATE_DRIFT is BLOCKING: {len(dd)} header/field date disagreement(s).",
+              file=sys.stderr)
+        print("Fix the wrong side (the meta FIELD is authoritative for machines, the "
+              "header for humans), and update any prose that paraphrases it in the same "
+              "commit — integrity rule 7. Override for one run with --no-strict-dates.",
+              file=sys.stderr)
+        return 1
+    return 0
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

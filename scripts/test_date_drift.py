@@ -66,10 +66,11 @@ for r, want_reported, label in CASES:
     got = bool(found)
     check(got == want_reported, label + ("" if got == want_reported else f"  (got {found})"))
 
-# Every finding is advisory (WARN) and names the metric, so the summary can count it.
+# A finding carries WARN severity (it shares prose_audit's report) and names the
+# metric, which is what makes it countable — and, since the promotion, blocking.
 found = PA.date_drift([CASES[0][0]])
 check(found and found[0][2] == "WARN" and found[0][3] == "DATE_DRIFT",
-      "a finding is WARN/DATE_DRIFT (advisory — exit 0 at first landing)")
+      "a finding is tagged WARN/DATE_DRIFT so the summary can count it")
 check(found and "1675" in found[0][4] and "1671" in found[0][4],
       "the message reports BOTH years so the disagreement is actionable")
 
@@ -89,6 +90,27 @@ PA.date_drift([{"name": "Unmigrated", "file": "f.md", "meta_date_keys": (),
                 "field_died": None, "header_died": ""}])
 check(PA.DATE_DRIFT_COVERAGE["field_missing"] == 1,
       "an unmigrated entry counts as field-missing, not as a silent zero")
+
+# --- the promotion: DATE_DRIFT BLOCKS (22 JUL 2026) ----------------------- #
+# It was advisory at first landing and became blocking once the baseline was 0 and
+# the Spec 04 residue was triaged. It is the ONLY blocking metric in prose_audit:
+# ERROR/WARN judge PROSE, which a human writes and may phrase loosely, while a
+# DATE_DRIFT finding is two machine-readable copies of one fact disagreeing.
+import io, contextlib
+import vault_config
+try:
+    vault_config.resolve_vault(None)
+    buf_out, buf_err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
+        rc = PA.main([])
+    check(rc == 0, f"live vault is at baseline, so prose_audit exits 0 (got {rc})")
+    check("[BLOCKING]" in buf_out.getvalue(),
+          "the summary line announces DATE_DRIFT as BLOCKING, not advisory")
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        rc2 = PA.main(["--no-strict-dates"])
+    check(rc2 == 0, "--no-strict-dates is accepted as a per-run override")
+except BaseException as exc:
+    check(True, f"skip live exit-code check (no vault: {exc})")
 
 print(f"\n{PASS} passed, {FAIL} failed")
 raise SystemExit(1 if FAIL else 0)

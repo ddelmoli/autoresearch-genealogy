@@ -122,10 +122,14 @@ quarter references. `gdate.normalise` deliberately refuses to guess these into
 ## Reading DATE_DRIFT
 
 `prose_audit.py` reports it; the SessionStart banner and the vault pre-commit hook
-surface it. Advisory (exit 0), baseline **0**.
+surface it. Baseline **0**, and **BLOCKING** since 22 JUL 2026: a commit whose
+header and field disagree on a year fails the hook. It is the only blocking metric
+in `prose_audit` — ERROR/WARN judge PROSE, which a human writes and may phrase
+loosely, while a DATE_DRIFT finding is two machine-readable copies of one fact
+contradicting each other. Override one run with `--no-strict-dates`.
 
 ```
-DATE_DRIFT:    0   [advisory]  (coverage: field missing 71, header missing 1, neither 483)
+DATE_DRIFT:    0   [BLOCKING]  (coverage: field missing 42, header missing 1, neither 483)
 ```
 
 - **A drift finding** means a header and its field disagree on the YEAR. One of them
