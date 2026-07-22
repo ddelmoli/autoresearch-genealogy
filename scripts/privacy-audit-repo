@@ -82,7 +82,68 @@ def history_findings(terms)
   findings
 end
 
-def write_report(terms, head_findings, git_history_findings)
+# --------------------------------------------------------------------------
+# IDENTIFIER SCAN — a second class of disclosure the denylist cannot see.
+#
+# The denylist holds NAMES. An external record identifier is a POINTER to a
+# name: paste a FamilySearch PID into familysearch.org and you get the person.
+# So a code comment illustrating "strip PID-like tokens" with a REAL pid
+# discloses an ancestor as surely as writing their name would, and passes a
+# name-based audit clean. That happened here: four real identifiers sat in code
+# comments as illustrations through three clean audit runs (22 JUL 2026), caught
+# by a manual pre-push review rather than by this script.
+#
+# It happened once more while this very check was being written: the paragraph
+# above originally quoted one of those identifiers verbatim, and the check's
+# first run flagged its own explanation. Illustrate this rule with placeholders.
+#
+# Detected: the FamilySearch PID shape, four alphanumerics + hyphen + three.
+# Measured over the tracked tree before shipping this: every occurrence was a
+# placeholder, so the check starts at zero findings and any hit is real.
+#
+# NOT detected, deliberately: the WikiTree shape (Surname-Number). It is
+# structurally identical to ordinary prose in these documents -- "Pre-1800",
+# "Post-1906", "Phase-1", "Gen-2" all match it, and they outnumber real ids in
+# the tracked tree by more than ten to one. A check that fires on prose is worse
+# than no check, because it trains you to ignore it. That gap is real and known:
+# a WikiTree id DID slip through the same manual review that caught the PIDs.
+#
+# HEAD ONLY, on purpose. History is not scanned for this class because the
+# pre-scrub commits legitimately contain these identifiers and always will --
+# rewriting published history to remove a public record pointer would be a much
+# larger harm than the disclosure. The point of this check is to stop the NEXT
+# one, not to relitigate what shipped.
+IDENTIFIER_RE = /\b[A-Z0-9]{4}-[A-Z0-9]{3}\b/.freeze
+
+# A token is a placeholder when its two halves are each a single repeated
+# character (XXXX-XXX, AAAA-AAA), or when it is one of the deliberate stand-ins
+# used in examples and fixtures.
+PLACEHOLDER_IDENTIFIERS = %w[ABCD-123 EFGH-4JK].freeze
+
+def placeholder_identifier?(token)
+  return true if PLACEHOLDER_IDENTIFIERS.include?(token)
+
+  left, right = token.split("-")
+  left.chars.uniq.length == 1 && right.chars.uniq.length == 1
+end
+
+def identifier_findings
+  findings = []
+  tracked_text_files.each do |path|
+    next if EXCLUDED_PATHS.include?(path)
+
+    File.read(File.join(ROOT, path)).lines.each_with_index do |line, index|
+      line.scan(IDENTIFIER_RE).uniq.each do |token|
+        next if placeholder_identifier?(token)
+
+        findings << { path: path, line: index + 1, token_label: term_label(token) }
+      end
+    end
+  end
+  findings
+end
+
+def write_report(terms, head_findings, git_history_findings, id_findings)
   FileUtils.mkdir_p(REPORT_DIR)
   timestamp = Time.now.utc.strftime("%Y-%m-%d-%H%M%S")
   path = File.join(REPORT_DIR, "#{timestamp}.md")
@@ -95,7 +156,8 @@ def write_report(terms, head_findings, git_history_findings)
   content << "- HEAD: `#{head_sha.strip}`\n"
   content << "- Reachable commits on current branch: #{log_count.strip}\n"
   content << "- Denylist terms checked: #{terms.length}\n"
-  content << "- Excluded paths: #{EXCLUDED_PATHS.join(', ')}\n\n"
+  content << "- Excluded paths: #{EXCLUDED_PATHS.join(', ')}\n"
+  content << "- Identifier shapes checked: FamilySearch PID (HEAD only)\n\n"
 
   content << "## Current HEAD Findings\n\n"
   if head_findings.empty?
@@ -122,8 +184,21 @@ def write_report(terms, head_findings, git_history_findings)
     content << "\n"
   end
 
+  content << "## Identifier Findings (HEAD only)\n\n"
+  content << "Record-identifier shapes that are not recognised placeholders. An external\n"
+  content << "id is a pointer to a NAME, so it discloses a person even though no denylist\n"
+  content << "term appears. See the note above IDENTIFIER_RE for what is and is not scanned.\n\n"
+  if id_findings.empty?
+    content << "None.\n\n"
+  else
+    id_findings.each do |finding|
+      content << "- `#{finding[:token_label]}` in `#{finding[:path]}` line #{finding[:line]}\n"
+    end
+    content << "\n"
+  end
+
   content << "## Result\n\n"
-  content << if head_findings.empty? && git_history_findings.empty?
+  content << if head_findings.empty? && git_history_findings.empty? && id_findings.empty?
                "PASS\n"
              else
                "FAIL\n"
@@ -136,13 +211,14 @@ end
 terms = load_terms
 head_findings = current_head_findings(terms)
 git_history_findings = history_findings(terms)
-report_path = write_report(terms, head_findings, git_history_findings)
+id_findings = identifier_findings
+report_path = write_report(terms, head_findings, git_history_findings, id_findings)
 
-if head_findings.empty? && git_history_findings.empty?
+if head_findings.empty? && git_history_findings.empty? && id_findings.empty?
   puts "privacy-audit-repo: ok"
   puts "report: #{report_path}"
 else
-  warn "privacy-audit-repo: #{head_findings.length + git_history_findings.length} finding group(s)"
+  warn "privacy-audit-repo: #{head_findings.length + git_history_findings.length + id_findings.length} finding group(s)"
   warn "report: #{report_path}"
   exit 1
 end

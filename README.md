@@ -4,6 +4,42 @@ Structured prompts, vault templates, and research workflows for AI-assisted gene
 
 This project extracts and generalizes methods developed during a real genealogy research effort that produced 105 files spanning 9 generations across 6 family lines, using Claude Code's autonomous research capabilities.
 
+## About This Fork
+
+This is [**ddelmoli/autoresearch-genealogy**](https://github.com/ddelmoli/autoresearch-genealogy),
+a fork of [mattprusak/autoresearch-genealogy](https://github.com/mattprusak/autoresearch-genealogy).
+The prompts, guides, vault template, and workflows below are upstream's design and remain
+compatible with it. Upstream has been quiet for some time; this fork has continued
+independently and now differs from it in one substantial way.
+
+**Upstream ships a method. This fork also ships the tooling that enforces it.**
+
+Where upstream describes conventions a vault should follow, this fork adds programs that
+check them, a record layer that both of the vault's storage models read through, and a test
+suite over the whole thing. Concretely:
+
+| addition | what it is |
+|---|---|
+| `scripts/person_store.py` | A model-agnostic seam over person records. A vault may store one Markdown file per person (upstream's model) **or** many people per lineage file, each a bold-name entry with an inline `- meta:` block. Every other script reads through this seam, so it serves both. |
+| `scripts/gdate.py` | The [GEDCOM 7](https://gedcom.io/specifications/FamilySearchGEDCOMv7.html) `DateValue` grammar as a leaf module: validate a date, resolve a comparable year, normalise legacy prose. Genealogical dates (`ABT`, `BEF`, `BET…AND`, Old Style/New Style, non-Gregorian calendars) do not fit ISO, and this is what they fit instead. |
+| `scripts/migrate_dates.py` | Converts dates written as display prose into that grammar, dry-run by default, never guessing and never rewriting a header. |
+| Audit gates | `gen_person_index.py --integrity` (unique ids), `prose_audit.py` (prose-vs-canonical drift, plus a `DATE_DRIFT` header/field sync gate), `meta_presence_audit.py`, `header_xref_audit.py`, `dup_name_audit.py`, `build_edges.py --validate` (relationship-graph integrity), `harvest_sources.py` (source coverage). |
+| Privacy enforcement | `check_narrative_privacy.py` mirrors the Ruby validator's living-person rule for the narrative model; both understand day-precision in ISO *and* GEDCOM notation. `privacy-audit-repo` additionally scans for record IDENTIFIERS, which point at a person even when no name appears. |
+| Tests | Six runnable suites, no framework required: `test_gdate.py`, `test_person_store.py`, `test_migrate_dates.py`, `test_date_drift.py`, `test_privacy_dates.py`, `test_privacy_gate.rb`. |
+
+Two working principles run through all of it, and they are worth stating because they shaped
+the code more than any feature did:
+
+- **Measure before shipping a parser change.** Every change to date or vitals parsing here was
+  diffed against the full corpus of a real vault with a standing requirement of *zero* losses.
+  Several plausible changes were rejected on that measurement, and three silently-wrong stored
+  values were found by it.
+- **A gate that reports a defect must not also cause one.** Checks that judge human prose stay
+  advisory; only machine-vs-machine contradictions block a commit.
+
+Design notes for each change live in `spec/`. If you are looking for the upstream project
+rather than this toolkit, follow the link above.
+
 ## Who This Is For
 
 - **Genealogy researchers** who want to use AI to accelerate their family history work without sacrificing source rigor
@@ -158,4 +194,12 @@ MIT. See `LICENSE`.
 
 ## Contributing
 
-Contributions welcome. If you have prompts, workflows, or archive guides that worked for your research, open a PR. Please ensure all examples use placeholder names (no real family data).
+Contributions welcome. If you have prompts, workflows, or archive guides that worked for your
+research, open a PR against this fork. Fixes that are not specific to this fork's tooling are
+worth sending to [upstream](https://github.com/mattprusak/autoresearch-genealogy) as well.
+
+Please ensure all examples use placeholder names — **no real family data, and no real record
+identifiers**. An external ID such as a FamilySearch PID resolves to a named person in one
+click, so it discloses exactly what a placeholder name protects. `scripts/privacy-audit-repo`
+checks both, and `scripts/validate-repo` checks the repository's structural contracts; run
+both before opening a PR.
