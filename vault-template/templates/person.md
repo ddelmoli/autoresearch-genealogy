@@ -1,8 +1,11 @@
 ---
 type: person
 name: "[Full Name]"
-born: YYYY-MM-DD
-died: YYYY-MM-DD
+born: 3 SEP 1780          # GEDCOM 7 DateValue, or ISO YYYY-MM-DD; omit if unknown
+died: BET 1816 AND 13 FEB 1823
+# born_phrase / died_phrase: the GEDCOM 7 PHRASE escape hatch — free text for what
+# the grammar cannot express. The classic case is an Old Style / New Style dual
+# date: born: JULIAN 30 JAN 1649 with born_phrase: 30 January 1648/49.
 life_status: living | deceased | unknown
 family: "[Surname]"
 evidence_tier: strong_signal | moderate_signal | speculative
