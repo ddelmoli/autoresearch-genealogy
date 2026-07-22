@@ -104,6 +104,33 @@ check(not gdate.is_day_precise("BET 3 SEP 1780 AND 1790"),
       "is_day_precise is NOT the privacy predicate (a range is not one day) — "
       "the Spec 01 gates keep their own fail-closed copy")
 
+# --- resolve_year: THE one year path for every gate (Spec 05) -------------- #
+# Layer 1: a valid DateValue. Layer 2: legacy prose via normalise. Layer 3: the
+# explicit bare-4-digit fallback with PID-like tokens stripped.
+for value, want, layer in [
+    ("3 SEP 1780", 1780, "1 field"),
+    ("ABT 1068", 1068, "1 field — Henry I of England, invisible under the old 1500 floor"),
+    ("1008", 1008, "1 field — Henry I of France, a DIFFERENT person"),
+    ("BET 1816 AND 13 FEB 1823", 1816, "1 field, earlier bound"),
+    ("954", 954, "1 field — medieval"),
+    ("~1750", 1750, "2 prose"),
+    ("bef. 1866", 1866, "2 prose"),
+    ("1969, Somewhereton, MA", 1969, "2 prose"),
+    ("baptized 3 OCT 1598", 1598, "3 fallback — normalise refuses, the scan finds it"),
+    ("b. 1853 (FS LZ19-924)", 1853, "3 fallback — PID-like token stripped first"),
+    ("unknown", None, "no year anywhere"),
+    ("Russia", None, "a place is not a year"),
+    ("", None, "empty"),
+    (None, None, "None"),
+]:
+    got = gdate.resolve_year(value)
+    eq(got, want, f"resolve_year({value!r}) [{layer}]")
+eq(gdate.resolve_year("baptized 3 OCT 1598", allow_prose=False), None,
+   "resolve_year(allow_prose=False) refuses the layer-3 fallback")
+eq(gdate.resolve_year_range("BET 1816 AND 13 FEB 1823"), (1816, 1823), "resolve_year_range: field")
+eq(gdate.resolve_year_range("1883-1885"), (1883, 1885), "resolve_year_range: prose range")
+eq(gdate.resolve_year_range("b. 1811 d. 1893"), (1811, 1893), "resolve_year_range: fallback first/last")
+
 # --- normalise: the mechanical conversions -------------------------------- #
 NORMALISE = [
     ("~1750", "ABT 1750", ""),

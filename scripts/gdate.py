@@ -224,6 +224,64 @@ def year(value):
     return lo if lo is not None else hi
 
 
+_PID_TOKEN = re.compile(r"\b[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9]+\b")
+_BARE_YEAR = re.compile(r"\b(\d{4})\b")
+
+
+def resolve_year(value, allow_prose=True):
+    """THE year-resolution path for every gate (spec/structured-dates Spec 05).
+
+    A record's date value may be a proper DateValue (post-migration), legacy
+    display prose (pre-migration, or a residue entry), or nothing. Three layers,
+    tried in order, each one weaker and each one EXPLICIT:
+
+      1. a valid DateValue          -> `year()`. The authoritative answer.
+      2. legacy prose               -> `normalise()`, then `year()`. Handles
+                                       `~1750`, `bef. 1866`, `1969, Place, MA`.
+      3. the fallback heuristic     -> the first bare 4-digit token, after PID-like
+                                       tokens are stripped (`LZ19-924`, `G1HP-4CV`,
+                                       `Wentworth-48`). Only with allow_prose.
+
+    This replaces the three divergent `YEAR_RE`s that each guessed a year out of
+    prose and disagreed — two of which carried a **1500 floor**
+    (`1[5-9]\\d{2}|20[0-2]\\d`), so no medieval person could be year-checked at all.
+    That is why two entirely different people named "Henry I" (England 1068-1135,
+    France 1008-1060) were invisible to duplicate detection: with no year,
+    `dup_name_audit` neither flagged them NOR cleared them.
+
+    Layer 3 is deliberately 4-digit only. Allowing 3 digits was measured on 22 JUL
+    2026 and rejected: it reads atto numbers like `534` as death years. Medieval
+    years reach layer 1 or 2 as a real value (`954` IS a valid DateValue), so the
+    fallback never needs them — the floor is gone without the false positives."""
+    if value is None:
+        return None
+    y = year(value)
+    if y is not None:
+        return y
+    normalised, _residue = normalise(value)
+    if normalised is not None:
+        return year(normalised)
+    if not allow_prose:
+        return None
+    m = _BARE_YEAR.search(_PID_TOKEN.sub(" ", str(value)))
+    return int(m.group(1)) if m else None
+
+
+def resolve_year_range(value):
+    """(lo, hi) for a record value, through the same layers as `resolve_year`.
+    Consumers that need the LAST year (a death year out of `1883-1885`) use hi."""
+    lo, hi = year_range(value)
+    if lo is not None or hi is not None:
+        return (lo, hi)
+    normalised, _residue = normalise(value)
+    if normalised is not None:
+        return year_range(normalised)
+    years = _BARE_YEAR.findall(_PID_TOKEN.sub(" ", str(value or "")))
+    if not years:
+        return (None, None)
+    return (int(years[0]), int(years[-1]))
+
+
 def is_day_precise(value):
     """True when `value` fixes one specific DAY.
 
