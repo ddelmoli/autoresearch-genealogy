@@ -68,18 +68,33 @@ def parse_person_index():
     stable, if cosmetic, anchor."""
     rows = []
     for e in G.parse_narrative():
-        born, died = _clean_vital(e["born"]), _clean_vital(e["died"])
+        # TWO STORES, ONE FACT (spec/structured-dates Spec 06, decision (a)):
+        #   the FIELD is authoritative for the YEAR — it is a real DateValue;
+        #   the HEADER is authoritative for the PLACE — a date field holds no
+        #   place by design, so deriving one from it is a category error. That
+        #   mistake produced a live false positive: a canonical born of
+        #   'BET 1625 AND 1627' was compared against a prose place.
+        header_born = _clean_vital(e.get("header_born") or "")
+        header_died = _clean_vital(e.get("header_died") or "")
+        born = header_born or _clean_vital(e["born"])
+        died = header_died or _clean_vital(e["died"])
         rows.append({
             "name": e["name"],
             "born": born,
             "died": died,
+            "field_born": e["born"],
+            "field_died": e["died"],
+            "header_born": header_born,
+            "header_died": header_died,
             "pid": e["pid"],
             "gen": e["gen"],
+            "file": e.get("file"),
+            "meta_date_keys": e.get("meta_date_keys") or (),
             "lineno": 0,
-            # canonical side: the FIELD when the entry has one, else the prose
-            # fallback — all inside gdate.resolve_year, one path for every gate.
-            "born_year": gdate.resolve_year(e["born"]),
-            "died_year": gdate.resolve_year(e["died"]),
+            # canonical side: the FIELD when the entry has one, else the header —
+            # all inside gdate.resolve_year, one path for every gate.
+            "born_year": gdate.resolve_year(e["born"]) or gdate.resolve_year(header_born),
+            "died_year": gdate.resolve_year(e["died"]) or gdate.resolve_year(header_died),
         })
     return rows
 
@@ -185,6 +200,55 @@ def canonical_year_alts(raw_date_str, primary_year):
         if lo <= hi <= lo + RANGE_SPAN_CAP:
             alts.update(range(lo, hi + 1))
     return alts
+
+# ============================================================
+# DATE_DRIFT — header vs field (spec/structured-dates Spec 06)
+# ============================================================
+# Before this lane a person's dates lived in ONE place, the header parenthetical.
+# They now live in two: the `- meta:` FIELD (authoritative for machines — gates,
+# sorting, matching, exports) and the header (authoritative for humans, and the
+# only one that can carry "near Weymouth, MA", "killed in the war", "christened
+# 3 SEP 1676"). That is exactly the drift integrity rule 7 exists to police, so it
+# is gated rather than trusted.
+#
+# Compare YEARS, not strings. `3 SEP 1780` and `b. 3 SEP 1780, Boston` must agree;
+# `ABT 1750` and `~1750` must agree. Only a genuine disagreement — both sides
+# present and different — is drift. One side absent is COVERAGE, counted separately,
+# because a missing field is a migration gap and a missing header is a display gap;
+# neither is a contradiction.
+DATE_DRIFT_COVERAGE = {"field_missing": 0, "header_missing": 0, "both_missing": 0}
+
+
+def date_drift(rows):
+    """Header-vs-field year disagreements. Returns prose_audit-shaped issue tuples."""
+    for k in DATE_DRIFT_COVERAGE:
+        DATE_DRIFT_COVERAGE[k] = 0
+    out = []
+    for r in rows:
+        for slot in ("born", "died"):
+            # `field_*` falls back to the header when the meta has no date key, so
+            # ask the meta block itself whether the FIELD exists. Otherwise coverage
+            # reports 0 gaps on a vault that has not been migrated at all.
+            has_field = slot in (r.get("meta_date_keys") or ())
+            field = r.get(f"field_{slot}") if has_field else None
+            header = r.get(f"header_{slot}")
+            fy = gdate.resolve_year(field) if field else None
+            hy = gdate.resolve_year(header) if header else None
+            if fy is None and hy is None:
+                DATE_DRIFT_COVERAGE["both_missing"] += 1
+            elif fy is None:
+                DATE_DRIFT_COVERAGE["field_missing"] += 1
+            elif hy is None:
+                DATE_DRIFT_COVERAGE["header_missing"] += 1
+            elif fy != hy:
+                # An OS/NS dual header legitimately reads either year, so accept
+                # both before calling it drift.
+                if fy in canonical_year_alts(header, hy):
+                    continue
+                out.append((r.get("file") or "?", 0, "WARN", "DATE_DRIFT",
+                            f"'{r['name']}' {slot} field says {fy}; header says {hy}"))
+    return out
+
 
 def normalize_name(name):
     n = re.sub(r"~~.*?~~", "", name)
@@ -742,6 +806,11 @@ def main():
     # (The former CLAIM 5 — Person_Index Notes-column-bloat — was removed when
     # Person_Index.md was retired; there is no Notes column to police.)
 
+    # DATE_DRIFT (spec/structured-dates Spec 06) — the gate for the two-store
+    # model this lane introduced. Advisory, and appended after the prose checks so
+    # it shares their report.
+    issues.extend(date_drift(rows))
+
     # Report
     by_severity = defaultdict(list)
     for i in issues:
@@ -750,6 +819,11 @@ def main():
     print(f"\n=== SUMMARY ===")
     print(f"  ERROR issues:  {len(by_severity['ERROR'])}")
     print(f"  WARN issues:   {len(by_severity['WARN'])}")
+    dd = [i for i in issues if i[3] == "DATE_DRIFT"]
+    cov = DATE_DRIFT_COVERAGE
+    print(f"  DATE_DRIFT:    {len(dd)}   [advisory]"
+          f"  (coverage: field missing {cov['field_missing']}, "
+          f"header missing {cov['header_missing']}, neither {cov['both_missing']})")
 
     for sev in ("ERROR", "WARN"):
         if not by_severity[sev]:
