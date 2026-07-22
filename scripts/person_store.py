@@ -501,7 +501,7 @@ def _parse_vitals(paren):
         #   * a (?<![\w-]) guard to skip PIDs -> also killed legitimate hyphenated
         #     ranges like "1705-1765", losing vitals on 11 entries.
         # Instead, strip PID-like tokens (any hyphenated token containing a letter:
-        # "LZ19-924", "G1HP-4CV", "Wentworth-48") and then scan plainly.
+        # "ABCD-123", "EFGH-4JK", "Surname-48") and then scan plainly.
         _paren_noids = re.sub(r"\b[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9]+\b", " ", paren)
         yrs = re.findall(r"\b(\d{4})\b", _paren_noids)
         if yrs:
@@ -517,7 +517,7 @@ def _vitals_paren(name, rest):
     the name.
 
     Balanced, not "up to the first ')'": vault headers routinely nest a
-    parenthetical inside the vitals — "(b. 3 SEP 1780 (FS LHPN-TF5 + …), … d.
+    parenthetical inside the vitals — "(b. 3 SEP 1780 (FS XXXX-XXX + …), … d.
     between 1816 and 13 FEB 1823, likely at sea …)". A first-')' scan truncates at
     the INNER close, so everything after it — usually the whole death date — was
     invisible to every consumer of the record.

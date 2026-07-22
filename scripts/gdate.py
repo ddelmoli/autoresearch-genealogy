@@ -239,7 +239,7 @@ def resolve_year(value, allow_prose=True):
       2. legacy prose               -> `normalise()`, then `year()`. Handles
                                        `~1750`, `bef. 1866`, `1969, Place, MA`.
       3. the fallback heuristic     -> the first bare 4-digit token, after PID-like
-                                       tokens are stripped (`LZ19-924`, `G1HP-4CV`,
+                                       tokens are stripped (`ABCD-123`, `EFGH-4JK`,
                                        `Wentworth-48`). Only with allow_prose.
 
     This replaces the three divergent `YEAR_RE`s that each guessed a year out of

@@ -80,7 +80,7 @@ silently, and only for those months.
 
 ```bash
 python3 scripts/migrate_dates.py                                    # dry run, whole vault
-python3 scripts/migrate_dates.py --file Family_Tree_British_Magna_Carta.md
+python3 scripts/migrate_dates.py --file Family_Tree_<Region>.md
 python3 scripts/migrate_dates.py --apply --file <one file> --verify-headers
 python3 scripts/migrate_dates.py --residue "$AUTORESEARCH_VAULT/Structured_Dates_Residue.md"
 ```

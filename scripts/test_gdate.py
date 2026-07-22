@@ -117,7 +117,7 @@ for value, want, layer in [
     ("bef. 1866", 1866, "2 prose"),
     ("1969, Somewhereton, MA", 1969, "2 prose"),
     ("baptized 3 OCT 1598", 1598, "3 fallback — normalise refuses, the scan finds it"),
-    ("b. 1853 (FS LZ19-924)", 1853, "3 fallback — PID-like token stripped first"),
+    ("b. 1853 (FS ABCD-123)", 1853, "3 fallback — PID-like token stripped first"),
     ("unknown", None, "no year anywhere"),
     ("Russia", None, "a place is not a year"),
     ("", None, "empty"),

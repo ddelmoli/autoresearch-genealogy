@@ -31,7 +31,7 @@ WHAT IT REFUSES TO DO, and why each rule exists:
 
 Usage:
     python3 scripts/migrate_dates.py                          # dry run, whole vault
-    python3 scripts/migrate_dates.py --file Family_Tree_British_Magna_Carta.md
+    python3 scripts/migrate_dates.py --file Family_Tree_<Region>.md
     python3 scripts/migrate_dates.py --apply --file ...       # one file at a time
     python3 scripts/migrate_dates.py --residue "$AUTORESEARCH_VAULT/Structured_Dates_Residue.md"
 
