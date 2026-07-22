@@ -91,6 +91,26 @@ PA.date_drift([{"name": "Unmigrated", "file": "f.md", "meta_date_keys": (),
 check(PA.DATE_DRIFT_COVERAGE["field_missing"] == 1,
       "an unmigrated entry counts as field-missing, not as a silent zero")
 
+# --- the place predicate: a DATE segment is never a place ----------------- #
+# The vitals parser strips bracket CHARACTERS but keeps their content, so
+# "Sep 1843 [GRO Q3], Bristol district" reaches this auditor as segment 0
+# "Sep 1843 GRO Q3" — and a word-only test accepts "GRO" as a place name. Three
+# live false positives came from exactly that, for as long as prose_audit existed.
+for seg, want, why in [
+    ("Salem", True, "a plain place"),
+    ("Bristol district", True, "a multi-word place"),
+    ("Weymouth, MA", True, "still a place"),
+    ("DEC 1651", False, "month + year"),
+    ("ABT 1640", False, "an approximation"),
+    ("bef. 9 OCT 1774", False, "a bound"),
+    ("Sep 1843 GRO Q3", False, "a date segment carrying a word-like token"),
+    ("1842 Jun-qtr GRO Q2", False, "a GRO quarter is a date, not a place"),
+    ("", False, "empty"),
+]:
+    got = PA._segment_names_place(seg)
+    check(got == want, f"_segment_names_place({seg!r}) -> {want}  [{why}]"
+          + ("" if got == want else f" (got {got})"))
+
 # --- the promotion: DATE_DRIFT BLOCKS (22 JUL 2026) ----------------------- #
 # It was advisory at first landing and became blocking once the baseline was 0 and
 # the Spec 04 residue was triaged. It is the ONLY blocking metric in prose_audit:

@@ -149,7 +149,22 @@ def _segment_names_place(seg):
     """True if a comma-segment of a date cell actually names a place, i.e. it
     contains at least one alphabetic word that is not a date qualifier or month
     abbreviation. "Salem" → True; "DEC 1651" → False; "ABT 1640" → False;
-    "bef. 9 OCT 1774" → False; "" → False."""
+    "bef. 9 OCT 1774" → False; "" → False.
+
+    A segment carrying a YEAR is the DATE segment, never a place, even when it
+    also holds word-like tokens. That is what "Sep 1843 [GRO Q3], Bristol
+    district" needs: the vitals parser strips the bracket CHARACTERS but keeps
+    their content, so segment 0 arrives as "Sep 1843 GRO Q3" and the word test
+    alone accepts "GRO" as a place name — three live false positives, all one
+    entry, for as long as this auditor has existed.
+
+    Dropping bracketed asides wholesale in `_parse_vitals` was measured as the
+    alternative and REJECTED: 57 values change and several lose real content, e.g.
+    "Horsley [bp. 11 MAR 1743/44]" loses the date entirely and
+    "Glasgow [High Church district]" loses a place detail. Brackets here carry
+    substance, not just provenance, so the fix belongs on the reading side."""
+    if re.search(r"\b\d{3,4}\b", seg or ""):
+        return False
     words = [w.lower() for w in re.findall(r"[A-Za-zÀ-ÿ]{2,}", seg or "")]
     return any(w not in _NON_PLACE_WORDS for w in words)
 
