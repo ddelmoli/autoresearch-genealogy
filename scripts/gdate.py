@@ -351,6 +351,12 @@ _DUAL_YEAR = re.compile(r"\A(?P<head>.*?)(?P<y1>\d{3,4})/(?P<y2>\d{1,4})(?P<tail
 def _rewrite(s):
     """Mechanical legacy-prose rewrites. Order matters and is load-bearing."""
     s = re.sub(r"[*`\[\]]", "", s).strip()
+    # Leading punctuation is a vitals-parser artifact, never part of a date:
+    # a header like "(b. X /chr. Y)" yields values such as ". 1641, Marblehead".
+    # Strip it so the date behind it is reachable. A leading WORD is left alone —
+    # "chr. 30 JUL 1758" stays refused, because a christening is not a birth and
+    # deciding that is an editorial act, not a normalisation.
+    s = re.sub(r"\A[.,;:/\s]+", "", s)
     s = s.replace("’", "'")
     # ISO first, so the range rule below cannot mistake 1780-09-03 for a range.
     s = re.sub(r"\b(\d{4})-(\d{2})-(\d{2})\b",
@@ -368,13 +374,22 @@ def _rewrite(s):
         return w if w in _MONTHS_GREG else m.group(0)
     s = re.sub(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?", _mon, s, flags=re.I)
     # Approximation markers. `~1750`, `c.1750`, `ca 1750`, `about 1750`, `circa 1750`.
-    s = re.sub(r"(?:\A|(?<=[\s(]))(?:~|c\.\s*|ca\.?\s+|circa\s+|about\s+|abt\.?\s+|approx\.?\s+)(?=\d)",
-               "ABT ", s, flags=re.I)
+    # …and the same lookahead widening the bounds get below: an approximation can
+    # sit in front of a MONTH, not just a year ("~NOV 1698"). The month rewrite has
+    # already run, so the token is uppercase by now.
+    s = re.sub(r"(?:\A|(?<=[\s(]))(?:~|c\.\s*|ca\.?\s+|circa\s+|about\s+|abt\.?\s+|approx\.?\s+)"
+               rf"(?=\d|(?:{_MON_ALT})\b)", "ABT ", s, flags=re.I)
     s = re.sub(r"\b(?:est\.?|estimated)\s+(?=\d)", "EST ", s, flags=re.I)
     s = re.sub(r"\b(?:calc\.?|calculated)\s+(?=\d)", "CAL ", s, flags=re.I)
-    s = re.sub(r"\b(?:bef\.?|before|by|no\s+later\s+than)\s+(?=\d)", "BEF ", s, flags=re.I)
-    s = re.sub(r"\b(?:aft\.?|after|no\s+earlier\s+than)\s+(?=\d)", "AFT ", s, flags=re.I)
-    s = re.sub(r"\bbetween\s+(?=\d)", "BET ", s, flags=re.I)
+    _after_bound = r"(?=\d|ABT\b|CAL\b|EST\b|(?:%s)\b)" % _MON_ALT
+    s = re.sub(r"\b(?:bef\.?|before|by|no\s+later\s+than)\s+" + _after_bound, "BEF ", s, flags=re.I)
+    s = re.sub(r"\b(?:aft\.?|after|no\s+earlier\s+than)\s+" + _after_bound, "AFT ", s, flags=re.I)
+    # "before about 1730" -> BEF 1730. A bound on an approximation is still a
+    # bound, and `BEF ABT x` is not grammatical; the approximation is subsumed.
+    s = re.sub(r"\b(BEF|AFT)\s+(?:ABT|CAL|EST)\s+", r"\1 ", s)
+    # "bet." is as common as "between" in this house style, and both may precede a
+    # full day-month-year bound ("bet. 9 JUL 1744 and 3 MAR 1747").
+    s = re.sub(rf"\bbet(?:ween|\.)\s+(?=\d|(?:{_MON_ALT})\b)", "BET ", s, flags=re.I)
     s = re.sub(r"\bfrom\s+(?=\d)", "FROM ", s, flags=re.I)
     # `1810-1830` / `1810–1830` -> `BET 1810 AND 1830`. Guarded: both sides 3-4
     # digits and the second not earlier, so a stray `1780-09` or a PID fragment
