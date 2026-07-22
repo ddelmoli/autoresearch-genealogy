@@ -56,16 +56,54 @@ rescue Psych::SyntaxError, Psych::DisallowedClass => e
   {}
 end
 
+# --------------------------------------------------------------------------
+# Day-precision: THE rule, one place per language, for "does this value disclose
+# a specific DAY?". Every privacy call site below references it; do not
+# re-implement it inline.
+#
+# Until 22 JUL 2026 `exact_date?` matched ONLY ISO `YYYY-MM-DD`, while the body
+# scan already matched `3 Sep 1780`. Adopting GEDCOM 7 `DateValue` for born/died
+# (spec/structured-dates) makes `born: '3 SEP 1780'` a legal frontmatter value —
+# under the ISO-only rule that returned false and the gate would have PASSED a
+# living person's exact date of birth, with no error and no warning. Hence one
+# predicate covering both notations, shared by both call sites.
+#
+# DAY-PRECISION is the trigger, not the presence of a year. `1780`, `ABT 1780`,
+# `BEF 1780`, `BET 1779 AND 1781` stay permitted for a living person: the vault
+# publishes approximate years for the living by design ("Living people stay
+# terse (approximate year only, no exact DOB)").
+#
+# It SEARCHES rather than anchors, so a day-precise bound inside a range
+# (`BET 3 SEP 1780 AND 1790`) trips it too. That is deliberate fail-closed
+# behaviour for a privacy gate.
+#
+# Years are `\d{4}` on purpose. This gate protects LIVING people, none of whom
+# have a 3-digit birth year; wider year support belongs to gdate (Spec 02), and
+# widening it here would only add false positives.
+MONTH_ABBR = "Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
+DAY_PRECISE = Regexp.union(
+  /\b\d{4}-\d{2}-\d{2}\b/,                                        # ISO 1780-09-03
+  /\b\d{1,2}\s+(?:#{MONTH_ABBR})[a-z]*\.?\s+\d{4}\b/i,            # GEDCOM 7 / prose: 3 SEP 1780
+  /\b(?:#{MONTH_ABBR})[a-z]*\s+\d{1,2},\s+\d{4}\b/i               # US prose: Sep 3, 1780
+).freeze
+
+# Frontmatter keys screened against DAY_PRECISE for a living/unknown person.
+# The `*_phrase` keys are the GEDCOM 7 PHRASE escape hatch — free text, so they
+# need the SAME screen as the date keys, not a weaker one.
+PRIVATE_DATE_KEYS = %w[born died born_phrase died_phrase].freeze
+
+def day_precise?(text)
+  DAY_PRECISE.match?(text.to_s)
+end
+
 def exact_date?(value)
   return true if value.is_a?(Date)
 
-  value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/)
+  day_precise?(value)
 end
 
 def exact_private_date_in_body?(text)
-  text.match?(/\b\d{4}-\d{2}-\d{2}\b/) ||
-    text.match?(/\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{4}\b/i) ||
-    text.match?(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+\d{4}\b/i)
+  day_precise?(text)
 end
 
 CORE_FILES.each do |file|
@@ -104,7 +142,7 @@ Dir[File.join(ROOT, "**/*.md")].sort.each do |path|
   end
 
   if %w[living unknown].include?(data["life_status"])
-    %w[born died].each do |key|
+    PRIVATE_DATE_KEYS.each do |key|
       errors << "#{rel(path)}: #{data["life_status"]} person must not expose exact #{key} date" if exact_date?(data[key])
     end
 
