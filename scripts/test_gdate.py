@@ -164,11 +164,11 @@ eq(gdate.normalise("early 1621"), (None, "early 1621"),
 
 # --- split_dual_year: the Old Style / New Style case ---------------------- #
 for prose, want in [
-    ("6 JAN 1743/4", ("6 JAN 1743", "6 JAN 1743/4", "")),
-    ("13 JAN 1699/1700", ("13 JAN 1699", "13 JAN 1699/1700", "")),
+    ("6 JAN 1743/4", ("6 JAN 1744", "6 JAN 1743/4", "")),   # NS year, per App. A 6.2
+    ("13 JAN 1699/1700", ("13 JAN 1700", "13 JAN 1699/1700", "")),
     ("27 JAN 1712/13, Somewhereton, Suffolk, MA",
-     ("27 JAN 1712", "27 JAN 1712/13", "Somewhereton, Suffolk, MA")),
-    ("~1649/50, Somewhereton, Essex, MA", ("ABT 1649", "~1649/50", "Somewhereton, Essex, MA")),
+     ("27 JAN 1713", "27 JAN 1712/13", "Somewhereton, Suffolk, MA")),
+    ("~1649/50, Somewhereton, Essex, MA", ("ABT 1650", "~1649/50", "Somewhereton, Essex, MA")),
     ("c.985/990", None),        # 990 != 986 — a span, not a dual year
     ("1712", None),             # no slash
     ("3 SEP 1780", None),

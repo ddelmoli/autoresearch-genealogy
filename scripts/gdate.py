@@ -377,16 +377,30 @@ def split_dual_year(prose):
     GEDCOM 7 Appendix A §6.2's own worked example, which is also the case
     `CLAUDE.method.md` cites as the reason dates were kept as prose:
 
-        split_dual_year('6 JAN 1743/4')     -> ('6 JAN 1743', '6 JAN 1743/4', '')
-        split_dual_year('13 JAN 1699/1700') -> ('13 JAN 1699', '13 JAN 1699/1700', '')
-        split_dual_year('~1649/50, Beverly, Essex, MA')
-                                            -> ('ABT 1649', '~1649/50', 'Beverly, Essex, MA')
+        split_dual_year('6 JAN 1743/4')     -> ('6 JAN 1744', '6 JAN 1743/4', '')
+        split_dual_year('13 JAN 1699/1700') -> ('13 JAN 1700', '13 JAN 1699/1700', '')
+        split_dual_year('~1649/50, Somewhereton')
+                                            -> ('ABT 1650', '~1649/50', 'Somewhereton')
 
-    The value is the year AS WRITTEN (the Julian/Old-Style year, which is what the
-    record says); the phrase preserves the original DATE notation verbatim, so
-    nothing is lost and the conversion is reversible. A place or commentary that
-    had leaked into the date slot comes back as `residue`, exactly as `normalise`
-    reports it, and needs the same triage.
+    ⚠ The value takes the **SECOND** year, not the first. That is GEDCOM 7's own
+    worked example (Appendix A §6.2):
+
+        2 DATE 30 JAN 1649
+        3 PHRASE 30 January 1648/49
+
+    In `1648/49` the first year is Old Style (the year began on 25 March) and the
+    second is New Style; the DATE carries the New Style year, which is the one
+    every modern source uses. Taking the FIRST year was this function's original
+    behaviour and it was WRONG — applied to a real vault it produced four
+    `prose_audit` year-drift ERRORs in a single run, each an early-17th/18th-c.
+    colonial figure whose `d. 21 FEB 1620/21`-shaped date became 1620 where every
+    published account says 1621. **Only January-to-March dates are affected**,
+    which is exactly why the bug is easy to miss and why a drift gate catches it.
+
+    The phrase preserves the original DATE notation verbatim, so nothing is lost
+    and the conversion is reversible. A place or commentary that had leaked into
+    the date slot comes back as `residue`, exactly as `normalise` reports it, and
+    needs the same triage.
 
     Returns None when the slash is NOT a dual year — the two years must be
     CONSECUTIVE once the short form is expanded. That is what separates an OS/NS
@@ -409,7 +423,7 @@ def split_dual_year(prose):
     y2 = y2raw if len(y2raw) == len(y1) else y1[:len(y1) - len(y2raw)] + y2raw
     if not y2.isdigit() or int(y2) != int(y1) + 1:
         return None
-    value, residue = normalise(m.group("head") + y1 + m.group("tail"))
+    value, residue = normalise(m.group("head") + y2 + m.group("tail"))
     if value is None:
         return None
     # The phrase is the original DATE notation only — the trailing place or
