@@ -82,6 +82,44 @@ def _looks_like_name(name):
     return True
 
 
+# Patronymic / filiation particles that are legitimately lowercase inside a
+# personal name but are not in the (toponymic) NAME_CONNECTORS set above:
+# Gaelic "mac", Irish "ua"/"ni", Welsh "ap", Arabic "ibn", Italian "fu" ("the
+# late"), Scandinavian "av"/"af". Kept separate from NAME_CONNECTORS so the
+# existing _is_person heuristic is not loosened by accident.
+PATRONYMIC_PARTICLES = {
+    "mac", "mc", "nic", "ingen", "ua", "ó", "o'", "ni",
+    "ap", "ab", "ibn", "bin", "bint", "fu", "av", "af",
+}
+_BRACKET_SEGMENT = re.compile(r"\[[^\]]*\]")
+
+
+def looks_like_person_header(name):
+    """Stricter-but-fairer companion to _looks_like_name, for deciding whether a
+    BOLD line is a person entry header or just bold prose.
+
+    Two differences from _looks_like_name:
+      * bracketed segments are stripped first — "[King of Ui Cheinnselaig]",
+        "[the elder]", "[maiden surname unknown]" are titles/epithets, and the
+        lowercase words inside them must not disqualify a real person; and
+      * patronymic particles are allowed, so "Cellach mac Cinaeda" survives.
+
+    Used by harvest_sources.extract_entries to stop bold PROSE lines ("Death
+    record", "Two marriages", "Corroborated by ...") from being treated as
+    narrative entries — which otherwise makes them absorb a body of source
+    citations and hand that ARK count to every PID mentioned inside.
+    """
+    stripped = _BRACKET_SEGMENT.sub(" ", name or "")
+    for tok in stripped.replace("-", " ").split():
+        t = tok.strip(".'")
+        if not t or not t[0].islower():
+            continue
+        if t.lower() in NAME_CONNECTORS or t.lower() in PATRONYMIC_PARTICLES:
+            continue
+        return False
+    return True
+
+
 def _is_person(name, paren):
     """Heuristic person filter: name has no embedded year, reads like a personal
     name (capitalized tokens + particles), and the parenthetical looks like a
