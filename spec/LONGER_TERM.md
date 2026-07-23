@@ -23,73 +23,78 @@ not to add a heading.
 
 ---
 
-## Constrain what may be WRITTEN into a header, and converge on GEDCOM 7
+## GEDCOM 7 beyond the date slot: marriage events, roles, and identifiers
 
-**Parked 23 JUL 2026**, after an operator audit found 25 wrong date values that a
-full gate suite had reported as clean.
+**Parked 23 JUL 2026**, when the header-grammar lane was opened and the operator
+asked whether marriage and place conventions should come along with it. They were
+measured in the same pass. The **`PLAC` jurisdiction ordering graduated** into that
+lane's R6; everything below did not, and this records why so the survey is not
+repeated from scratch.
 
-**The observation that matters.** These `.md` files are meant to be read by BOTH a
-human and a machine. Today only half of each entry honours that: the `- meta:`
-block is machine-grade, while the bold-name header is free prose that a parser is
-forced to GUESS at. And the guessing is not the root cause — the proliferation of
-header dialects is. Every one of them was introduced incrementally by an assistant
-adding entries with no grammar constraining the header, each shape locally
-reasonable and collectively corrosive:
+**Marriage is the largest unstructured fact class in the vault**, and the gap is
+not subtle:
 
-```
-**Name** (b. 3 SEP 1780, Place; d. 1873)              the intended house style
-**Name** (c.966; 23 APR 1016; FS PID XXXX-XXX)        terse, positional
-**Name** (c.975–1045; Gen 35)                         dash range
-**Name** (1940, MA; 1946 [infant death]; FS PID …)    fields carrying places
-**Name** (alive 1852 Villagio, profession …)          a floruit, not a vital
-**Name** (unknown, Villagio; 6 APR 1820, Villagio)    absent birth field
-**Name** (vault name "…" 4 APR – 10 JUN 2026) (b. …)  vitals in a SECOND paren
-**Name** (de Roos; FS "William de Ros" 1255–1316)     a quoted external title
-```
+| | |
+|---|---|
+| marriage mentions in narrative prose | **1,667** |
+| entries carrying a `spouse` edge | 652 of 1,165 (55%) |
+| structured marriage **date or place** | **0** |
+| ad-hoc `marriage:` prose bullets | ~20, each a different shape |
 
-**The whole of 22-23 JUL was spent widening the READER** — balanced parens, a
-terse-dialect rule, floruit guards, month-year tokens, bound prefixes, absent-birth
-fields, dash-range disambiguation. Each change was measured and each was correct,
-and the approach is still backwards. A reader that must accommodate eight dialects
-will meet a ninth. The corrective is at the WRITE end: one grammar for what a
-header may contain, enforced when an entry is created, so the parser has one shape
-to read instead of a taxonomy to guess among.
+The `spouse` edge records *who* and never *when* or *where*. Those ~20 bullets are
+a dialect forming in real time — the same pathology the header lane exists to
+correct, one level down, which is the argument for settling it before it reaches
+1,667 instances.
 
-**Why GEDCOM 7 is the right target for that grammar.** The lane already adopted it
-for `born`/`died` values and it paid: a real standard answers questions house style
-had been re-deciding ad hoc (`ABT` vs `EST` vs `CAL`, Old Style/New Style, bounds,
-ranges, non-Gregorian calendars). If these files are ever to EXPORT cleanly — and
-the vault's GEDCOM and RootsMagic files are already regenerated from them — then
-the record needs GEDCOM-shaped facts throughout, not only in two date fields:
-places, events, sources, and the header display derived from them rather than
-authored beside them.
+- **The blocker is architectural, not syntactic.** GEDCOM 7 puts marriage on the
+  **`FAM` record** (`MARR`, plus `ENGA`, `MARB`, `MARC`, `MARL`, `MARS`, `DIV`,
+  `DIVF`, `ANUL`, each with `HUSB.AGE` / `WIFE.AGE`). This vault has no family
+  record at all. So the first decision is denormalised marriage fields on both
+  partners (drifts, needs a gate, cheap) versus a real family record (correct,
+  and a large change to `person_store`, the narrative model and every consumer).
+  **Writing a marriage grammar before making that call would repeat exactly the
+  mistake the header lane was opened to avoid.**
+- **Why it is parked:** the header lane is mid-flight and its Spec 04 migration
+  depends on a 0-loss discipline that a second concurrent content change would
+  compromise. Also, a `FAM` record is plausibly a larger change than the whole
+  header lane.
+- **Trigger:** the header lane closing; or the ad-hoc `marriage:` bullet count
+  growing past roughly 50, at which point the dialect is cheaper to prevent than
+  to migrate.
+- **Risk to design around:** denormalising onto both partners creates two stores
+  for one fact, which is the drift integrity rule 7 exists to police and which
+  the date work already had to gate once. Decide the record shape first.
 
-- **Where it would pay:** the export stops being a lossy conversion and becomes a
-  serialisation. Header/field drift becomes structurally impossible rather than
-  gated. New entries stop inventing dialects. And the six correct values today's
-  strict parser declines are recovered, because their headers would be normalised.
-- **Why it is parked:** it is a vault-wide content migration touching ~1,150
-  headers, and a header rewrite was tried on 22 JUL and REJECTED on measurement —
-  the headers are heterogeneous enough that a transformer mangled entries on a dry
-  run. Doing it safely means a grammar first, a validator second, then a migration
-  per lineage file with the same 0-loss discipline the date work used, and human
-  review of every ambiguous header. That is a lane, not an afternoon.
-- **Trigger:** wanting a clean GEDCOM export; or the next time a parser change is
-  needed to accommodate a header shape, which is the signal that the reader is
-  still absorbing cost the writer should carry.
-- **Risks to design around, BEFORE any migration:**
-  1. **The header is the human half.** It legitimately carries what a structured
-     field cannot — `near Weymouth, MA`, `killed King Philip's War`, a citation
-     aside, a research note. A grammar must reserve room for that prose, not
-     legislate it away, or the files stop being readable by the human who needs
-     them most.
-  2. **Generated headers were already rejected** (Spec 06 decision (a)). A grammar
-     constrains where the DATE sits; it does not make the header a rendering.
-  3. **Sequencing.** Write the grammar and its validator first and let NEW entries
-     conform for a while before migrating old ones. A migration against an unproven
-     grammar is how 25 wrong values happened.
-  4. **The dual contract cuts both ways.** Every rule added for the machine must be
-     checked against a human reading the file in Obsidian with no tooling at all.
+**`ASSO` / `ROLE` is a weaker fit than it looks.** The vault already uses the
+vocabulary — 355 role mentions in prose: witness 144, declarant 125, informant 67,
+officiant 9, godparent / sponsor / godmother 10.
+
+- The GEDCOM 7 `ROLE` enumeration is `CHIL, CLERGY, FATH, FRIEND, GODP, HUSB,
+  MOTH, MULTIPLE, NGHBR, OFFICIATOR, PARENT, SPOU, WIFE, WITN, OTHER`.
+- **The vault's two most common roles, declarant and informant (192 of 355), have
+  no GEDCOM equivalent** and would be `OTHER` + `ASSO.PHRASE`. The standard buys
+  less here than the vocabulary overlap suggests.
+- **Why it is parked:** `Witness_Network.md` is 55 lines against 355 prose
+  mentions, so the immediate gap is *research capture*, not grammar. Structuring
+  a store that is 15% populated optimises the wrong end.
+- **Trigger:** the witness network being worked as a research lane in its own
+  right, at which point the roles want a shape before the rows are written.
+
+**`EXID` and `RESN` are already there in substance.** `fs` / `wt` / `anc` are
+structurally `EXID` + `TYPE`; `life_status: living` is `RESN` (`CONFIDENTIAL`,
+`LOCKED`, `PRIVACY` — a `List:Enum`, so combinable). Adopting the names is
+documentation with zero migration, which is also why it is not urgent.
+
+- **Risk to design around:** `RESN` is a *restriction* marker and `life_status` is
+  a *fact*. They correlate today only because the privacy gate keys on the fact.
+  Renaming one to the other would quietly move the privacy decision out of
+  `privacy_gate.py`, which is the one place `CLAUDE.method.md` insists it live.
+
+**One mapping examined and REJECTED: `evidence_tier` to `QUAY` 0-3.** `QUAY` rates
+how well a *source citation* supports a claim; `evidence_tier` rates the
+*conclusion*. They sit at different levels, and collapsing them would let a single
+strong citation silently promote a speculative conclusion. This is a category
+error, not a deferred task — do not revisit it as though it were merely unfinished.
 
 ---
 
