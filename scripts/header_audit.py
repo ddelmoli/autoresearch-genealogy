@@ -12,7 +12,8 @@ meet a ninth. This reports the gap at the WRITE end instead.
 
 THE RULES CHECKED (R1 and R5-R7 are not checkable here; see below):
 
-  R2  the vitals parenthetical must not contain a NESTED parenthetical.
+  R2  a DATE SLOT must not contain a nested parenthetical. (Narrowed 23 JUL
+      2026: a paren in a place tail or note field is free prose per R5/R6.)
   R3  a field opening with a vital tag must carry a valid GEDCOM 7 DateValue
       (or the literal `unknown`) in its date slot, optionally followed by
       ", place".
@@ -106,8 +107,9 @@ RULES = ("R2", "R3", "R4")
 # message that does not say what to write is a message that produces another
 # dialect. This is the whole root-cause argument of Spec 03 in one dict.
 FIXES = {
-    "R2": ('unnest it. Move the inner parenthetical out: either a note field after '
-           'a ";" inside the vitals paren, or an aside AFTER the closing ")".'),
+    "R2": ('move the parenthetical OUT of the date slot: put it after the place '
+           '("b. 3 SEP 1780, Villagio (parish copy)"), in its own ";" note field, '
+           'or after the closing ")". A paren elsewhere in the header is fine.'),
     "R3": ('write the date slot as a GEDCOM 7 DateValue: "ABT 1750" not "~1750" or '
            '"c.1750"; "BET 1810 AND 1830" not "1810-1830"; "BEF 1866" not "bef. '
            '1866". A place goes AFTER a comma ("b. 1810, Villagio"), never inside '
@@ -173,8 +175,16 @@ def violations(record):
             found.append(("R4", "no vitals parenthetical, but the record has dates"))
         return found
 
-    if "(" in paren:
-        found.append(("R2", "nested parenthetical inside the vitals parenthetical"))
+    # R2, NARROWED 23 JUL 2026 on measurement. It used to forbid a nested paren
+    # ANYWHERE in the vitals parenthetical, justified in Spec 01 as "a shape that
+    # carries no meaning the semicolon cannot carry". The corpus falsified that:
+    # of 34 flagged entries only 4 had the paren in a DATE SLOT; the other 30 had
+    # it in a place tail or a note field — "Villagio (Provincia)", "Gloucester
+    # (Barton St Mary)" — where the parenthesis is part of the PLACE NAME and a
+    # semicolon would split the place into a separate field. R5 and R6 already
+    # declare those free prose, so forbidding them contradicted the lane's own
+    # principle: constrain the SLOT, not the sentence.
+    # The hazard is real only inside a date slot, and that is now what it checks.
 
     saw_vital = False
     for field in _fields(paren):
@@ -182,11 +192,13 @@ def violations(record):
         if not m:
             continue                    # an id field or a note field: R5, not read
         saw_vital = True
-        if "(" in field:
-            # Already reported as R2, and the nested paren is WHY the date slot
-            # will not parse. Reporting R3 as well would double-count one defect
-            # and inflate R3, breaking the property that the histogram is a
-            # worklist ordered by CAUSE. Unnest it first; the R3 may not exist.
+        date_part, _place = PLACE_TAIL.match(m.group(2)).groups() \
+            if PLACE_TAIL.match(m.group(2)) else (m.group(2), None)
+        if "(" in date_part:
+            # R2: a nested paren in the DATE SLOT. It is also why the slot will
+            # not parse, so R3 is suppressed here — one defect, one finding, and
+            # the histogram stays a worklist ordered by CAUSE.
+            found.append(("R2", "nested parenthetical inside the date slot"))
             continue
         if not _date_slot_ok(m.group(2)):
             found.append(("R3", f"date slot is not a DateValue: {m.group(1)} …"))
