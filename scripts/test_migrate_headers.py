@@ -76,8 +76,13 @@ CASES = [
      "A2a: `?` too -- the \\Z anchor matters, \\b after ? never matches"),
     ("b. 1841 [FS", "1841", None, None,
      "A2b REFUSES a truncated bracket: 'FS' is not a place"),
-    ("b. Sep 1843 [GRO Q3], Bristol district", "SEP 1843", None, None,
-     "REFUSE: a bracketed source reference is residue, not a date"),
+    # A4: the annotation moves out of the date slot, PAST the place. It was a
+    # refusal until then, because normalise would have deleted it.
+    ("b. Sep 1843 [GRO Q3], Bristol district", "SEP 1843", None,
+     "b. SEP 1843, Bristol district [GRO Q3]",
+     "A4: a bracketed source reference moves out of the slot, after the place"),
+    ("b. 1943 [family date]", "1943", None, None,
+     "A4 REFUSES with no place: the note would land back in the date slot"),
     ("b. unknown", None, None, None,
      "an absence marker is already conforming -> no proposal, no refusal"),
     ("b. 3 SEP 1780, Somewhereton", "3 SEP 1780", None, None,
@@ -110,7 +115,7 @@ def main():
     # These carry brackets or quotes, so A2b refuses them and the residue guard is
     # what stops the deletion. (A bare place like "~1799 Staffordshire" is now
     # HANDLED by A2b rather than refused -- see the table above.)
-    for slot in ('Sep 1843 [GRO Q3]', '9 SEP 1764 "Mary Wix," Horsley'):
+    for slot in ('9 SEP 1764 "Mary Wix," Horsley',):
         value, residue = G.normalise(slot)
         check(bool(value) and bool(residue.strip()),
               f"normalise reports residue for {slot!r} — ignoring it deletes content")

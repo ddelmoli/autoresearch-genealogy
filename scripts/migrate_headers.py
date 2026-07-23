@@ -149,7 +149,8 @@ def propose_r3(record):
         if H._date_slot_ok(slot):
             continue                        # already conforming
         for proposer in (propose_absence, propose_place_comma,
-                         propose_dual_year, propose_medieval_span):
+                         propose_dual_year, propose_medieval_span,
+                         propose_move_annotation):
             candidate = proposer(tag, slot)
             if candidate and content_preserved(field, candidate):
                 proposals.append((field, candidate, "A2"))
@@ -294,7 +295,13 @@ def content_preserved(old_field, new_field):
     """
     def rest(s):
         stripped = _DATEISH.sub(" ", s)
-        return [w for w in re.findall(r"[A-Za-z]{2,}", stripped)]
+        return sorted(re.findall(r"[A-Za-z]{2,}", stripped))
+    # SORTED, i.e. a multiset. "Nothing lost, nothing gained" is a multiset
+    # property, not a sequence one -- and comparing ordered lists silently refused
+    # 16 valid rewrites that MOVE an annotation out of the date slot, because a
+    # move reorders words without changing any of them. Order within a header
+    # field is not something this tool can corrupt: it only ever relocates a
+    # bracketed note or retags a field, never rewrites prose.
     return rest(old_field) == rest(new_field)
 
 
@@ -703,6 +710,55 @@ def propose_medieval_span(tag, slot):
     if not G.is_valid(value):
         return None
     return f"{tag} {value}" + (f", {place}" if place else "")
+
+
+# --------------------------------------------------------------------------- #
+# PHASE A4 — move a BRACKETED ANNOTATION out of the date slot.
+#
+#   "b. Dec 1840 [GRO Q4], Gloucester, England"
+#     -> "b. DEC 1840, Gloucester, England [GRO Q4]"
+#
+# The date is not in doubt; a research note is simply sitting in the slot. The
+# note keeps its brackets and moves to the END of the field, after the place,
+# where R6 says free prose belongs.
+#
+# ⚠ ONLY A BALANCED BRACKET IMMEDIATELY AFTER THE DATE. The refusal list makes it
+# obvious why:
+#
+#   "~1650s"          -- normalise reports the stray as 's', but that 's' is the
+#                        DECADE MARKER. "~1650s" means the 1650s, not ABT 1650.
+#                        Treating it as movable content would silently narrow a
+#                        decade to a year. No bracket, so this rule never sees it.
+#   "~1770s-1780s"    -- same, worse: stray 's-1780s'.
+#   "d. 1841 [FS"     -- an UNBALANCED bracket whose close is on the far side of
+#                        the comma ("unverified -- age ~100 ...]"). Moving half a
+#                        bracket would corrupt both fields.
+#
+# So: the bracket must open and close inside the date part, and nothing may
+# follow it there.
+_TRAILING_BRACKET = re.compile(r"\A(?P<date>.+?)\s*(?P<note>\[[^\[\]]*\])\Z", re.S)
+
+
+def propose_move_annotation(tag, slot):
+    """Move a trailing `[...]` annotation out of the date slot to the field end."""
+    raw = H.EMPHASIS.sub("", slot).strip()
+    date_part, place = _split_place(raw)
+    m = _TRAILING_BRACKET.match(date_part)
+    if not m:
+        return None
+    inner, note = m.group("date").strip(), m.group("note")
+    # The remaining date must be a clean DateValue with NOTHING left over.
+    value, residue = G.normalise(inner)
+    if not value or residue.strip() or not G.is_valid(value):
+        return None
+    if not place:
+        # Nothing to move the note PAST: the field is just "<date> [note]", so the
+        # annotation would land back in the date slot and the field would still be
+        # non-conforming -- a no-op proposal that also breaks idempotence. Getting
+        # the note out needs it promoted to its own ";" field, which changes the
+        # field structure, so it is a human's call.
+        return None
+    return f"{tag} {value}, {place} {note}"
 
 if __name__ == "__main__":
     main()
