@@ -439,38 +439,40 @@ def main():
     check(pb == "5 FEB 1871, Gloucester (Barton St Mary" and pd.startswith("25 MAY 1934"),
           f"nested paren: born survives an inner ')' AND died is still found (got {pb!r} / {pd!r})")
 
-    # ---- 9c. the TERSE DIALECT and what it must refuse (23 JUL 2026) ------ #
-    # A marker-less parenthetical that states vitals positionally. The old
-    # fallback took the first 4-digit number as `born` and the last as `died`,
-    # with no evidence either was a vital, and wrote 25 wrong values into a live
-    # vault. Each case below is one of those, and the rule that fixes it is: the
-    # parenthetical must OPEN with a date.
-    for paren, want, why in [
-        # reads correctly …
-        ("c.966; 23 APR 1016; FS PID XXXX-XXX", ("c.966", "23 APR 1016"),
-         "3-digit birth is NOT invisible; the death does not land in born"),
-        ("c.975–1045; Gen 35", ("c.975", "1045"), "en-dash range = birth–death"),
-        ("6 AUG 1948, Somewhereton, MA; 21 FEB 2010, Somewhereton, MA; FS PID XXXX-XXX",
-         ("6 AUG 1948", "21 FEB 2010"), "each field may carry a PLACE after its date"),
-        ("~1760-1790 [estimate], Villagio; 7 FEB 1820, Villagio; FS PID XXXX-XXX",
-         ("~1760-1790 estimate, Villagio", "7 FEB 1820"),   # brackets stripped by clean()
-         "a dash range is the BIRTH when a later field carries the death"),
-        ("unknown, Villagio; 6 APR 1820, Villagio; FS PID TBD", ("", "6 APR 1820"),
-         "an absent birth field means the date that follows is the DEATH"),
-        ("bef.1294–24 SEP 1313; FS PID XXXX-XXX", ("bef.1294", "24 SEP 1313"),
-         "a bound is part of the date"),
-        # …and refuses everything that is not vitals
-        ("of Someplace; father of Susanna bp. 8 FEB 1718/19; ? m. Mary 3 FEB 1701/2",
-         ("", ""), "a relative's baptism and a marriage are not this person's vitals"),
-        ("alive 1852 Villagio, profession Lavoratore", ("", ""), "a floruit is not a birth"),
-        ("deceased before 1898 Villagio", ("", ""), "a death bound is not a birth"),
-        ("vault name \u201cMisread\u201d 4 APR – 10 JUN 2026, a paleo misread", ("", ""),
-         "an editorial date-stamp is not a vital"),
-        ("de Roos; FS \u201cWilliam de Ros, 1st Baron\u201d 1255–1316", ("", ""),
-         "years inside a quoted external TITLE are not this record's claim"),
+    # ---- 9c. the marker-less dialect is NOT read (retired 23 JUL 2026) ---- #
+    # `_terse_vitals` -- the positional reader for a marker-less parenthetical --
+    # was removed once the Spec 04 migration brought every terse header to a
+    # `b.`/`d.` form and the last 4 records depending on it gained a meta date
+    # key. The contract is now simple: ONLY a marked field yields vitals. A
+    # marker-less parenthetical yields nothing, which is correct -- a positional
+    # guesser is exactly what wrote 25 wrong values into a live vault, and a
+    # header with no marker is a header to migrate, not to guess at. The removal
+    # was measured on the whole corpus at 0 records changed; these pin the new
+    # contract so it cannot regress back into guessing.
+    for paren, why in [
+        ("c.966; 23 APR 1016; FS PID XXXX-XXX", "terse positional -> not read"),
+        ("c.975-1045; Gen 35", "dash range -> not read"),
+        ("1116-1183; WikiTree Surname-48", "bare range -> not read"),
+        ("unknown, Villagio; 6 APR 1820, Villagio; FS PID TBD",
+         "absent-birth positional -> not read"),
+        ("alive 1852 Villagio, profession Lavoratore", "a floruit -> not read"),
+        ("deceased before 1898 Villagio", "a death bound -> not read"),
     ]:
         got = ps._parse_vitals(paren)
-        check(got == want, f"terse dialect: {why}"
+        check(got == ("", ""), f"marker-less: {why}"
+              + ("" if got == ("", "") else f"  (got {got!r}, want empty)"))
+    # ...and the MARKED path is untouched: tag the same shapes and they read.
+    for paren, want, why in [
+        ("b. c.966; d. 23 APR 1016; FS PID XXXX-XXX", ("c.966", "23 APR 1016"),
+         "marked birth + death read independently"),
+        ("b. 6 AUG 1948, Somewhereton, MA; d. 21 FEB 2010, Somewhereton, MA",
+         ("6 AUG 1948, Somewhereton, MA", "21 FEB 2010, Somewhereton, MA"),
+         "a marked field keeps its place tail"),
+        ("d. 6 APR 1820, Villagio; FS PID TBD", ("", "6 APR 1820, Villagio"),
+         "a death-only marked field leaves born empty"),
+    ]:
+        got = ps._parse_vitals(paren)
+        check(got == want, f"marked path: {why}"
               + ("" if got == want else f"  (got {got!r}, want {want!r})"))
 
     # ---- 10. structured date keys (spec/structured-dates Spec 03) --------- #

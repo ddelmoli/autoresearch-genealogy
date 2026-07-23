@@ -11,8 +11,7 @@ Every proposal is checked by extracting the header's dates BEFORE and AFTER with
 the same reader and comparing years, and by checking the result against the
 record's `- meta:` date field. A proposal that changes, adds or drops a date is
 NOT applied — it is refused and routed to human review. A wrong date is far worse
-than an unmigrated header, which is the contract `gdate.normalise` and
-`person_store._terse_vitals` already hold.
+than an unmigrated header, which is the contract `gdate.normalise` holds.
 
 WHY THIS IS NOT THE 22 JUL RETRY. A bulk header rewrite was attempted on 22 JUL
 2026 and rejected on measurement: it mangled entries on a dry run. Two things are
@@ -446,10 +445,15 @@ def main():
 # ⚠ This RESTRUCTURES the parenthetical, which is the thing that mangled entries
 # on 22 JUL. Three properties keep it honest, and all three are checked per entry:
 #
-#   1. IT NEVER DECIDES WHICH DATE IS WHICH. `person_store._terse_vitals` already
-#      made that call -- it is the reader every other gate uses, complete with the
-#      opens-with-a-date rule, the floruit guard and the absence-marker rule that
-#      were added after the 25 wrong values. This tool only TAGS what the reader
+#   1. IT NEVER DECIDES WHICH DATE IS WHICH. `person_store._parse_vitals` made
+#      that call -- via the marker-less reader `_terse_vitals`, which had the
+#      opens-with-a-date rule, the floruit guard and the absence-marker rule added
+#      after the 25 wrong values. This tool only TAGS what the reader
+#      (⚠ historical note: `_terse_vitals` was RETIRED 23 JUL 2026 once this phase
+#      had brought every terse header to a marked form. Phase B ran BEFORE the
+#      retirement; it is now inert for a marker-less header — the reader returns
+#      no vitals — which is correct, because the write-time gate blocks any new
+#      one, so none can exist to migrate.)
 #      already resolved. Where the reader recovers nothing (a floruit, a
 #      name-first header), there is nothing to tag and the entry is refused.
 #   2. THE RESULT IS VALIDATED BY THE VALIDATOR, not by this function's own idea
