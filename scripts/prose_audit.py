@@ -87,6 +87,7 @@ def parse_person_index():
             "header_born": header_born,
             "header_died": header_died,
             "header_paren": e.get("header_paren") or "",
+            "header_text": e.get("header_text") or "",
             "pid": e["pid"],
             "gen": e["gen"],
             "file": e.get("file"),
@@ -271,7 +272,9 @@ def date_invariants(rows):
             val = r.get(f"field_{key}")
             if key not in keys or not val:
                 continue
-            attested = _header_years(r.get(slot) or "") | _header_years(r.get("header_paren") or "")
+            attested = (_header_years(r.get(slot) or "")
+                        | _header_years(r.get("header_paren") or "")
+                        | _header_years(r.get("header_text") or ""))
             missing = sorted({abs(y) for y in gdate.year_range(val) if y
                               and abs(y) not in attested and abs(y) - 1 not in attested})
             if missing:

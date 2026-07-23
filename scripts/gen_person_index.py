@@ -245,6 +245,7 @@ def parse_narrative():
             # the raw vitals parenthetical, so a gate can ask what the header
             # ATTESTS rather than only what the parser made of it
             header_paren=(r.raw or {}).get("header_paren", ""),
+            header_text=(r.raw or {}).get("header_text", ""),
             tier=tier_norm(r.evidence_tier),
             profile_status=r.profile_status, life_status=r.life_status,
             has_meta=True, block=(r.raw or {}).get("line", "")))

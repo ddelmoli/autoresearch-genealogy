@@ -535,6 +535,13 @@ def split_dual_year(prose):
     y2 = y2raw if len(y2raw) == len(y1) else y1[:len(y1) - len(y2raw)] + y2raw
     if not y2.isdigit() or int(y2) != int(y1) + 1:
         return None
+    # ⚠ ERA GUARD. Old Style / New Style dual dating is an early-modern convention:
+    # England's year began 25 March until the 1752 calendar act, and the notation
+    # is not used before roughly 1500. A medieval "c.1027/1028" is shape-identical
+    # but means "one of these two years" — reading it as OS/NS silently resolves
+    # William the Conqueror's birth to 1028 and asserts a precision no source has.
+    if not (1500 <= int(y1) <= 1752):
+        return None
     value, residue = normalise(m.group("head") + y2 + m.group("tail"))
     if value is None:
         return None
