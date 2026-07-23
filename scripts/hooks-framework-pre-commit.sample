@@ -1,0 +1,75 @@
+#!/bin/bash
+# FRAMEWORK-REPO pre-commit hook — PII gate.
+#
+# This repo is the PUBLIC fork. Everything committed here can be pushed and
+# indexed, and unlike the vault (local-only, no remote) a mistake is not
+# recoverable by editing a file — it is in published history.
+#
+# Installed 23 JUL 2026. Until then privacy-audit-repo was wired into NOTHING:
+# it ran only when a human remembered, which is how four real record
+# identifiers reached published history and were caught by a manual pre-push
+# read rather than by the tool built to catch them.
+#
+# WHAT IT CHECKS (see scripts/privacy-audit-repo for the full rationale):
+#   1. denylist NAMES in the files about to be committed
+#   2. denylist NAMES anywhere in reachable history
+#   3. record IDENTIFIERS — FamilySearch PID and WikiTree id shapes. An
+#      external id is a POINTER to a name: paste it into the site and you get
+#      the person, so it discloses an ancestor while passing a name-only scan.
+#
+# It reads working-tree content for index-listed files, so it sees what you are
+# about to commit rather than what HEAD already has.
+#
+# Bypass, when you genuinely must:  git commit --no-verify
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+AUDIT="$ROOT/scripts/privacy-audit-repo"
+DENYLIST="$ROOT/.private/anonymization-denylist.txt"
+
+[ -x "$AUDIT" ] || { echo "[pre-commit] privacy-audit-repo not executable; skipping."; exit 0; }
+
+if [ ! -f "$DENYLIST" ]; then
+    # A checkout without the private denylist cannot run the name checks. Do not
+    # hard-block: this is the state a collaborator's clone is legitimately in.
+    # Say so loudly rather than passing quietly.
+    echo "[pre-commit] ⚠ PII GATE NOT ENFORCED — no .private/anonymization-denylist.txt in this checkout."
+    echo "[pre-commit]   Name-based checks cannot run. Review your diff by hand before pushing."
+    exit 0
+fi
+
+# A UTF-8 locale is pinned inside the script itself as of 23 JUL 2026, so this
+# works under cron/hooks where LANG is unset. Setting it here too costs nothing
+# and keeps the hook correct if it is ever copied to an older toolkit.
+export LANG="${LANG:-en_US.UTF-8}"
+
+echo "[pre-commit] framework repo — running PII audit (names at HEAD + in history, record identifiers)..."
+OUT="$("$AUDIT" 2>&1)"
+STATUS=$?
+
+if [ $STATUS -eq 0 ]; then
+    echo "$OUT" | tail -2
+    echo "[pre-commit] PII audit PASS."
+    exit 0
+fi
+
+echo "$OUT"
+cat <<'MSG'
+
+[pre-commit] ================= COMMIT BLOCKED: PII AUDIT FAILED =================
+[pre-commit] This is the PUBLIC repo. A name or a record identifier that lands
+[pre-commit] here is in published history, which a later edit does NOT undo.
+[pre-commit]
+[pre-commit] Findings are reported as sha256 labels, never as the term itself —
+[pre-commit] open the report path printed above to see file and line numbers.
+[pre-commit]
+[pre-commit] A record identifier (FS PID / WikiTree id) counts even with no name
+[pre-commit] attached: it is a pointer to the person. Replace it with a
+[pre-commit] placeholder (XXXX-XXX, Surname-48) rather than deleting the example.
+[pre-commit]
+[pre-commit] If this is a false positive, extend the allowlist in
+[pre-commit] scripts/privacy-audit-repo rather than loosening the regex.
+[pre-commit] Deliberate override:  git commit --no-verify
+[pre-commit] ====================================================================
+MSG
+exit 1

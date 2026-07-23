@@ -75,6 +75,36 @@ def next_session_size():
 # Post-Person_Index-retirement (2026-06-24): the index drift-policing audits
 # (duplicate_rows, harvest_pids, gen_audit) were retired. The narrative-native
 # HARD gate is gen_person_index --integrity (unique internal id + complete meta).
+# The FRAMEWORK repo's PII gate. Distinct from every other line in this banner:
+# those audit the VAULT (local-only, no remote, a mistake is editable). This one
+# audits the public fork, where a leaked name or record identifier is in
+# published history and a later edit does not undo it.
+#
+# Surfaced here as well as in the framework pre-commit hook because the two catch
+# different moments: the hook stops a bad commit, this tells you at session start
+# whether the repo is ALREADY carrying something — including anything that
+# arrived via --no-verify or before the hook was installed (23 JUL 2026).
+#
+# It is Ruby, so it cannot use run() above, which shells python3.
+def privacy_repo():
+    denylist = Path("scripts").parent / ".private" / "anonymization-denylist.txt"
+    if not denylist.exists():
+        return "skipped (no .private denylist in this checkout; name checks cannot run)"
+    try:
+        # LANG is commonly unset under a hook; the script pins UTF-8 internally as
+        # of 23 JUL 2026, and this belt-and-braces keeps an older copy working.
+        env = dict(os.environ)
+        env.setdefault("LANG", "en_US.UTF-8")
+        pr = subprocess.run(["scripts/privacy-audit-repo"], capture_output=True,
+                            text=True, timeout=180, env=env)
+    except Exception as e:
+        return f"ERROR ({type(e).__name__})"
+    out = (pr.stdout + pr.stderr).strip()
+    if pr.returncode == 0:
+        return "PASS (public fork clean: 0 denylist hits at HEAD, 0 in history, 0 record-identifier leaks)"
+    tail = " / ".join(l.strip() for l in out.splitlines()[-3:] if l.strip())
+    return f"** FINDINGS ** (exit {pr.returncode}) {tail[:200]}"
+
 parts = [
     "integrity -> " + run("gen_person_index.py",
                           r"DUP_ID \(|MISSING_ID \(|DUP_FS_PID \(|HARD violations",
@@ -107,6 +137,7 @@ parts = [
     "housekeeping -> " + run("size_heartbeat.py", r"HOUSEKEEPING", max_lines=1),
     # Recipe-S FS source-harvest coverage + cadence (harvest_sources.py --heartbeat):
     # SOURCE_GAP/LOW/WELL counts + DUE/OK vs the .maintenance.json `harvest` cadence.
+    "privacy-repo -> " + privacy_repo(),
     "recipe-s -> " + run("harvest_sources.py", r"RECIPE-S:", args=["--heartbeat"], max_lines=1),
 ]
 # The project-specific "known baseline" (which advisory findings are expected and
