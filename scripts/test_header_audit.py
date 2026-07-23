@@ -267,12 +267,14 @@ def main():
     changed_only_tests()
 
     print("\n=== corpus baseline (live vault) ===")
-    try:
-        import vault_config
-        vault = vault_config.resolve_vault()
-    except Exception as e:
-        print(f"  skip (no vault resolvable: {e})")
-        vault = None
+    # resolve_vault_optional, NOT a try/except around resolve_vault: the raising
+    # form raises SystemExit, which is a BaseException and so slips straight
+    # through `except Exception`. That silently turned this documented skip into
+    # a hard failure on any machine without a vault (i.e. every fresh clone).
+    import vault_config
+    vault = vault_config.resolve_vault_optional()
+    if not vault:
+        print("  skip (no vault resolvable)")
     if vault:
         _f, s = H.audit(vault)
         print(f"  entries {s['entries']}, conforming {s['conforming']}, "

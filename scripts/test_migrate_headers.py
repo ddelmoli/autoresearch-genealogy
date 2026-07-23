@@ -149,12 +149,13 @@ def main():
     check(not again, "re-running on a migrated header proposes nothing (idempotent)")
 
     print("\n=== corpus property: EVERY proposal preserves year + content ===")
-    try:
-        import vault_config
-        vault = vault_config.resolve_vault()
-    except Exception as e:
-        print(f"  skip (no vault: {e})")
-        vault = None
+    # resolve_vault_optional, NOT a try/except around resolve_vault: the raising
+    # form raises SystemExit (a BaseException), which `except Exception` does not
+    # catch, so this skip never fired on a vault-less machine.
+    import vault_config
+    vault = vault_config.resolve_vault_optional()
+    if not vault:
+        print("  skip (no vault)")
     if vault:
         plans, refusals = M.run(vault)
         bad_year = bad_content = 0

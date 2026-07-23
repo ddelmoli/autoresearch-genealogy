@@ -34,7 +34,7 @@ from collections import defaultdict, Counter
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 import vault_config
-VAULT = vault_config.resolve_vault()
+VAULT = vault_config.resolve_vault_optional()  # None => no vault; main() re-raises
 import harvest_pids as H
 import tree_locator as TL
 
@@ -395,6 +395,7 @@ def integrity_check(entries, args):
 
 
 def main():
+    vault_config.require_vault(VAULT)
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--write", metavar="FILE")

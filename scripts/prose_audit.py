@@ -37,7 +37,7 @@ sys.path.insert(0, SCRIPT_DIR)
 import gen_person_index as G
 import gdate
 import vault_config
-VAULT = vault_config.resolve_vault()
+VAULT = vault_config.resolve_vault_optional()  # None => no vault; main() re-raises
 
 PID_RE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{3})\b")
 # TWO year scanners, and the split is deliberate (spec/structured-dates Spec 05).
@@ -600,6 +600,7 @@ def gen_for_relation(rel_word, subject_gen=1):
 # ============================================================
 
 def main(argv=None):
+    vault_config.require_vault(VAULT)
     # DATE_DRIFT was advisory at first landing (spec/structured-dates Spec 06) and
     # is BLOCKING as of 22 JUL 2026, the promotion the spec called for once the
     # baseline was 0 and the Spec 04 residue was triaged. It is the only blocking

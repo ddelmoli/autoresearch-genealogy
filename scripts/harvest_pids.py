@@ -23,7 +23,7 @@ from collections import defaultdict
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 import vault_config
-VAULT = vault_config.resolve_vault()
+VAULT = vault_config.resolve_vault_optional()  # None => no vault; main() re-raises
 
 PID_RE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{3})\b")
 # An "entry header" line: optional bullet marker + **BoldName** + opening paren
@@ -208,6 +208,7 @@ def parse_person_index():
     return rows
 
 def main():
+    vault_config.require_vault(VAULT)
     candidates = parse_person_index()
     print(f"Loaded {len(candidates)} candidates", file=sys.stderr)
 
