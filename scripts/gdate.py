@@ -389,8 +389,8 @@ def _rewrite(s):
     s = re.sub(r"\b(?:est\.?|estimated)\s+(?=\d)", "EST ", s, flags=re.I)
     s = re.sub(r"\b(?:calc\.?|calculated)\s+(?=\d)", "CAL ", s, flags=re.I)
     _after_bound = r"(?=\d|ABT\b|CAL\b|EST\b|(?:%s)\b)" % _MON_ALT
-    s = re.sub(r"\b(?:bef\.?|before|by|no\s+later\s+than)\s+" + _after_bound, "BEF ", s, flags=re.I)
-    s = re.sub(r"\b(?:aft\.?|after|no\s+earlier\s+than)\s+" + _after_bound, "AFT ", s, flags=re.I)
+    s = re.sub(r"\b(?:bef\.|before|by|no\s+later\s+than|bef\b)\s*" + _after_bound, "BEF ", s, flags=re.I)
+    s = re.sub(r"\b(?:aft\.|after|no\s+earlier\s+than|aft\b)\s*" + _after_bound, "AFT ", s, flags=re.I)
     # "before about 1730" -> BEF 1730. A bound on an approximation is still a
     # bound, and `BEF ABT x` is not grammatical; the approximation is subsumed.
     s = re.sub(r"\b(BEF|AFT)\s+(?:ABT|CAL|EST)\s+", r"\1 ", s)

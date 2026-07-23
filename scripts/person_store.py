@@ -492,29 +492,107 @@ def _parse_vitals(paren):
     if dm:
         died = dm.group(1).strip(" ,")
     if not born and not died:
-        # Year fallback, used when the header carries no b./d. marker. The old
-        # bound (1500-2029) silently returned NOTHING for medieval entries: 105 of
-        # the 157 rows in the Magna Carta file had empty born/died purely because
-        # their years are pre-1500 (1045, 1261, 1326, 1426). Now any 4-digit year.
-        # Two things were tried and REJECTED on measurement:
-        #   * allowing 3-digit years -> read atto/page numbers ("534") as death years;
-        #   * a (?<![\w-]) guard to skip PIDs -> also killed legitimate hyphenated
-        #     ranges like "1705-1765", losing vitals on 11 entries.
-        # Instead, strip PID-like tokens (any hyphenated token containing a letter:
-        # "ABCD-123", "EFGH-4JK", "Surname-48") and then scan plainly.
-        _paren_noids = re.sub(r"\b[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9]+\b", " ", paren)
-        yrs = re.findall(r"\b(\d{4})\b", _paren_noids)
-        if yrs:
-            born = yrs[0]
-            if len(yrs) >= 2:
-                died = yrs[-1]
+        born, died = _terse_vitals(paren)
     clean = lambda s: re.sub(r"[*\[\]`]", "", s).strip(" ,")
     return clean(born), clean(died)
+
+
+# The TERSE DIALECT: a header with no b./d. marker whose parenthetical states the
+# vitals positionally — "(c.966; 23 APR 1016; FS PID …)", "(c.975–1045; Gen 35)",
+# "(1116–1183; WikiTree …)".
+#
+# ⚠ THE RULE THAT MAKES THIS SAFE: the parenthetical must OPEN with a date.
+#
+# Without it, this fallback guessed positionally over any numbers it could find,
+# and wrote 25 wrong values into a live vault (found by audit, 23 JUL 2026):
+#
+#   "of Horsley; father of Susanna bp. 8 FEB 1718/19; ? m. … 3 FEB 1701/2"
+#        -> born 1718, died 1701 — a daughter's baptism and a marriage, and born
+#           AFTER died, which is impossible.
+#   "alive 1852 Cagnano, profession Lavoratore"  -> born 1852. A floruit. x15
+#   "deceased before 1898 Cagnano"               -> born 1898. A death bound.
+#   "vault name '…' 4 APR – 10 JUN 2026, a paleo misread" -> born 2026.
+#
+# None of those OPEN with a date, so none of them reach the positional read now.
+#
+# The other half of the bug was the 4-digit floor: in "(c.966; 23 APR 1016; …)"
+# the birth year 966 was invisible, so the only year found was the DEATH year and
+# it landed in `born`, losing the birth entirely on 7 medieval entries. Years here
+# are 3-or-4 digit. The old objection to 3-digit years — atto and page numbers
+# like "534" being read as death years — is answered by the opens-with-a-date rule
+# instead of by a floor: a page number never starts a vitals parenthetical.
+#
+# A wrong date is far worse than a missing one, so this refuses rather than
+# guesses, the same contract gdate.normalise holds.
+_ABSENT_FIELD = re.compile(r"\A(?:unknown|unk|n/?a|\?+|—|-)\b", re.I)
+_FLORUIT = re.compile(r"\balive\b|\bdeceased\s+before\b|\bfl\.", re.I)
+_PIDISH = re.compile(r"\b[A-Za-z0-9]*[A-Za-z][A-Za-z0-9]*-[A-Za-z0-9]+\b")
+# A leading approximation OR bound is part of the date: this dialect writes
+# "bef.1294–24 SEP 1313" and "c.966" as freely as a bare year.
+_DATE_TOKEN = re.compile(
+    r"(?:c\.|ca\.|~|abt\.?|bef\.?|aft\.?|before|after|about)?\s*"
+    r"(?:\d{1,2}\s+)?(?:[A-Za-z]{3,9}\.?\s+)?\d{3,4}\b", re.I)
+
+
+def _terse_vitals(paren):
+    """(born, died) from a marker-less vitals parenthetical, or ("", "")."""
+    s = _PIDISH.sub(" ", paren).strip()
+    if not s or _FLORUIT.search(s):
+        return "", ""
+    # Semicolons delimit the dialect's fields, and a field routinely carries a
+    # PLACE after its date — "1940, MA; 1946 [infant death]; FS PID …". So the
+    # death is the next SEGMENT that starts with a date, not the next token.
+    segs = [x.strip() for x in s.split(";") if x.strip()]
+    if not segs:
+        return "", ""
+    # "(unknown, Cagnano; 6 APR 1820, Cagnano; FS PID TBD)" is this same dialect
+    # with the BIRTH field absent, so the date that follows is the DEATH. The old
+    # positional scan stored it as `born` — the identical bug, wearing a different
+    # hat: an absence marker where a birth date should be.
+    if _ABSENT_FIELD.match(segs[0]):
+        for seg in segs[1:]:
+            nxt = _DATE_TOKEN.match(seg)
+            if nxt:
+                return "", nxt.group(0).strip()
+        return "", ""
+    head = _DATE_TOKEN.match(segs[0])
+    if not head:
+        return "", ""                    # does not open with a date -> not vitals
+    first = head.group(0).strip()
+    tail0 = segs[0][head.end():]
+    dash = re.match(r"\s*[–—-]\s*(.+)", tail0)
+    dash_date = _DATE_TOKEN.match(dash.group(1).strip()) if dash else None
+
+    # A LATER field carrying a date is the death. Check for it FIRST, because it
+    # disambiguates the dash in field 0: with a death elsewhere, that dash is a
+    # birth RANGE, not birth–death.
+    #   "~1760-1790 [estimate], Cagnano; 7 FEB 1820, Cagnano; FS PID TBD"
+    #        -> born ~1760-1790 (a range), died 7 FEB 1820.  Reading the dash as
+    #           birth–death gave this man a death of 1790 and lost the real one —
+    #           DATE_DRIFT caught it once the header parsed correctly.
+    #   "c.975–1045; Gen 35; FS PID …"  (no later date) -> the dash IS birth–death.
+    for seg in segs[1:]:
+        nxt = _DATE_TOKEN.match(seg)
+        if nxt:
+            if dash_date:
+                first = (head.group(0) + tail0[:dash.end()]).strip()   # keep the range
+            return first, nxt.group(0).strip()
+    if dash_date:
+        return first, dash_date.group(0).strip()
+    return first, ""
 
 
 def _vitals_paren(name, rest):
     """The vitals parenthetical: first BALANCED (...) after the bold name, else in
     the name.
+
+    ⚠ The FIRST balanced parenthetical, deliberately. Preferring "the first paren
+    that contains a b./d. marker" was tried 23 JUL 2026 to rescue a header whose
+    vitals sit in a SECOND paren after an editorial aside — and measured far worse
+    than the bug it fixed: on 14 entries it jumped to a LATER parenthetical
+    belonging to a RELATIVE named in the narrative, so an earl inherited his
+    wife's dates and a father inherited his son's death. A header whose vitals are
+    not in the first paren is a header to fix, not a parser to loosen.
 
     Balanced, not "up to the first ')'": vault headers routinely nest a
     parenthetical inside the vitals — "(b. 3 SEP 1780 (FS XXXX-XXX + …), … d.

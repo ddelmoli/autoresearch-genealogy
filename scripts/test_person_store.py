@@ -439,6 +439,40 @@ def main():
     check(pb == "5 FEB 1871, Gloucester (Barton St Mary" and pd.startswith("25 MAY 1934"),
           f"nested paren: born survives an inner ')' AND died is still found (got {pb!r} / {pd!r})")
 
+    # ---- 9c. the TERSE DIALECT and what it must refuse (23 JUL 2026) ------ #
+    # A marker-less parenthetical that states vitals positionally. The old
+    # fallback took the first 4-digit number as `born` and the last as `died`,
+    # with no evidence either was a vital, and wrote 25 wrong values into a live
+    # vault. Each case below is one of those, and the rule that fixes it is: the
+    # parenthetical must OPEN with a date.
+    for paren, want, why in [
+        # reads correctly …
+        ("c.966; 23 APR 1016; FS PID XXXX-XXX", ("c.966", "23 APR 1016"),
+         "3-digit birth is NOT invisible; the death does not land in born"),
+        ("c.975–1045; Gen 35", ("c.975", "1045"), "en-dash range = birth–death"),
+        ("6 AUG 1948, Somewhereton, MA; 21 FEB 2010, Somewhereton, MA; FS PID XXXX-XXX",
+         ("6 AUG 1948", "21 FEB 2010"), "each field may carry a PLACE after its date"),
+        ("~1760-1790 [estimate], Villagio; 7 FEB 1820, Villagio; FS PID XXXX-XXX",
+         ("~1760-1790 estimate, Villagio", "7 FEB 1820"),   # brackets stripped by clean()
+         "a dash range is the BIRTH when a later field carries the death"),
+        ("unknown, Villagio; 6 APR 1820, Villagio; FS PID TBD", ("", "6 APR 1820"),
+         "an absent birth field means the date that follows is the DEATH"),
+        ("bef.1294–24 SEP 1313; FS PID XXXX-XXX", ("bef.1294", "24 SEP 1313"),
+         "a bound is part of the date"),
+        # …and refuses everything that is not vitals
+        ("of Someplace; father of Susanna bp. 8 FEB 1718/19; ? m. Mary 3 FEB 1701/2",
+         ("", ""), "a relative's baptism and a marriage are not this person's vitals"),
+        ("alive 1852 Villagio, profession Lavoratore", ("", ""), "a floruit is not a birth"),
+        ("deceased before 1898 Villagio", ("", ""), "a death bound is not a birth"),
+        ("vault name \u201cMisread\u201d 4 APR – 10 JUN 2026, a paleo misread", ("", ""),
+         "an editorial date-stamp is not a vital"),
+        ("de Roos; FS \u201cWilliam de Ros, 1st Baron\u201d 1255–1316", ("", ""),
+         "years inside a quoted external TITLE are not this record's claim"),
+    ]:
+        got = ps._parse_vitals(paren)
+        check(got == want, f"terse dialect: {why}"
+              + ("" if got == want else f"  (got {got!r}, want {want!r})"))
+
     # ---- 10. structured date keys (spec/structured-dates Spec 03) --------- #
     vd = make_dates_vault()
     df = os.path.join(vd, "Family_Tree_Dates.md")
