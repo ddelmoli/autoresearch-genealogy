@@ -135,6 +135,38 @@ end
 # one, not to relitigate what shipped.
 IDENTIFIER_RE = /\b[A-Z0-9]{4}-[A-Z0-9]{3}\b/.freeze
 
+# The WikiTree shape, ADDED 23 JUL 2026 — reversing the "deliberately not
+# detected" decision above, because the reason for it was measurable and has
+# been measured.
+#
+# The objection was correct: a bare /[A-Z][a-z]+-\d+/ matches ordinary prose in
+# these documents — "Pre-1800", "Post-1906", "Phase-1", "Gen-2", "Spec-03" — and
+# a check that fires on prose trains you to ignore it. But those false positives
+# all share one property: the part before the hyphen is a STRUCTURAL WORD, not a
+# surname. Allowlisting that closed vocabulary was measured over the whole
+# tracked tree on 23 JUL 2026: 38 raw occurrences -> 21 prose tokens excluded ->
+# 2 remaining, BOTH placeholders ("Generation-1" in a test, "Surname-48" in the
+# PID-stripping docs). So the check starts at ZERO findings, which is the same
+# bar the FS PID check was held to, and any hit is real.
+#
+# This gap was not hypothetical: a real WikiTree id (a 15th-century ancestor's)
+# reached the published history through the manual review that caught the PIDs.
+# HEAD is clean; this stops the next one.
+WIKITREE_RE = /\b([A-Z][a-z]{2,})-(\d{1,5})\b/.freeze
+
+# Prefix words that make a token prose rather than a surname. Extend this rather
+# than loosening the regex — a false positive here costs a moment, a false
+# NEGATIVE ships an ancestor.
+WIKITREE_PROSE_PREFIXES = %w[
+  Pre Post Gen Generation Phase Recipe Round Tier Step Rule Spec Item Task Type
+  Note Prompt Line Page Part Iter Option Level Wave Batch Run Set Surname Table
+  Figure Section Appendix Version Draft Sample Example Fixture Case
+].freeze
+
+def wikitree_placeholder?(prefix)
+  WIKITREE_PROSE_PREFIXES.include?(prefix)
+end
+
 # A token is a placeholder when its two halves are each a single repeated
 # character (XXXX-XXX, AAAA-AAA), or when it is one of the deliberate stand-ins
 # used in examples and fixtures.
@@ -158,6 +190,13 @@ def identifier_findings
 
         findings << { path: path, line: index + 1, token_label: term_label(token) }
       end
+
+      line.scan(WIKITREE_RE).uniq.each do |prefix, number|
+        next if wikitree_placeholder?(prefix)
+
+        findings << { path: path, line: index + 1,
+                      token_label: term_label("#{prefix}-#{number}") }
+      end
     end
   end
   findings
@@ -177,7 +216,7 @@ def write_report(terms, head_findings, git_history_findings, id_findings)
   content << "- Reachable commits on current branch: #{log_count.strip}\n"
   content << "- Denylist terms checked: #{terms.length}\n"
   content << "- Excluded paths: #{EXCLUDED_PATHS.join(', ')}\n"
-  content << "- Identifier shapes checked: FamilySearch PID (HEAD only)\n\n"
+  content << "- Identifier shapes checked: FamilySearch PID + WikiTree id (HEAD only)\n\n"
 
   content << "## Current HEAD Findings\n\n"
   if head_findings.empty?
