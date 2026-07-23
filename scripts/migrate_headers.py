@@ -76,6 +76,57 @@ def _split_place(slot):
     return (m.group(1).strip(), m.group(2).strip()) if m else (slot.strip(), None)
 
 
+# --------------------------------------------------------------------------- #
+# PHASE A2 — two further MECHANICAL classes, added after triaging the 141 Phase A
+# refusals. Both are narrow by construction; everything else stays refused.
+# --------------------------------------------------------------------------- #
+
+# A2a. ABSENCE STATED IN A DIALECT. `d. Deceased` / `d. ?` mean "died, date not
+# recorded". The grammar has a declared spelling for exactly that -- `unknown` --
+# so this is a notation fix like any other, not a loss of information. Note the
+# `\Z` rather than `\b`: a trailing `\b` after `?` never matches at end of string,
+# which silently dropped all 7 `?` entries out of this class on the first pass.
+_ABSENCE = re.compile(r"\A(?:deceased|unknown|unk|n/?a|\?+|—|--?)"
+                      r"(?:\s*[—-]\s*no\s+dates?\b.*)?\Z", re.I)
+
+# A2b. A PLACE WITH NO COMMA BEFORE IT: "b. 1809 Droitwich" -> "b. 1809, Droitwich".
+# R6 says the place follows the date behind a comma, and `normalise` hands back the
+# unconsumed tail, so the fix is punctuation only.
+#
+# ⚠ TIGHTLY GUARDED, because the first cut of this rule proposed turning
+# "b. 1841 [FS" into "b. 1841, [FS" -- reading a truncated bracket as a place
+# because "FS" is a capitalised word. A place here must be capitalised words ONLY,
+# and the slot must carry no bracket or quote at all: anything with punctuation is
+# a note, a citation or an alias, and placing those is a human's judgement.
+_PLACEISH = re.compile(r"[A-Z][A-Za-z'\u2019\-]*(?:\s+(?:[A-Z][A-Za-z'\u2019\-]*|d[eia]|del|della|di|of|upon|on))*\Z")
+_NOT_PLACE_CHARS = re.compile(r"[\[\]\"\u201c\u201d()/;]")
+
+
+def propose_absence(tag, slot):
+    """`d. Deceased` -> `d. unknown`, keeping any place tail."""
+    date_part, place = _split_place(H.EMPHASIS.sub("", slot).strip())
+    if not _ABSENCE.match(date_part.strip()):
+        return None
+    return f"{tag} unknown" + (f", {place}" if place else "")
+
+
+def propose_place_comma(tag, slot):
+    """`b. 1809 Droitwich` -> `b. 1809, Droitwich`. Punctuation only."""
+    raw = H.EMPHASIS.sub("", slot).strip()
+    if _NOT_PLACE_CHARS.search(raw):
+        return None                      # a note/citation/alias, not a bare place
+    date_part, place = _split_place(raw)
+    if place:
+        return None                      # already comma-separated: not this class
+    value, residue = G.normalise(date_part)
+    residue = residue.strip()
+    if not value or not residue or not G.is_valid(value):
+        return None
+    if not _PLACEISH.match(residue):
+        return None
+    return f"{tag} {value}, {residue}"
+
+
 def propose_r3(record):
     """[(old_field, new_field, note), ...] for this record's R3 fields.
 
@@ -93,6 +144,15 @@ def propose_r3(record):
         tag, slot = m.group(1), m.group(2)
         if H._date_slot_ok(slot):
             continue                        # already conforming
+        for proposer in (propose_absence, propose_place_comma):
+            candidate = proposer(tag, slot)
+            if candidate and content_preserved(field, candidate):
+                proposals.append((field, candidate, "A2"))
+                break
+        else:
+            pass
+        if proposals and proposals[-1][0] == field:
+            continue                        # handled by an A2 rule
         date_part, place = _split_place(H.EMPHASIS.sub("", slot).strip())
         new_date, residue = G.normalise(date_part)
         if not new_date:
@@ -205,8 +265,12 @@ def run(vault, only_file=None):
 # word this list does not name is CONTENT, and content must survive.
 _MONTHS = (r"JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC|JANUARY|FEBRUARY|MARCH|"
            r"APRIL|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER|SEPT")
+# DECEASED / UNKNOWN / UNK are ABSENCE MARKERS -- values the date slot can hold,
+# not prose content -- so they belong in this vocabulary. Without them the A2a
+# rewrite `d. Deceased` -> `d. unknown` reads as one content word replacing
+# another and content_preserved blocks its own fix.
 _KEYWORDS = (r"ABT|EST|CAL|BEF|AFT|BET|AND|FROM|TO|JULIAN|GREGORIAN|FRENCH_R|HEBREW|"
-             r"BCE|CA|ABOUT|BEFORE|AFTER|BETWEEN|CIRCA")
+             r"BCE|CA|ABOUT|BEFORE|AFTER|BETWEEN|CIRCA|DECEASED|UNKNOWN|UNK")
 _DATEISH = re.compile(rf"(?:\b(?:{_MONTHS}|{_KEYWORDS})\b\.?|\d+|[~\-–—,\.\?/])", re.I)
 
 

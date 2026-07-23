@@ -65,8 +65,17 @@ CASES = [
     ("b. **20 Feb 1853**, Somewhereton", "20 FEB 1853", None,
      "b. 20 FEB 1853, Somewhereton", "markdown emphasis dropped from the slot only"),
     # --- the refusals that matter -----------------------------------------
-    ("b. ~1799 Staffordshire", "ABT 1799", None, None,
-     "REFUSE: a place with no comma would be DELETED by normalise"),
+    # Phase A2b: this WAS a refusal (normalise would have deleted the place).
+    # It is now fixed by inserting the comma R6 requires -- the place survives,
+    # which is the property that matters. The deletion must never come back.
+    ("b. ~1799 Staffordshire", "ABT 1799", None, "b. ABT 1799, Staffordshire",
+     "A2b: a place with no comma gains one; it is NOT deleted"),
+    ("d. Deceased", None, "1873", "d. unknown",
+     "A2a: an absence dialect becomes the grammar's declared spelling"),
+    ("d. ?", None, "1873", "d. unknown",
+     "A2a: `?` too -- the \\Z anchor matters, \\b after ? never matches"),
+    ("b. 1841 [FS", "1841", None, None,
+     "A2b REFUSES a truncated bracket: 'FS' is not a place"),
     ("b. Sep 1843 [GRO Q3], Bristol district", "SEP 1843", None, None,
      "REFUSE: a bracketed source reference is residue, not a date"),
     ("b. unknown", None, None, None,
@@ -87,8 +96,10 @@ def main():
                   f"{label}  -> {props[0][1] if props else refs}")
 
     print("\n=== the residue guard (the silent-deletion class) ===")
-    for slot in ("~1799 Staffordshire", 'Sep 1843 [GRO Q3]',
-                 '9 SEP 1764 "Mary Wix," Horsley'):
+    # These carry brackets or quotes, so A2b refuses them and the residue guard is
+    # what stops the deletion. (A bare place like "~1799 Staffordshire" is now
+    # HANDLED by A2b rather than refused -- see the table above.)
+    for slot in ('Sep 1843 [GRO Q3]', '9 SEP 1764 "Mary Wix," Horsley'):
         value, residue = G.normalise(slot)
         check(bool(value) and bool(residue.strip()),
               f"normalise reports residue for {slot!r} — ignoring it deletes content")
@@ -143,7 +154,7 @@ def main():
                     bad_year += 1
                 if not M.content_preserved(old, new):
                     bad_content += 1
-                if not G.is_valid(nd):
+                if not (G.is_valid(nd) or nd.strip().lower() == "unknown"):
                     bad_content += 1
         print(f"  {len(plans)} entries, {fields} fields, {len(refusals)} refusals")
         check(bad_year == 0, "no proposal changes a YEAR (checked exhaustively)")
