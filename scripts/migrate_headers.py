@@ -471,6 +471,37 @@ class _Synthetic:
         self.raw = {"header_paren": paren, "meta_date_keys": meta_keys}
 
 
+_DASH = re.compile(r"\s*[\u2013\u2014-]\s*")
+
+
+def _dash_split(seg, hb, hd):
+    """`c.1426–1483` -> ('b. ABT 1426', 'd. 1483'), or None.
+
+    PHASE B2. The terse dialect's other shape: birth and death joined by a dash
+    INSIDE one segment, so there is no field to prefix — the segment has to be
+    split in two. That is a bigger edit than B1's prefix, so it is guarded harder:
+    the segment must be EXACTLY the reader's birth value, a dash, and the reader's
+    death value, with nothing else. Anything with extra text is refused, because
+    the moment a dash range carries a trailing note there is no way to know which
+    side of the split the note belongs to.
+    """
+    if not hb or not hd:
+        return None
+    clean = H.EMPHASIS.sub("", seg).strip()
+    parts = _DASH.split(clean)
+    if len(parts) != 2:
+        return None
+    if parts[0].strip() != hb.strip() or parts[1].strip() != hd.strip():
+        return None
+    out = []
+    for tag, value in (("b.", hb), ("d.", hd)):
+        norm, residue = G.normalise(value.strip())
+        if not norm or residue.strip() or not G.is_valid(norm):
+            return None
+        out.append(f"{tag} {norm}")
+    return tuple(out)
+
+
 def propose_r4(record):
     """(new_paren, note) or (None, reason). Tags a terse header's vital fields."""
     paren = record.raw.get("header_paren") or ""
@@ -492,6 +523,19 @@ def propose_r4(record):
 
     ib = locate(hb) if hb else None
     idx = locate(hd) if hd else None
+
+    # Phase B2: birth and death share ONE segment, joined by a dash.
+    if hb and hd and ib is not None and idx is None:
+        pair = _dash_split(segs[ib], hb, hd)
+        if pair:
+            out = segs[:ib] + list(pair) + segs[ib + 1:]
+            new_paren = "; ".join(out)
+            bad = H.violations(_Synthetic(new_paren,
+                                          record.raw.get("meta_date_keys", ())))
+            if bad:
+                return None, f"dash split still violates {sorted({r for r, _ in bad})}"
+            return new_paren, "B2"
+
     if hb and ib is None:
         return None, "birth value does not uniquely start a segment"
     if hd and idx is None:
