@@ -116,15 +116,19 @@ def propose_place_comma(tag, slot):
     if _NOT_PLACE_CHARS.search(raw):
         return None                      # a note/citation/alias, not a bare place
     date_part, place = _split_place(raw)
-    if place:
-        return None                      # already comma-separated: not this class
+    # `place` may already be present: "b. 1809 Droitwich, Worcestershire, England"
+    # is the SAME defect -- only the FIRST jurisdiction is missing its comma -- so
+    # the fix re-joins the recovered one in front of the existing tail rather than
+    # bailing out. The guards below are what keep this safe; without them
+    # "Sep 3, 1780" would split into date "Sep 3" + place "1780".
     value, residue = G.normalise(date_part)
     residue = residue.strip()
     if not value or not residue or not G.is_valid(value):
         return None
     if not _PLACEISH.match(residue):
         return None
-    return f"{tag} {value}, {residue}"
+    tail = f"{residue}, {place}" if place else residue
+    return f"{tag} {value}, {tail}"
 
 
 def propose_r3(record):
