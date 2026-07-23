@@ -8,6 +8,8 @@ Project instructions for autoresearch-genealogy.
 - `vault-template/` — Obsidian vault starter kit. Copy into your vault to begin.
 - `reference/` — Methodology guides. Not meant to be modified per-project.
 - `workflows/` — Step-by-step procedures for common tasks.
+- `scripts/` — The audit and maintenance toolkit (validators, integrity gates, migrators). Point it at a vault with `AUTORESEARCH_VAULT=/path/to/vault`; there is no default vault.
+- Your **vault** itself lives outside this repo (or gitignored inside it). It holds real people and is never committed here.
 
 ## Prompt Format
 
@@ -49,3 +51,14 @@ Each numbered prompt must include an `Inputs To Replace` section before `## Auto
 - Vault templates must have valid YAML frontmatter.
 - Run `scripts/validate-repo` before submitting.
 - Test prompts end-to-end when behavior changes.
+- Never commit vault content. `scripts/privacy-audit-repo` must report `ok`; the pre-commit hook enforces it. See CONTRIBUTING.md "The framework/private boundary".
+
+## Detailed methodology
+
+The rules above are the base conventions. The portable, vault-agnostic
+methodology — the person-record model and `- meta:` block grammar, the GEDCOM 7
+date fields, the header grammar, the vault integrity rules, and the
+source-coverage policy — is in `CLAUDE.method.md`, imported here so it loads
+automatically:
+
+@./CLAUDE.method.md

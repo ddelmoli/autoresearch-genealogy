@@ -56,6 +56,54 @@ To choose a different report location, set:
 PRIVACY_AUDIT_REPORT_DIR=/path/to/private/reports scripts/privacy-audit-repo
 ```
 
+## The framework/private boundary
+
+This repo is a public **framework**. It is normally developed alongside a
+**private vault** of real family data living in the same working tree. The
+tracked `.gitignore` is what keeps those apart, and it is worth understanding
+before you add a file, because it uses **two opposite defaults on purpose**:
+
+| Directory | Default | Why |
+|---|---|---|
+| `scripts/` | **tracked** | It is framework code. An ignored script breaks a clone (see below), and code rarely contains names. |
+| `prompts/`, `reference/`, `workflows/` | **ignored** | These hold research prose. A stray note can name living people, so publishing one is opt-in via a `!` negation. |
+
+Always private, never committed: any vault directory (`vault/`, `vault-*/`),
+`CLAUDE.instance.md` and `CLAUDE.local.md` (per-client facts — the subject and
+lineage layout are family names by construction), `.private/` (the anonymization
+denylist), and the personal `spec/<lane>/` design lanes.
+
+**Put boundary rules in `.gitignore`, never in `.git/info/exclude`.** An exclude
+file is machine-local and is never part of a clone, so a rule that lives only
+there protects your working tree and nobody else's. This is not hypothetical:
+the boundary used to live entirely in `.git/info/exclude`, written as "ignore
+`scripts/*.py`, then re-add about 19 files by name". Under that shape
+`scripts/vault_config.py` was never re-added while 15 of the scripts that import
+it were tracked, so a fresh clone raised `ImportError` across nearly the whole
+toolkit, including every test. Defaulting code to *tracked* is what stops that
+class of bug from recurring.
+
+Two consequences worth remembering:
+
+- **Adding a new script?** It is tracked automatically. The pre-commit privacy
+  audit is the backstop, not the `.gitignore` — keep real names out of comments
+  and examples, including in illustrative asides.
+- **Adding a new generic doc** to `prompts/`, `reference/`, or `workflows/`? Add
+  a matching `!` negation, or it stays invisible. Tracking a new workflow also
+  means bumping the workflow count in `README.md`, which `scripts/validate-repo`
+  checks.
+
+Verify the boundary still holds after editing it:
+
+```bash
+git check-ignore -v <path>          # confirm a private path is ignored
+scripts/privacy-audit-repo          # must print: ok
+scripts/validate-repo               # must print: ok
+```
+
+`privacy-audit-repo` scans **staged and tracked** files, so `git add` a file
+before trusting its verdict on it.
+
 ## Archive Guides
 
 Archive guides must include `last_verified` metadata. Update it whenever you check URLs, pricing, login requirements, or AI accessibility.

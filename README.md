@@ -125,7 +125,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Vault Template (`vault-template/`)
 
-19 files: a complete Obsidian vault starter kit with YAML frontmatter, plain markdown, readable anywhere.
+20 files: a complete Obsidian vault starter kit with YAML frontmatter, plain markdown, readable anywhere. Includes both person-record templates: `person.md` (one file per person, the default) and `person_narrative.md` (many people per lineage file).
 
 - **Core files**: Family tree, research log, open questions, data inventory, timeline, genetic profile, chromosome painting, witness network, unresolved persons, research strategy
 - **Templates**: Person, transcription, certificate, postcard, region, surname, hypothesis, draft letter
