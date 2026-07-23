@@ -59,6 +59,28 @@ If you are new to AI-assisted genealogy, start with [START_HERE.md](START_HERE.m
 
 See [Getting Started](workflows/getting-started.md) for the full walkthrough.
 
+### If you cloned this repo with Git, run this once
+
+```bash
+./scripts/install-hooks
+```
+
+That activates the tracked `.githooks/` directory for your clone, which installs a
+**pre-commit PII gate**: it blocks a commit containing a private name from your
+denylist, or a real record identifier (a FamilySearch PID or WikiTree id). An
+external id is a *pointer to a person* — it discloses an ancestor even with no
+name attached — so the gate treats it the same as a name.
+
+It is one manual step because Git deliberately will not let a repository activate
+its own hooks on clone: if it could, `git clone` would be arbitrary code
+execution. The hook file travels with the repo; the switch (`core.hooksPath`)
+lives in `.git/config`, which is never transferred. Re-running the script is
+safe and idempotent.
+
+Without a `.private/anonymization-denylist.txt` the name checks cannot run; the
+hook says so loudly and allows the commit rather than making the repo
+uncommittable for contributors.
+
 ## What's Included
 
 ### Beginner Guides (`guides/`)

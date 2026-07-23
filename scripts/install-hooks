@@ -1,0 +1,47 @@
+#!/bin/bash
+# install-hooks — point this clone's git at the tracked .githooks/ directory.
+#
+# WHY THIS EXISTS AT ALL. Git will not let a repository activate its own hooks on
+# clone, and that is a deliberate security property, not an oversight: if cloning
+# a repo could install an executable that runs on your next commit, `git clone`
+# would be arbitrary code execution. So the hook FILE travels with the repo (it
+# is tracked in .githooks/, mode 755) but the SWITCH does not — `core.hooksPath`
+# lives in .git/config, which is per-clone and never transferred.
+#
+# That leaves exactly one unavoidable manual step per clone. This script is it.
+#
+#   ./scripts/install-hooks
+#
+# Idempotent; safe to re-run. Prints what it changed.
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+if [ ! -d .githooks ]; then
+    echo "install-hooks: no .githooks/ directory in $ROOT — nothing to install." >&2
+    exit 1
+fi
+
+current="$(git config --get core.hooksPath || true)"
+if [ "$current" = ".githooks" ]; then
+    echo "install-hooks: already active (core.hooksPath = .githooks)."
+else
+    git config core.hooksPath .githooks
+    echo "install-hooks: set core.hooksPath = .githooks (was: ${current:-unset})."
+fi
+
+# The exec bit is tracked (mode 100755), but a checkout on a filesystem that
+# drops it — or a file added without it — would leave a hook git silently skips.
+# Silently-skipped is the worst outcome for a gate, so fix it here.
+for h in .githooks/*; do
+    [ -f "$h" ] || continue
+    if [ ! -x "$h" ]; then
+        chmod +x "$h"
+        echo "install-hooks: made $h executable."
+    fi
+done
+
+echo "install-hooks: active hooks -> $(ls .githooks | tr '\n' ' ')"
+echo "install-hooks: verify with a deliberate failure, e.g. commit a file containing a real"
+echo "               record identifier — the pre-commit PII gate should block it."
