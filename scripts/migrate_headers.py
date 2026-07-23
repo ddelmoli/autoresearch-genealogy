@@ -148,7 +148,8 @@ def propose_r3(record):
         tag, slot = m.group(1), m.group(2)
         if H._date_slot_ok(slot):
             continue                        # already conforming
-        for proposer in (propose_absence, propose_place_comma):
+        for proposer in (propose_absence, propose_place_comma,
+                         propose_dual_year, propose_medieval_span):
             candidate = proposer(tag, slot)
             if candidate and content_preserved(field, candidate):
                 proposals.append((field, candidate, "A2"))
@@ -310,9 +311,30 @@ def verify(vault, path, old_line, new_line, rec):
     b1, d1 = ps._parse_vitals(ps._vitals_paren(name_new, rest_new))
     for label, a, b in (("born", b0, b1), ("died", d0, d1)):
         ya, yb = G.resolve_year(a), G.resolve_year(b)
-        if (ya is None) != (yb is None):
-            return f"{label}: year presence changed ({a!r} -> {b!r})"
+        if ya is None and yb is not None:
+            # A GAIN, not a loss. "c.693/709" is unreadable to resolve_year, and
+            # "BET 693 AND 709" is not -- which is the point: those medieval slash
+            # headers are the very population LONGER_TERM parked as unresolvable
+            # by DATE_DRIFT. Allowed only when the ORACLE does not contradict it.
+            field = getattr(rec, label, None)
+            if field is None or G.year(field) is None or G.year(field) == yb:
+                continue
+            return (f"{label}: gained year {yb} but the field says "
+                    f"{G.year(field)}")
+        if yb is None and ya is not None:
+            return f"{label}: year LOST ({a!r} -> {b!r})"
         if ya is not None and ya != yb:
+            # THE ONE SANCTIONED YEAR CHANGE: an Old Style/New Style dual.
+            # "3 MAR 1696/7" resolves naively to 1696, but GEDCOM 7 Appendix A
+            # §6.2 puts the NEW STYLE year in the DATE, and the meta field was
+            # already migrated to it (1697) with born_phrase keeping "1696/7".
+            # So the header moving 1696 -> 1697 is it being brought INTO
+            # agreement with the authoritative field, not drifting from it.
+            # Gated on the ORACLE, never allowed on its own say-so: the new year
+            # must equal the meta field's year, or this is still a corruption.
+            field = getattr(rec, label, None)
+            if field is not None and G.year(field) == yb:
+                continue
             return f"{label}: YEAR CHANGED {ya} -> {yb}"
     if name_old != name_new:
         return "the bold name changed"
@@ -572,6 +594,71 @@ def main_r4(vault, args):
         print(f"\nAPPLIED to {len(edits)} file(s).")
     else:
         print("\nDry run. Re-run with --apply to write.")
+
+
+# --------------------------------------------------------------------------- #
+# PHASE A3 — the two residue classes the operator decided (23 JUL 2026):
+# "use the GEDCOM 7 formats". OS/NS takes the conforming date, a medieval slash
+# becomes BET.
+# --------------------------------------------------------------------------- #
+
+# ⚠ THE TRAP: both classes are "YYYY/YYYY", and one of them is CONSECUTIVE.
+# `944/945` is a 10th-century "one year or the other" span, but it is also
+# consecutive, so split_dual_year would happily read it as an Old Style/New Style
+# dual and silently resolve it to 945. The discriminator is the CALENDAR, not the
+# arithmetic: an OS/NS dual year can only arise for a date between 1 January and
+# 24 March, because that is the window in which the Old Style year had not yet
+# rolled over. So a dual needs a DAY and a JAN/FEB/MAR month; a bare year pair is
+# a span. `2 APR c.747/748` is April, so it is a span too, not a dual.
+_OSNS_MONTHS = ("JAN", "FEB", "MAR")
+_DUAL_SHAPE = re.compile(r"\A(?:ABT|EST|CAL|BEF|AFT)?\s*\d{1,2}\s+([A-Z]{3,9})\.?\s+"
+                         r"\d{3,4}/\d{1,4}\Z", re.I)
+# A medieval span: an optional approximation, then YEAR/YEAR and nothing else.
+_SPAN_SHAPE = re.compile(r"\A(?:c\.?|ca\.?|~|abt\.?|about)?\s*"
+                         r"(\d{3,4})\s*/\s*(\d{1,4})\Z", re.I)
+
+
+def propose_dual_year(tag, slot):
+    """`b. 6 JAN 1743/4` -> `b. 6 JAN 1744` (the NEW STYLE year, per GEDCOM 7)."""
+    raw = H.EMPHASIS.sub("", slot).strip()
+    date_part, place = _split_place(raw)
+    m = _DUAL_SHAPE.match(date_part)
+    if not m or m.group(1)[:3].upper() not in _OSNS_MONTHS:
+        return None
+    got = G.split_dual_year(date_part)
+    if not got:
+        return None
+    value, _phrase, residue = got
+    if residue.strip() or not G.is_valid(value):
+        return None
+    return f"{tag} {value}" + (f", {place}" if place else "")
+
+
+def _expand(lo, hi):
+    """'985','990' -> 990.  '1699','1700' -> 1700.  '1743','4' -> 1744."""
+    if len(hi) >= len(lo):
+        return int(hi)
+    return int(lo[: len(lo) - len(hi)] + hi)
+
+
+def propose_medieval_span(tag, slot):
+    """`b. c.985/990` -> `b. BET 985 AND 990` (operator decision, 23 JUL 2026).
+
+    The circa is DROPPED rather than kept: GEDCOM 7's `BET` takes plain dates, and
+    the uncertainty the `c.` expressed is precisely what the span now states.
+    """
+    raw = H.EMPHASIS.sub("", slot).strip()
+    date_part, place = _split_place(raw)
+    m = _SPAN_SHAPE.match(date_part)
+    if not m:
+        return None
+    lo, hi = m.group(1), _expand(m.group(1), m.group(2))
+    if hi <= int(lo):
+        return None                      # not an ascending span; leave it alone
+    value = f"BET {int(lo)} AND {hi}"
+    if not G.is_valid(value):
+        return None
+    return f"{tag} {value}" + (f", {place}" if place else "")
 
 if __name__ == "__main__":
     main()

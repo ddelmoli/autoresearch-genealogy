@@ -82,6 +82,17 @@ CASES = [
      "an absence marker is already conforming -> no proposal, no refusal"),
     ("b. 3 SEP 1780, Somewhereton", "3 SEP 1780", None, None,
      "an already-conforming field is left alone"),
+    # --- A3: the operator's residue decisions (use the GEDCOM 7 formats) ---
+    ("b. 6 JAN 1743/4, Anytown", "6 JAN 1744", None, "b. 6 JAN 1744, Anytown",
+     "A3: an OS/NS dual takes the NEW STYLE year (GEDCOM 7 App. A 6.2)"),
+    ("b. 13 JAN 1699/1700", "13 JAN 1700", None, "b. 13 JAN 1700",
+     "A3: a full-length dual too"),
+    ("b. c.985/990", "ABT 985", None, "b. BET 985 AND 990",
+     "A3: a medieval slash becomes BET, and the circa is subsumed by the span"),
+    ("b. 944/945", "ABT 944", None, "b. BET 944 AND 945",
+     "A3 TRAP: 944/945 is CONSECUTIVE but medieval — a span, not a dual year"),
+    ("b. 2 APR c.747/748", "ABT 747", None, None,
+     "A3: April cannot be an OS/NS dual (the OS year rolled over 25 MAR) -> refused"),
 ]
 
 
@@ -150,14 +161,24 @@ def main():
                 n = M.H.VITAL_TAG.match(new).group(2)
                 od, _p = M._split_place(M.H.EMPHASIS.sub("", o).strip())
                 nd, _p2 = M._split_place(n)
-                if G.resolve_year(od) != G.year(nd):
-                    bad_year += 1
+                oy, ny = G.resolve_year(od), G.year(nd)
+                if oy != ny:
+                    # Sanctioned exceptions, both ORACLE-GATED:
+                    #  - an OS/NS dual moving to its New Style year (1696 -> 1697)
+                    #  - a medieval slash gaining a readable year (None -> 693)
+                    # Anything else is a corruption.
+                    fy = G.year(_rec.born) if old.lstrip().lower().startswith(("b.", "bapt", "chr", "born")) \
+                        else G.year(_rec.died)
+                    if not (ny is not None and fy == ny):
+                        bad_year += 1
                 if not M.content_preserved(old, new):
                     bad_content += 1
                 if not (G.is_valid(nd) or nd.strip().lower() == "unknown"):
                     bad_content += 1
         print(f"  {len(plans)} entries, {fields} fields, {len(refusals)} refusals")
-        check(bad_year == 0, "no proposal changes a YEAR (checked exhaustively)")
+        check(bad_year == 0,
+              "no proposal changes a YEAR except an oracle-confirmed OS/NS or "
+              "medieval-span correction (checked exhaustively)")
         check(bad_content == 0,
               "no proposal loses content or yields an invalid DateValue")
 
