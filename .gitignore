@@ -1,9 +1,27 @@
+# ============================================================================
+# The framework / private boundary.
+#
+# This repo is a PUBLIC genealogy-research FRAMEWORK. It is developed alongside
+# a PRIVATE vault of real family data that must never be committed. Everything
+# below encodes where that line falls.
+#
+# WHY THIS FILE AND NOT .git/info/exclude: an exclude file is machine-local and
+# is NEVER part of a clone. Rules that live only there protect the original
+# author's working tree and nobody else's — a forker inherits none of them. The
+# boundary is a property of the PROJECT, so it belongs in a tracked file.
+#
+# Two different defaults below, on purpose (see CONTRIBUTING.md):
+#   scripts/   -> TRACK by default (it is framework code)
+#   doc dirs   -> IGNORE by default (they hold research prose full of real names)
+# ============================================================================
+
+
+# --- 1. Editor / OS / environment junk --------------------------------------
 .DS_Store
 *.swp
 *.swo
 *~
 .obsidian/
-.private/
 .github-triage/
 privacy-audits/
 
@@ -13,3 +31,120 @@ privacy-audits/
 .venv/
 __pycache__/
 *.pyc
+
+
+# --- 2. The private vault, and anything naming a real person ----------------
+# A vault holds living people, birth dates and record identifiers. Never track
+# one. `vault/` is the conventional single-vault path; `vault-<name>/` is the
+# multi-vault layout (one toolkit, many client vaults).
+vault/
+vault-*/
+# ...except the EMPTY starter kit, which is framework and IS tracked.
+!vault-template/
+
+# Per-client Claude instructions: the subject, the lineage->file layout, the
+# generation anchors. Real family names by construction.
+CLAUDE.instance.md
+CLAUDE.local.md
+
+# Operator-local config and the anonymization denylist (a list of the exact
+# private terms — the most sensitive file in the tree).
+.private/
+.claude/
+
+
+# --- 3. Personal design lanes ------------------------------------------------
+# spec/ is a framework directory and its top-level docs ARE tracked, as are the
+# four lanes that shipped with the public framework. The lanes below are
+# personal planning scaffolding, not published design docs.
+#
+# Ignore the FILES inside spec subdirs (not the dirs themselves) so a lane can
+# be opted in later with a !negation. Already-tracked files are unaffected —
+# .gitignore never un-tracks anything.
+spec/*/*.md
+!spec/github-triage-lane/*.md
+!spec/image-archive-deep-dive/*.md
+!spec/normie-usability/*.md
+!spec/safety-ux-polish/*.md
+
+
+# --- 4. scripts/ : TRACK BY DEFAULT (inverted 2026-07-23) -------------------
+# This directory used to read "ignore scripts/*.py, then re-add ~19 files by
+# name". That default-to-private shape is exactly how `vault_config.py` stayed
+# untracked while 15 of the scripts that IMPORT it were tracked: a fresh clone
+# hit ImportError across nearly the whole toolkit, including every test.
+#
+# Framework code now defaults to TRACKED. Only genuinely local things are listed
+# here. A new script is tracked unless you add it below — and the pre-commit
+# privacy audit is what stops a script containing real names from going public.
+# (gitignore has no inline comments — each note goes on its own line.)
+# one-shot migrations for the retired Person_Index:
+scripts/archive/
+# operator's local scratch notes:
+scripts/README.md
+# accumulated FamilySearch walk data (real PIDs):
+scripts/.buildout_data.json
+# one-shot; reads a hand-built /tmp map:
+scripts/apply_gen_fix.py
+# meta-tool for triaging this very boundary:
+scripts/contrib_triage.py
+
+
+# --- 5. Research prose: IGNORE BY DEFAULT -----------------------------------
+# prompts/ reference/ workflows/ are a MIX. Upstream's generic methodology is
+# tracked; the operator's research notes are saturated with real surnames and
+# places (one local reference file matched 44 private terms).
+#
+# The default here is the OPPOSITE of scripts/ because the failure modes are not
+# symmetric: an ignored script breaks a clone, while an accidentally tracked
+# research note discloses living people. To publish a new generic doc, opt it in
+# with a !negation, as the tracked ones below are.
+prompts/*.md
+reference/*.md
+workflows/*.md
+
+!prompts/README.md
+!prompts/[0-9][0-9]-*.md
+# ...but these numbered prompts are this vault's own research lane, not
+# framework prompts (and the repo contract pairs each numbered prompt with a
+# human-review card, which these have no public counterpart for).
+prompts/13-mayflower-lines-cascade.md
+prompts/14-split-abington-file.md
+prompts/15-tree-expansion-british-italian.md
+prompts/16-aad-military-sweep.md
+prompts/17-familysearch-tree-contribution.md
+prompts/18-edge-verification.md
+prompts/19-fs-source-harvest.md
+prompts/20-creative-vault-review.md
+prompts/_archive/
+
+# Generic framework methodology (no vault content, placeholder names only).
+!reference/common-pitfalls.md
+!reference/confidence-tiers.md
+!reference/dna-interpretation-guardrails.md
+!reference/gedcom-guide.md
+!reference/github-triage-lane.md
+!reference/glossary.md
+!reference/naming-conventions.md
+!reference/source-hierarchy.md
+!reference/vault-file-manifest.md
+!reference/what-ai-can-and-cannot-do.md
+!reference/why-autoresearch-for-genealogy.md
+
+!workflows/discrepancy-resolution.md
+!workflows/document-triage.md
+!workflows/getting-started.md
+!workflows/header-grammar.md
+!workflows/image-archive-navigation.md
+!workflows/new-ancestor-intake.md
+!workflows/ocr-pipeline.md
+!workflows/oral-history-protocol.md
+!workflows/phase-planning.md
+!workflows/shard-split.md
+!workflows/structured-dates.md
+!workflows/switch-person-model.md
+
+
+# --- 6. Work in progress -----------------------------------------------------
+# Not part of the numbered prompt/review-card set that validate-repo pairs up.
+review-cards/20-creative-vault-review.md
