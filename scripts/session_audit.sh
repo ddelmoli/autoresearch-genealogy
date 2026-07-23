@@ -116,6 +116,11 @@ parts = [
     "prose_audit -> " + run("prose_audit.py",
                             r"ERROR issues:|WARN issues:|DATE_DRIFT:", max_lines=3),
     "header_xref -> " + run("header_xref_audit.py", r"HEADER_XREF violations:"),
+    # Header grammar conformance (spec/header-grammar Spec 02). ADVISORY with a
+    # large known baseline — the migration is Spec 04, so a non-zero number here
+    # is the backlog, not a regression. Watch it go DOWN, and watch for it going
+    # UP, which means a new entry was written in a dialect the grammar forbids.
+    "header_grammar -> " + run("header_audit.py", r"HEADER_GRAMMAR:"),
     "dup_name -> " + run("dup_name_audit.py", r"DUP_NAME_STRONG:|DUP_NAME_POSSIBLE:"),
     # Both metrics from meta_presence_audit: META_PRESENCE (narrative with no meta
     # block — invisible to the integrity gate) and ORPHANED_META (meta block split
