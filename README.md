@@ -148,7 +148,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Workflows (`workflows/`)
 
-9 step-by-step guides: getting started, OCR pipeline, image archive navigation, new ancestor intake, document triage, oral history protocol, discrepancy resolution, phase planning, structured dates.
+10 step-by-step guides: getting started, OCR pipeline, image archive navigation, new ancestor intake, document triage, oral history protocol, discrepancy resolution, phase planning, structured dates, header grammar.
 
 ### Examples (`examples/`)
 
