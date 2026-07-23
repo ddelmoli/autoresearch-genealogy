@@ -4,7 +4,6 @@
 require "fileutils"
 require "English"
 require "digest"
-require "shellwords"
 require "time"
 
 ROOT = File.expand_path("..", __dir__)
@@ -13,10 +12,31 @@ DEFAULT_REPORT_DIR = File.join(Dir.home, ".cache", "autoresearch-genealogy", "pr
 REPORT_DIR = ENV.fetch("PRIVACY_AUDIT_REPORT_DIR", DEFAULT_REPORT_DIR)
 EXCLUDED_PATHS = ["LICENSE"].freeze
 
+# Every string this script handles is UTF-8, regardless of the caller's locale.
+#
+# Ruby derives Encoding.default_external from LANG/LC_ALL. With those UNSET it is
+# US-ASCII, and then a denylist term containing a non-ASCII byte is tagged
+# US-ASCII-but-invalid. That used to blow up inside Shellwords.shellescape
+# ("invalid byte sequence in US-ASCII") and would equally break a regex match of
+# such a term against UTF-8 repo content (Encoding::CompatibilityError).
+#
+# This is NOT an exotic edge case: an unset LANG is the NORMAL condition under
+# cron, git hooks and CI — exactly the unattended contexts where a PII gate is
+# the only thing looking. Pinning it here rather than asking callers to export a
+# locale is the difference between a gate that works and a gate that works on
+# someone's laptop.
+def read_text(path)
+  File.read(path, encoding: "UTF-8").scrub
+end
+
 def run_git(*args)
-  command = ["git", "-C", ROOT, *args].shelljoin
-  output = `#{command} 2>&1`
-  [output, $CHILD_STATUS.exitstatus]
+  # ARRAY form: argv is handed to execve directly, so there is no shell to quote
+  # for, no Shellwords involved, and no metacharacter surface from a denylist
+  # term — which is private, operator-supplied data being passed as `-S<term>`.
+  # The old form built one string with shelljoin and ran it in backticks; that
+  # is where the crash lived, and it is also the injection-prone shape.
+  output = IO.popen(["git", "-C", ROOT, *args], "r", err: %i[child out], &:read)
+  [output.to_s.force_encoding(Encoding::UTF_8).scrub, $CHILD_STATUS.exitstatus]
 end
 
 def tracked_text_files
@@ -34,7 +54,7 @@ def load_terms
     abort "Missing #{DENYLIST_PATH}. Create it with one private term per line."
   end
 
-  terms = File.readlines(DENYLIST_PATH, chomp: true).map(&:strip).reject do |line|
+  terms = read_text(DENYLIST_PATH).lines.map { |l| l.chomp }.map(&:strip).reject do |line|
     line.empty? || line.start_with?("#")
   end
   abort "No denylist terms found in #{DENYLIST_PATH}" if terms.empty?
@@ -50,7 +70,7 @@ def current_head_findings(terms)
   tracked_text_files.each do |path|
     next if EXCLUDED_PATHS.include?(path)
 
-    text = File.read(File.join(ROOT, path))
+    text = read_text(File.join(ROOT, path))
     terms.each do |term|
       next unless text.include?(term)
 
@@ -132,7 +152,7 @@ def identifier_findings
   tracked_text_files.each do |path|
     next if EXCLUDED_PATHS.include?(path)
 
-    File.read(File.join(ROOT, path)).lines.each_with_index do |line, index|
+    read_text(File.join(ROOT, path)).lines.each_with_index do |line, index|
       line.scan(IDENTIFIER_RE).uniq.each do |token|
         next if placeholder_identifier?(token)
 
