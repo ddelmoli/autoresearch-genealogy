@@ -682,6 +682,7 @@ def _record_from_meta(meta, name, rest, gens, header_line, path, vault, meta_lin
              # is what this record was READ as, which is how write_person tells a
              # deliberate change from a value that merely fell back to the header.
              "header_vitals": (hborn or None, hdied or None),
+             "header_paren": _vitals_paren(name, rest),
              "read_dates": {"born": born or None, "died": died or None,
                             "born_phrase": born_phrase, "died_phrase": died_phrase},
              "meta_date_keys": tuple(k for k in DATE_KEYS if k in meta)},

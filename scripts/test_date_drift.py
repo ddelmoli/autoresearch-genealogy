@@ -111,6 +111,46 @@ for seg, want, why in [
     check(got == want, f"_segment_names_place({seg!r}) -> {want}  [{why}]"
           + ("" if got == want else f" (got {got})"))
 
+
+# --- DATE_IMPOSSIBLE / DATE_UNATTESTED (23 JUL 2026) ---------------------- #
+# Two invariants that check a stored value against REALITY rather than against
+# the header it came from — DATE_DRIFT is blind whenever both sides come from the
+# same parser, because a bad parse agrees with itself.
+def _row(name, born=None, died=None, paren=""):
+    return {"name": name, "file": "F.md",
+            "meta_date_keys": tuple(k for k, v in (("born", born), ("died", died)) if v),
+            "field_born": born, "field_died": died,
+            "header_born": "", "header_died": "", "header_paren": paren}
+
+for row, kind, why in [
+    (_row("Impossible", born="1718", died="1701",
+          paren="of Someplace; father of Susanna bp. 8 FEB 1718/19; ? m. Mary 3 FEB 1701/2"),
+     "DATE_IMPOSSIBLE", "born after died — a real case, from a daughter's baptism and a marriage"),
+    (_row("Invented", born="1899", paren="b. 3 SEP 1780, Somewhereton"),
+     "DATE_UNATTESTED", "a year with no basis anywhere in its own header"),
+]:
+    found = PA.date_invariants([row])
+    got = [f[3] for f in found]
+    check(got == [kind], f"{kind}: {why}" + ("" if got == [kind] else f" (got {got})"))
+
+for row, why in [
+    (_row("Clean", born="3 SEP 1780", died="1873", paren="b. 3 SEP 1780, Somewhereton; d. 1873"),
+     "an ordinary entry"),
+    (_row("Dual year", born="6 JAN 1744", paren="b. 6 JAN 1743/4, Somewhereton"),
+     "an Old Style / New Style field cites the NS year, which the header spells 1743/4"),
+    (_row("Decade", born="ABT 1650", paren="b. ~1650s, prob. Somewhereton"),
+     "the decade form attests its base year"),
+    (_row("Range end", born="BET 1750 AND 1756", paren="b. ~1750-56, Someplace"),
+     "a two-digit range end attests the expanded year"),
+    (_row("Has an id", born="1853", paren="b. 1853 (FS ABCD-123), Somewhereton"),
+     "a record identifier is stripped before the years are read"),
+    (_row("Year range", born="1810", died="1890", paren="1810-1890; FS ABCD-123"),
+     "a YEAR RANGE is attestation, not an identifier — reading it as one made this "
+     "check report 37 findings on a clean vault"),
+]:
+    found = PA.date_invariants([row])
+    check(not found, f"no false positive: {why}" + ("" if not found else f" (got {found})"))
+
 # --- the promotion: DATE_DRIFT BLOCKS (22 JUL 2026) ----------------------- #
 # It was advisory at first landing and became blocking once the baseline was 0 and
 # the Spec 04 residue was triaged. It is the ONLY blocking metric in prose_audit:

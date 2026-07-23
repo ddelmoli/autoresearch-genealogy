@@ -242,6 +242,9 @@ def parse_narrative():
             # which date keys the meta block ACTUALLY carries — `born`/`died` above
             # fall back to the header, so they cannot answer "is there a field?"
             meta_date_keys=tuple((r.raw or {}).get("meta_date_keys") or ()),
+            # the raw vitals parenthetical, so a gate can ask what the header
+            # ATTESTS rather than only what the parser made of it
+            header_paren=(r.raw or {}).get("header_paren", ""),
             tier=tier_norm(r.evidence_tier),
             profile_status=r.profile_status, life_status=r.life_status,
             has_meta=True, block=(r.raw or {}).get("line", "")))

@@ -86,6 +86,7 @@ def parse_person_index():
             "field_died": e["died"],
             "header_born": header_born,
             "header_died": header_died,
+            "header_paren": e.get("header_paren") or "",
             "pid": e["pid"],
             "gen": e["gen"],
             "file": e.get("file"),
@@ -215,6 +216,70 @@ def canonical_year_alts(raw_date_str, primary_year):
         if lo <= hi <= lo + RANGE_SPAN_CAP:
             alts.update(range(lo, hi + 1))
     return alts
+
+# ============================================================
+# DATE_IMPOSSIBLE / DATE_UNATTESTED — two invariants the drift gate cannot see
+# ============================================================
+# DATE_DRIFT compares the FIELD against the HEADER, so it is blind whenever both
+# come from the same parser: a bad parse agrees with itself. That is exactly how
+# 25 wrong date values reached the live vault on 22 JUL 2026 behind an all-zero
+# gate suite. These two check the values against reality instead of against each
+# other, and both would have fired on that population.
+#
+#   DATE_IMPOSSIBLE   born year AFTER died year. Nothing legitimate produces it;
+#                     one entry had a daughter's baptism as its birth and a
+#                     marriage as its death, giving born 1718 / died 1701.
+#   DATE_UNATTESTED   a year in the stored field that appears NOWHERE in the
+#                     entry's own header. The field is supposed to be the machine
+#                     reading of that header, so a year with no textual basis
+#                     there was invented — by a parser, or by a bad edit.
+#
+# Attestation deliberately accepts the forms a correct value may legitimately
+# derive rather than quote:
+#   * year-1, for an Old Style / New Style field ("6 JAN 1743/4" -> 6 JAN 1744)
+#   * the decade form, "~1650s" attesting 1650
+#   * a two-digit range end, "~1750-56" attesting 1756
+# and it strips record identifiers first — but only tokens carrying an UPPERCASE
+# letter, so "ABCD-123" goes and the year range "1810-1890" and decade range
+# "1770s-1780s" stay. Getting that wrong made this check report 37 findings on a
+# clean vault; it ships at 0.
+_ATTEST_ID = re.compile(r"\b[A-Z0-9]*[A-Z][A-Z0-9]*-[A-Z0-9]+\b|\b[A-Z][a-z]+-\d+\b")
+
+
+def _header_years(paren):
+    """Every year the header parenthetical attests, in any form it may take."""
+    s = _ATTEST_ID.sub(" ", paren or "")
+    years = {int(x) for x in re.findall(r"\b(\d{3,4})s?\b", s)}
+    for a, b in re.findall(r"\b(\d{3,4})\s*[-–]\s*(\d{2})\b", s):
+        years.add(int(a[:len(a) - 2] + b))
+    return years
+
+
+def date_invariants(rows):
+    """born-after-died, and field years with no basis in the header."""
+    out = []
+    for r in rows:
+        keys = set(r.get("meta_date_keys") or ())
+        if not keys:
+            continue
+        by = gdate.resolve_year(r["field_born"]) if "born" in keys and r.get("field_born") else None
+        dy = gdate.resolve_year(r["field_died"]) if "died" in keys and r.get("field_died") else None
+        if by and dy and by > dy:
+            out.append((r.get("file") or "?", 0, "ERROR", "DATE_IMPOSSIBLE",
+                        f"'{r['name']}' born {by} is AFTER died {dy}"))
+        for key, slot in (("born", "header_born"), ("died", "header_died")):
+            val = r.get(f"field_{key}")
+            if key not in keys or not val:
+                continue
+            attested = _header_years(r.get(slot) or "") | _header_years(r.get("header_paren") or "")
+            missing = sorted({abs(y) for y in gdate.year_range(val) if y
+                              and abs(y) not in attested and abs(y) - 1 not in attested})
+            if missing:
+                out.append((r.get("file") or "?", 0, "ERROR", "DATE_UNATTESTED",
+                            f"'{r['name']}' {key} field cites {missing}, which the header "
+                            f"does not attest anywhere"))
+    return out
+
 
 # ============================================================
 # DATE_DRIFT — header vs field (spec/structured-dates Spec 06)
@@ -833,6 +898,7 @@ def main(argv=None):
     # model this lane introduced. Advisory, and appended after the prose checks so
     # it shares their report.
     issues.extend(date_drift(rows))
+    issues.extend(date_invariants(rows))
 
     # Report
     by_severity = defaultdict(list)
@@ -843,6 +909,10 @@ def main(argv=None):
     print(f"  ERROR issues:  {len(by_severity['ERROR'])}")
     print(f"  WARN issues:   {len(by_severity['WARN'])}")
     dd = [i for i in issues if i[3] == "DATE_DRIFT"]
+    inv = [i for i in issues if i[3] in ("DATE_IMPOSSIBLE", "DATE_UNATTESTED")]
+    print(f"  DATE_IMPOSSIBLE / DATE_UNATTESTED: "
+          f"{len([i for i in inv if i[3] == 'DATE_IMPOSSIBLE'])} / "
+          f"{len([i for i in inv if i[3] == 'DATE_UNATTESTED'])}   [BLOCKING]")
     cov = DATE_DRIFT_COVERAGE
     print(f"  DATE_DRIFT:    {len(dd)}   "
           f"[{'BLOCKING' if strict_dates else 'advisory (--no-strict-dates)'}]"
@@ -856,8 +926,10 @@ def main(argv=None):
         for fname, lineno, _, kind, msg in by_severity[sev]:
             print(f"  {fname}:{lineno} [{kind}] {msg}")
 
-    if dd and strict_dates:
-        print(f"\nDATE_DRIFT is BLOCKING: {len(dd)} header/field date disagreement(s).",
+    if (dd or inv) and strict_dates:
+        print(f"\nBLOCKING: {len(dd)} DATE_DRIFT, "
+              f"{len([i for i in inv if i[3] == 'DATE_IMPOSSIBLE'])} DATE_IMPOSSIBLE, "
+              f"{len([i for i in inv if i[3] == 'DATE_UNATTESTED'])} DATE_UNATTESTED.",
               file=sys.stderr)
         print("Fix the wrong side (the meta FIELD is authoritative for machines, the "
               "header for humans), and update any prose that paraphrases it in the same "
