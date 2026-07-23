@@ -342,9 +342,13 @@ def main():
     ap.add_argument("--apply", action="store_true", help="write the changes")
     ap.add_argument("--refusals", action="store_true", help="show the worklist")
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--phase", choices=("a", "b"), default="a",
+                    help="a = R3 date slots (default); b = R4 vital tags")
     a = ap.parse_args()
 
     vault = vault_config.resolve_vault(a.vault)
+    if a.phase == "b":
+        return main_r4(vault, a)
     plans, refusals = run(vault, a.file)
 
     # Build the per-file edits and verify EVERY one before touching anything.
@@ -401,6 +405,173 @@ def main():
     else:
         print("\nDry run. Re-run with --apply to write.")
 
+
+
+# --------------------------------------------------------------------------- #
+# PHASE B1 — R4: give a TERSE header its vital tags.
+#
+# "(1940, MA; 1946 [infant death]; FS PID XXXX-XXX)" states its vitals
+# POSITIONALLY. This adds the markers the grammar requires:
+#   "(b. 1940, MA; d. 1946 [infant death]; FS PID XXXX-XXX)"
+#
+# ⚠ This RESTRUCTURES the parenthetical, which is the thing that mangled entries
+# on 22 JUL. Three properties keep it honest, and all three are checked per entry:
+#
+#   1. IT NEVER DECIDES WHICH DATE IS WHICH. `person_store._terse_vitals` already
+#      made that call -- it is the reader every other gate uses, complete with the
+#      opens-with-a-date rule, the floruit guard and the absence-marker rule that
+#      were added after the 25 wrong values. This tool only TAGS what the reader
+#      already resolved. Where the reader recovers nothing (a floruit, a
+#      name-first header), there is nothing to tag and the entry is refused.
+#   2. THE RESULT IS VALIDATED BY THE VALIDATOR, not by this function's own idea
+#      of correctness: the rewritten parenthetical is run back through
+#      header_audit.violations and must come out clean. A rewrite that merely
+#      moves a defect (a bracketed note left inside a now-tagged date slot) is
+#      refused rather than counted as progress.
+#   3. THE YEARS ARE RE-READ from the rewritten line and must be unchanged.
+# --------------------------------------------------------------------------- #
+
+# BARE absence only. An annotated one -- "Deceased [FS no date]" -- records WHY
+# there is no date, which is research provenance, not noise: rewriting it to
+# "d. unknown" drops that. content_preserved caught all three instances, but a
+# defect caught as an APPLY FAILURE is a defect that blocks the batch, so it is
+# refused here instead and goes to the worklist for a human to place.
+_ABSENCE_SEG = re.compile(r"\A(?:deceased|unknown|unk|n/?a|\?+|—|--?)\Z", re.I)
+
+
+class _Synthetic:
+    """A record shim so a PROPOSED parenthetical can be graded by the validator."""
+
+    def __init__(self, paren, meta_keys, born=None, died=None):
+        self.id = "P-PROPOSED"
+        self.source_file = None
+        self.born, self.died = born, died
+        self.raw = {"header_paren": paren, "meta_date_keys": meta_keys}
+
+
+def propose_r4(record):
+    """(new_paren, note) or (None, reason). Tags a terse header's vital fields."""
+    paren = record.raw.get("header_paren") or ""
+    if not paren.strip() or "(" in paren:
+        return None, "no paren, or nested (Phase C)"
+    hb, hd = record.raw.get("header_vitals", (None, None))
+    if not hb and not hd:
+        return None, "the reader recovers no vitals — floruit or name-first header"
+
+    segs = [s.strip() for s in paren.split(";") if s.strip()]
+    if any(H.VITAL_TAG.match(s) for s in segs):
+        return None, "already has a marked vital field"
+
+    def locate(value):
+        """The unique segment this recovered value starts. None if 0 or >1."""
+        hits = [i for i, s in enumerate(segs)
+                if H.EMPHASIS.sub("", s).strip().startswith(value)]
+        return hits[0] if len(hits) == 1 else None
+
+    ib = locate(hb) if hb else None
+    idx = locate(hd) if hd else None
+    if hb and ib is None:
+        return None, "birth value does not uniquely start a segment"
+    if hd and idx is None:
+        return None, "death value does not uniquely start a segment"
+    if ib is not None and idx is not None and ib >= idx:
+        return None, "death segment precedes birth segment — not this shape"
+
+    out = list(segs)
+    for i, value, tag in ((ib, hb, "b."), (idx, hd, "d.")):
+        if i is None:
+            continue
+        seg = H.EMPHASIS.sub("", segs[i]).strip()
+        rest = seg[len(value):]
+        new_date, residue = G.normalise(value)
+        if not new_date or residue.strip():
+            return None, f"date {value!r} does not normalise cleanly"
+        out[i] = f"{tag} {new_date}{rest}"
+
+    # A lone `Deceased` / `—` segment beside a recovered birth is the DEATH field
+    # stated as an absence. Tag it so the header says so in the grammar.
+    if ib is not None and idx is None:
+        for i, seg in enumerate(segs):
+            if i != ib and _ABSENCE_SEG.match(H.EMPHASIS.sub("", seg).strip()):
+                out[i] = "d. unknown"
+                break
+
+    new_paren = "; ".join(out)
+
+    # (2) grade the PROPOSAL with the validator itself.
+    bad = H.violations(_Synthetic(new_paren, record.raw.get("meta_date_keys", ())))
+    if bad:
+        return None, f"proposal still violates {sorted({r for r, _ in bad})}"
+    return new_paren, "B1"
+
+
+def run_r4(vault, only_file=None):
+    """-> (plans, refusals) for Phase B1. plans: (rel, rec, old_paren, new_paren)."""
+    plans, refusals = [], []
+    for rec in ps.iter_people(vault):
+        rel = rec.source_file or "?"
+        if only_file and os.path.basename(rel) != only_file:
+            continue
+        if "R4" not in {r for r, _d in H.violations(rec)}:
+            continue
+        new_paren, why = propose_r4(rec)
+        if not new_paren:
+            refusals.append((rel, rec.id, rec.raw.get("header_paren", ""), why))
+            continue
+        plans.append((rel, rec, rec.raw.get("header_paren", ""), new_paren))
+    return plans, refusals
+
+
+def main_r4(vault, args):
+    plans, refusals = run_r4(vault, args.file)
+    edits, failed, shown = {}, [], 0
+
+    for rel, rec, old_paren, new_paren in plans:
+        path = os.path.join(vault, rel)
+        lineno = rec.raw.get("header_line")
+        lines = edits.setdefault(path, open(path, encoding="utf-8").read().splitlines())
+        old_line = lines[lineno]
+        if old_line.count(old_paren) != 1:
+            failed.append((rel, rec.id, "parenthetical not uniquely located"))
+            continue
+        new_line = old_line.replace(old_paren, new_paren, 1)
+        bad = verify(vault, path, old_line, new_line, rec)
+        if bad:
+            failed.append((rel, rec.id, bad))
+            continue
+        if not content_preserved(old_paren, new_paren):
+            failed.append((rel, rec.id, "non-date content changed"))
+            continue
+        lines[lineno] = new_line
+        if not args.limit or shown < args.limit:
+            shown += 1
+            print(f"  {rel}  {rec.id}\n      - ({old_paren})\n      + ({new_paren})")
+
+    print("\n=== PHASE B1 (R4: tag a terse header's vital fields) ===")
+    print(f"  entries rewritten:      {len(plans) - len(failed)}")
+    print(f"  REFUSED (human review): {len(refusals)}")
+    print(f"  FAILED the invariant:   {len(failed)}   [must be 0 to apply]")
+    for rel, pid, why in failed[:20]:
+        print(f"      {rel}  {pid}  {why}")
+
+    if args.refusals:
+        print("\n=== REFUSALS ===")
+        c = {}
+        for _r, _p, _f, why in refusals:
+            c[why] = c.get(why, 0) + 1
+        for why, n in sorted(c.items(), key=lambda x: -x[1]):
+            print(f"  {n:4d}  {why}")
+
+    if args.apply:
+        if failed:
+            print("\nREFUSING TO APPLY: the invariant failed above.")
+            sys.exit(1)
+        for path, lines in edits.items():
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(lines) + "\n")
+        print(f"\nAPPLIED to {len(edits)} file(s).")
+    else:
+        print("\nDry run. Re-run with --apply to write.")
 
 if __name__ == "__main__":
     main()
