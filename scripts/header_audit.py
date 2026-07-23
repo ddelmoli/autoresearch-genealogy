@@ -57,7 +57,10 @@ import argparse
 import csv
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
@@ -96,6 +99,24 @@ PLACE_TAIL = re.compile(r"\A(.*?),\s+(.+)\Z", re.S)
 UNKNOWN = re.compile(r"\Aunknown\Z", re.I)
 
 RULES = ("R2", "R3", "R4")
+
+# The message has to state the FIX, not just the diagnosis. The primary consumer is
+# an assistant authoring the NEXT entry: "record has dates, header has no marked
+# vital field" is a diagnosis it can read and still not know what to type, and a
+# message that does not say what to write is a message that produces another
+# dialect. This is the whole root-cause argument of Spec 03 in one dict.
+FIXES = {
+    "R2": ('unnest it. Move the inner parenthetical out: either a note field after '
+           'a ";" inside the vitals paren, or an aside AFTER the closing ")".'),
+    "R3": ('write the date slot as a GEDCOM 7 DateValue: "ABT 1750" not "~1750" or '
+           '"c.1750"; "BET 1810 AND 1830" not "1810-1830"; "BEF 1866" not "bef. '
+           '1866". A place goes AFTER a comma ("b. 1810, Villagio"), never inside '
+           'the date. Check one value with: python3 scripts/gdate.py \'<value>\''),
+    "R4": ('mark the vital fields. Write "b. <date>" and "d. <date>" instead of '
+           'stating them positionally — "(b. ABT 966; d. 23 APR 1016)", not '
+           '"(c.966; 23 APR 1016)". Use "b. unknown" if the date is genuinely '
+           'unrecorded, or omit the meta born/died key if there is no date at all.'),
+}
 
 
 # Markdown emphasis is PRESENTATION, not content. `b. **3 SEP 1780**` renders in
@@ -180,6 +201,104 @@ def oracle(record):
     return "both" if (b and d) else "born" if b else "died" if d else "NONE"
 
 
+def _git(vault, *args):
+    return subprocess.run(("git", "-C", vault) + args, capture_output=True,
+                          text=True, check=False)
+
+
+_HUNK = re.compile(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@")
+
+
+def staged_header_lines(vault):
+    """{repo-relative path: {1-based line numbers ADDED or MODIFIED in the index}}.
+
+    Restricted to Family_Tree*.md. Returns {} when the vault is not a git repo or
+    nothing relevant is staged.
+    """
+    r = _git(vault, "diff", "--cached", "--unified=0", "--diff-filter=ACMR",
+             "--", "Family_Tree*.md")
+    if r.returncode != 0:
+        return {}
+    out, path = {}, None
+    for line in r.stdout.splitlines():
+        if line.startswith("+++ b/"):
+            path = line[6:]
+        elif line.startswith("@@") and path:
+            m = _HUNK.match(line)
+            if m:
+                start = int(m.group(1))
+                count = int(m.group(2)) if m.group(2) is not None else 1
+                out.setdefault(path, set()).update(
+                    range(start, start + max(count, 0)))
+    return out
+
+
+def materialise_staged(vault, paths, dest):
+    """Write the INDEX version of `paths` into `dest`, plus the vault config.
+
+    ⚠ The index, deliberately, not the working tree. A pre-commit gate must judge
+    what is about to BE COMMITTED. Reading the working tree would also make the
+    diff's line numbers meaningless the moment a file carries an unstaged edit,
+    which is exactly when a gate must not silently grade the wrong lines.
+    """
+    for rel in paths:
+        r = _git(vault, "show", f":{rel}")
+        if r.returncode != 0:
+            continue
+        target = os.path.join(dest, rel)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(r.stdout)
+    # person_store dispatches on person_model, so the temp vault needs the config.
+    for cfg in (".autoresearch.json",):
+        src = os.path.join(vault, cfg)
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(dest, cfg))
+    return dest
+
+
+def audit_changed(vault):
+    """-> (findings, stats) over ONLY the entries whose bold-name HEADER line is
+    added or modified in the staged diff.
+
+    Scoped to the header LINE, not the file and not the entry. Editing a body
+    bullet in a file carrying 101 legacy violations must not fail the commit, or
+    the gate gets bypassed and then it protects nothing. Touching a legacy header
+    for any reason DOES opt it in — the burn-down posture the method file already
+    uses for the header cross-reference backlog.
+    """
+    changed = staged_header_lines(vault)
+    empty = {"entries": 0, "conforming": 0, "nonconforming": 0,
+             "no_paren_no_dates": 0, "per_rule": {r: 0 for r in RULES},
+             "oracle": {"both": 0, "born": 0, "died": 0, "NONE": 0}, "per_file": {}}
+    if not changed:
+        return [], empty
+    findings, stats = [], empty
+    with tempfile.TemporaryDirectory(prefix="header_audit_") as tmp:
+        materialise_staged(vault, changed.keys(), tmp)
+        for rec in ps.iter_people(tmp):
+            rel = rec.source_file
+            lines = changed.get(rel)
+            if not lines:
+                continue
+            hdr = rec.raw.get("header_line")
+            if hdr is None or (hdr + 1) not in lines:
+                continue          # this entry's header is untouched by the commit
+            stats["entries"] += 1
+            vs = violations(rec)
+            if not vs:
+                stats["conforming"] += 1
+                continue
+            stats["nonconforming"] += 1
+            stats["oracle"][oracle(rec)] += 1
+            stats["per_file"][rel] = stats["per_file"].get(rel, 0) + 1
+            for rule in {r for r, _ in vs}:
+                stats["per_rule"][rule] += 1
+            for rule, detail in vs:
+                findings.append((rel, rec.id, rule, detail, oracle(rec)))
+    return findings, stats
+
+
 def audit(vault):
     """-> (findings, stats). findings: [(file, id, rule, detail, oracle)]."""
     findings, stats = [], {
@@ -215,10 +334,15 @@ def main():
     ap.add_argument("--file", help="only this lineage file (basename)")
     ap.add_argument("--limit", type=int, help="cap findings printed")
     ap.add_argument("--csv", action="store_true", help="findings as CSV on stdout")
+    ap.add_argument("--changed-only", action="store_true",
+                    help="only entries whose header is added/modified in the "
+                         "staged diff; EXITS 1 on a violation (pre-commit gate)")
+    ap.add_argument("--no-strict-headers", action="store_true",
+                    help="with --changed-only: report but do not block")
     a = ap.parse_args()
 
     vault = vault_config.resolve_vault(a.vault)
-    findings, stats = audit(vault)
+    findings, stats = (audit_changed(vault) if a.changed_only else audit(vault))
 
     shown = findings
     if a.rule:
@@ -234,13 +358,33 @@ def main():
         w.writerows(shown)
         return
 
-    print("=== header grammar conformance (spec/header-grammar) ===")
+    scope = "changed headers (staged)" if a.changed_only else "whole vault"
+    print(f"=== header grammar conformance (spec/header-grammar) — {scope} ===")
     cur = None
     for f, pid, rule, detail, orc in shown:
         if f != cur:
             cur, = (f,)
             print(f"\n--- {f} ---")
         print(f"  {rule}  {pid}  [oracle: {orc}]  {detail}")
+
+    if a.changed_only:
+        if not stats["entries"]:
+            print("  no bold-name header added or modified in this commit.")
+        for r in sorted({f[2] for f in shown}):
+            print(f"\n  FIX {r}: {FIXES[r]}")
+        print("\n=== SUMMARY ===")
+        print(f"  changed headers evaluated: {stats['entries']}")
+        print(f"  HEADER_GRAMMAR (changed):  {stats['nonconforming']}"
+              f"{'  [advisory: --no-strict-headers]' if a.no_strict_headers else '  [BLOCKING]'}")
+        for r in RULES:
+            if stats["per_rule"][r]:
+                print(f"    {r}: {stats['per_rule'][r]}")
+        if stats["nonconforming"] and not a.no_strict_headers:
+            print("\n  The pre-existing backlog is NOT evaluated here — only headers "
+                  "this commit\n  writes or edits. Grammar: spec/header-grammar/"
+                  "01_grammar.md")
+            sys.exit(1)
+        return
 
     e = stats["entries"] or 1
     print("\n=== SUMMARY ===")
