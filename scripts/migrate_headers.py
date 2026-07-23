@@ -170,6 +170,17 @@ def run(vault, only_file=None):
             refusals.append((rel, rec.id, field, why))
         if not props:
             continue
+        # ⚠ ALL OR NOTHING PER HEADER. If any field on this line was refused, do
+        # not rewrite the others either.
+        #
+        # Found by the Spec 03 gate BLOCKING this migration's own first tranche: a
+        # header with two vital fields where `b.` was fixable and `d.` was not came
+        # out half-migrated, and "touching a legacy header opts it in" then held the
+        # commit against the leftover R3. The gate was right. A half-migrated header
+        # is a worse state than an untouched one, because it LOOKS done -- and the
+        # worklist would have to describe a partial fix rather than a whole entry.
+        if refs:
+            continue
         # Oracle check per side before anything is written.
         blocked = False
         for old, new, _n in props:
