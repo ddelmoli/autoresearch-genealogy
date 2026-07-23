@@ -83,7 +83,7 @@ Before launching any gap-fill scan of a known archive (Antenati ARKs, FamilySear
 
 This single check takes minutes; skipping it can cost weeks of scans on the wrong hypothesis. Worked example: one Italian ancestor (b. ~1770) accumulated roughly 1,200 negative *atti* scans across an 1816-1850 death-register window before a single FS source-citation trace on his wife's profile led straight to an 1852 *matrimoni processetti* page proving him still alive at age 82 — the death-window hypothesis had been off by decades.
 
-The pattern generalizes to any record system where contributors attach source images to person profiles: Antenati (via FamilySearch), Geneteka (Polish), ScotlandsPeople (Scottish), etc. See [workflows/source-citation-trace.md](../workflows/source-citation-trace.md) for the step-by-step trace procedure.
+The pattern generalizes to any record system where contributors attach source images to person profiles: Antenati (via FamilySearch), Geneteka (Polish), ScotlandsPeople (Scottish), etc. The trace itself is the four steps above: open the profile's Sources tab, turn Detail View on, read the "Web Page (Link to the Record)" field of each source, and drill the adjacent pages of any archive image it points at.
 
 ## Privacy Pitfalls
 

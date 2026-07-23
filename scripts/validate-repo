@@ -223,6 +223,17 @@ def check_archive_frontmatter
 end
 
 def check_markdown_links
+  # Resolve against the TRACKED set, not the working tree.
+  #
+  # This used to ask File.exist?, which answers "is it on the author's disk" —
+  # a question no reader of a clone cares about. A tracked doc could link to an
+  # untracked, gitignored file and validate clean forever on the machine that
+  # wrote it, while being broken for everyone who cloned. That is exactly the
+  # class of bug this repo's framework/private boundary invites, so the gate has
+  # to see what a clone sees. (Caught in the wild: reference/common-pitfalls.md
+  # linked to a workflow that stays local.)
+  tracked_set = tracked("**/*").map { |p| File.expand_path(p) }.to_set
+
   tracked("**/*.md").each do |path|
     text = File.read(path)
     text.scan(/\[[^\]\n]+\]\(([^)]+)\)/).flatten.each do |link|
@@ -232,7 +243,12 @@ def check_markdown_links
       next if target.empty?
 
       resolved = File.expand_path(target, File.dirname(path))
-      error("#{rel(path)}: broken markdown link #{link}") unless File.exist?(resolved)
+      next if tracked_set.include?(resolved)
+      # A link to a DIRECTORY is fine if anything tracked lives under it.
+      next if tracked_set.any? { |p| p.start_with?(resolved + "/") }
+
+      hint = File.exist?(resolved) ? " (exists locally but is not tracked — it would 404 in a clone)" : ""
+      error("#{rel(path)}: broken markdown link #{link}#{hint}")
     end
   end
 end
