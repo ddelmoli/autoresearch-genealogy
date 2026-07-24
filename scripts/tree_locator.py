@@ -54,8 +54,17 @@ HDR_A = re.compile(
     rf"^[\-\*\s]*\*\*({NAME_TOKEN_FIRST}(?:\s+{NAME_TOKEN_REST}){{1,8}})\*\*\s*\(([^)]{{0,400}})",
     re.MULTILINE,
 )
+# ANCHORED to line start, like HDR_A (23 JUL 2026, spec/entry-boundary). Unanchored,
+# this matched a bold-wrapped `Words (parenthetical)` span ANYWHERE in a line, so an
+# archive or record-series name bolded mid-sentence ("**Archivio di Stato di Sondrio
+# (1866-1900)**") was indexed as a person living in that file. `_is_person` cannot
+# reject those: it permits lowercase toponymic particles so real names survive, and
+# an institution name has the same shape. Position is the reliable discriminator —
+# a real entry header always begins its line. Measured: 124 phantom index rows
+# removed, all 31 genuine line-start B-dialect headers kept.
 HDR_B = re.compile(
-    rf"\*\*({NAME_TOKEN_FIRST}(?:\s+{NAME_TOKEN_REST}){{1,8}})\s*\(([^)]{{0,400}})"
+    rf"^[\-\*\s]*\*\*({NAME_TOKEN_FIRST}(?:\s+{NAME_TOKEN_REST}){{1,8}})\s*\(([^)]{{0,400}})",
+    re.MULTILINE,
 )
 GEN_HDR = re.compile(r"^#{1,4}\s+Generation\s+(\d+)", re.MULTILINE | re.IGNORECASE)
 
@@ -82,43 +91,14 @@ def _looks_like_name(name):
     return True
 
 
-# Patronymic / filiation particles that are legitimately lowercase inside a
-# personal name but are not in the (toponymic) NAME_CONNECTORS set above:
-# Gaelic "mac", Irish "ua"/"ni", Welsh "ap", Arabic "ibn", Italian "fu" ("the
-# late"), Scandinavian "av"/"af". Kept separate from NAME_CONNECTORS so the
-# existing _is_person heuristic is not loosened by accident.
-PATRONYMIC_PARTICLES = {
-    "mac", "mc", "nic", "ingen", "ua", "ó", "o'", "ni",
-    "ap", "ab", "ibn", "bin", "bint", "fu", "av", "af",
-}
-_BRACKET_SEGMENT = re.compile(r"\[[^\]]*\]")
-
-
-def looks_like_person_header(name):
-    """Stricter-but-fairer companion to _looks_like_name, for deciding whether a
-    BOLD line is a person entry header or just bold prose.
-
-    Two differences from _looks_like_name:
-      * bracketed segments are stripped first — "[King of Ui Cheinnselaig]",
-        "[the elder]", "[maiden surname unknown]" are titles/epithets, and the
-        lowercase words inside them must not disqualify a real person; and
-      * patronymic particles are allowed, so "Cellach mac Cinaeda" survives.
-
-    Used by harvest_sources.extract_entries to stop bold PROSE lines ("Death
-    record", "Two marriages", "Corroborated by ...") from being treated as
-    narrative entries — which otherwise makes them absorb a body of source
-    citations and hand that ARK count to every PID mentioned inside.
-    """
-    stripped = _BRACKET_SEGMENT.sub(" ", name or "")
-    for tok in stripped.replace("-", " ").split():
-        t = tok.strip(".'")
-        if not t or not t[0].islower():
-            continue
-        if t.lower() in NAME_CONNECTORS or t.lower() in PATRONYMIC_PARTICLES:
-            continue
-        return False
-    return True
-
+# RETIRED 23 JUL 2026 (spec/entry-boundary Spec 05): `looks_like_person_header`, its
+# PATRONYMIC_PARTICLES set and the bracket-stripping helper lived here so that
+# `harvest_sources` could decide whether a bold string was a person. That question is
+# gone: the census detects entries by their `- meta:` block, not by name shape, so
+# nothing has to judge whether "Archivio di Stato di Sondrio" looks like a name. The
+# heuristic could never have answered it — an institution and a nobiliary name have
+# identical shape — which is why the discriminator moved to structure instead.
+# `_looks_like_name` below stays: it serves this module's own locator index.
 
 def _is_person(name, paren):
     """Heuristic person filter: name has no embedded year, reads like a personal

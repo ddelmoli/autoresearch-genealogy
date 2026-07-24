@@ -12,10 +12,15 @@ Strategy:
    gen_person_index.parse_narrative() — PID -> (name, gen, tier, file) — for every
    entry that carries an FS PID (Person_Index.md was retired; see memory
    project_person_index_retirement). Entries with no FS PID are skipped (no FS
-   profile to harvest). The old NO_NARRATIVE category is now vacuous by
-   construction (every PID comes FROM a narrative entry).
-2. Scan each Family_Tree*.md narrative file for bold-name entries that
-   reference an FS PID. Group the body content following each entry header.
+   profile to harvest). NO_NARRATIVE is vacuous by construction ONCE the roster and
+   this module agree on what an entry is — which they now do, both reading through
+   the meta-anchored `person_store` seam. It was NOT vacuous while this module
+   detected entries by bold-name shape: 52 entries the roster could see were
+   invisible here and silently inherited a neighbouring entry's records, which is
+   exactly why the category read 0 and looked vacuous. See spec/entry-boundary
+   Spec 05.
+2. Read each entry's BLOCK from the same seam (`entry_blocks_by_file`), truncated at
+   the next structural break, and count the source records cited inside it.
 3. Count ARK references in each entry's body:
    - Long-form  `ark:/61903/(1:1:[A-Z0-9-]+)`
    - Short-form `1:1:[A-Z0-9-]{6,}` standalone tokens
@@ -69,8 +74,9 @@ from typing import Dict, List, Optional, Tuple
 import shard_manifest
 import gen_person_index as G
 import vault_config
-import tree_locator as T
-import meta_presence_audit as MPA
+# NOTE: `tree_locator` and `meta_presence_audit` are no longer imported. They supplied
+# the person-name heuristic that decided whether a bold string was a header; entry
+# detection is meta-anchored now, so nothing here has to guess at names.
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 VAULT = vault_config.resolve_vault_optional()  # None => no vault; main() re-raises
@@ -166,6 +172,10 @@ HOST_LOCATOR_PATTERNS = [
 # (anc/wt/etc.) whose locators only ever appear host-prefixed.
 EMITTED_HOST_IDS = ["fs", "anc", "wt", "antenati", "metryki", "szukajwarchiwach", "agad"]
 # A host-prefixed locator token: a short host id, a colon, then a non-space run.
+# PREFIX detector only — it says "a locator starts here", not "this cites a record".
+# The census must not count on it alone (a prose `fs:1:1:` matches); use
+# `record_locators` / `is_record_locator` below. Retained for migrate_sources.py,
+# which uses it to spot already-migrated lines, where a false positive is harmless.
 HOST_LOC_RE = re.compile(
     r"\b(" + "|".join(EMITTED_HOST_IDS) + r"):(?=[0-9A-Za-z/])", re.IGNORECASE)
 # The FULL host:locator token (for record identity / dedup): host id + ':' + the
@@ -177,6 +187,38 @@ FULL_HOST_LOC_RE = re.compile(
 # Legacy patterns already match the FS/antenati/etc. id INSIDE a `fs:1:1:...`
 # prefix (the `1:1:`/`ark:` substring is still present), so extract_arks and the
 # per-host tally both see host-prefixed locators without extra work.
+
+# A locator token must actually POINT AT A RECORD (spec/entry-boundary, 23 JUL 2026).
+#
+# The mirror image of the phantom-header bug: that one destroyed coverage, this one
+# INVENTS it. Writing a locator PREFIX literally in prose — naming the class of thing
+# rather than citing one, "these register images attach as fs:3:1: image ARKs" —
+# matched the host-prefix detector, so the sentence was counted as a RECORD and the
+# person gained a source that does not exist. Same silence, opposite sign.
+#
+# Two conditions separate a citation from a mention, and both are about the TAIL:
+#   * a real id has a substantial final segment (>= 3 alphanumerics somewhere after
+#     the host prefix) — `fs:1:1:` names a namespace, `fs:1:1:XXXX-XXX` cites a record;
+#   * a real id does not end on a separator — `anc:dbid=` is a field waiting for a
+#     value, and "hosted on fs:" is a sentence.
+_LOC_ALNUM_RUN = re.compile(r"[0-9A-Za-z]{3,}")
+
+
+def is_record_locator(token: str) -> bool:
+    """True if `token` (a `host:...` match) cites a record rather than naming a
+    locator class in prose."""
+    if ":" not in token:
+        return False
+    tail = token.split(":", 1)[1]
+    if not tail or tail[-1] in ":=/-_.":
+        return False
+    return bool(_LOC_ALNUM_RUN.search(tail))
+
+
+def record_locators(text: str) -> "List[str]":
+    """Every host-prefixed token in `text` that really cites a record."""
+    return [m.group(0) for m in FULL_HOST_LOC_RE.finditer(text)
+            if is_record_locator(m.group(0))]
 
 
 def per_host_locators(text: str) -> "Dict[str, int]":
@@ -195,6 +237,8 @@ def per_host_locators(text: str) -> "Dict[str, int]":
     for m in re.finditer(
             r"\b(" + "|".join(EMITTED_HOST_IDS) + r"):([0-9A-Za-z][^\s,;)\]]*)",
             text, re.IGNORECASE):
+        if not is_record_locator(m.group(0)):
+            continue  # a locator CLASS named in prose ("attach as anc: ids"), not a citation
         host = m.group(1).lower()
         host = {"fs": "familysearch"}.get(host, host)
         if host in legacy_hosts:
@@ -214,7 +258,9 @@ def count_records(body: str) -> int:
     locator not yet moved onto a record line (transitional, so nothing is lost).
     A fully un-migrated body has no host-prefixed lines, so this returns exactly
     len(extract_arks(body)) — identical to the pre-Spec-03 count."""
-    record_lines = [ln for ln in body.splitlines() if HOST_LOC_RE.search(ln)]
+    # A line is a record line only if it carries a locator that POINTS AT a record —
+    # not one that merely names the locator form in prose (see is_record_locator).
+    record_lines = [ln for ln in body.splitlines() if record_locators(ln)]
     legacy_ids = extract_arks(body)
     if not record_lines:
         return len(legacy_ids)
@@ -224,34 +270,31 @@ def count_records(body: str) -> int:
     seen_records = set()
     covered = set()
     for ln in record_lines:
-        toks = frozenset(m.group(0).lower() for m in FULL_HOST_LOC_RE.finditer(ln))
+        toks = frozenset(t.lower() for t in record_locators(ln))
         if toks:
             seen_records.add(toks)
         covered |= extract_arks(ln)
     stray = legacy_ids - covered
     return len(seen_records) + len(stray)
 
-# Match a bold-name narrative entry header. We re-use patterns from harvest_pids.py.
-# Require the first name-token to look like a proper-noun: Cap + at least one
-# lowercase letter (excludes all-caps acronyms like "FS-attached", "SECOND
-# MARRIAGE", "NUMIDENT", "WWII", "AAD", "FS PID", etc.) Subsequent tokens may
-# be initials, suffixes, or proper nouns.
-NAME_TOKEN_FIRST = r"[A-ZÀ-Ý][a-zà-ÿ][\w\.\-'À-ÿ]*"
-NAME_TOKEN_REST = r"[\w\.\-'À-ÿ]+"
-# A name token may also be a bracketed qualifier ("[maiden surname unknown]",
-# "[maiden unknown]") — without this, headers like
-# "**Jane Doe [maiden surname unknown]** (b. ?, ...)" are not recognized as
-# entry starts, so the PREVIOUS entry's body bleeds through them and any PID
-# mentioned below inherits that entry's ARK count (a real bracketed-name entry
-# once picked up the prior entry's AGAD acts this way).
-NAME_TOKEN_ANY = rf"(?:{NAME_TOKEN_REST}|\[[^\]\n]{{1,40}}\])"
-ENTRY_HDR_A = re.compile(
-    rf"^[\-\*\s]*\*\*({NAME_TOKEN_FIRST}(?:\s+{NAME_TOKEN_ANY}){{1,8}})\*\*\s*\(([^)]{{0,1500}})\)",
-    re.MULTILINE,
-)
-ENTRY_HDR_B = re.compile(
-    rf"\*\*({NAME_TOKEN_FIRST}(?:\s+{NAME_TOKEN_ANY}){{1,8}})\s*\(([^)]{{0,1500}})\)\*\*",
-)
+# ENTRY DETECTION LIVES IN `person_store`, NOT HERE (spec/entry-boundary Spec 05).
+#
+# This module used to carry its own bold-name header patterns (`ENTRY_HDR_A`/`B`), a
+# prose filter, and an `extract_entries` that turned every match into a body boundary.
+# All of it is deleted. The census reads entries through `entry_blocks_by_file()` below,
+# which asks the model-agnostic seam, where a person is detected by the `- meta:` block
+# the vault documents as the identity anchor.
+#
+# What the shape-based reader cost, before it went:
+#   * it could not tell a person from an institution ("Archivio di Stato di Sondrio"
+#     has the same shape as "Richard de Clare"), so a bolded archive name in mid-prose
+#     truncated the entry it sat in and orphaned that entry's `Sources` bullet;
+#   * it could not match a name carrying quotes, parentheses or a slash alias, so 52
+#     real entries had no block and silently inherited a neighbour's record count; and
+#   * it needed an ever-growing filter to reject bold prose bullets, which is a losing
+#     game: a filter that must recognise every non-person string will meet a new one.
+# None of those are fixable at the shape layer, and none of them arise at the meta
+# layer, where a bold line without a meta block under it is simply not an entry.
 
 # Person_Index row pattern.
 # NEW layout: | Name | Gen | Born | Died | FS PID | Notes |
@@ -301,88 +344,100 @@ def parse_person_index() -> Dict[str, dict]:
     return out
 
 
-def _is_entry_header(name: str) -> bool:
-    """True if this bold text is a person-entry header rather than bold prose.
+def truncate_at_break(body: str) -> str:
+    """Cut an entry body at the first structural break (`---` rule or `## ` heading)
+    after its header line.
 
-    Combines the two heuristics the suite already owns, so there is one shared
-    notion of "this bold text is a name":
-      * meta_presence_audit._prose_reason — leading glyph (✅/⚠/⛔), trailing
-        colon, ALL-CAPS run, or an uppercase month token ("20 JUL 2026"); and
-      * tree_locator.looks_like_person_header — every lowercase token must be a
-        toponymic connector or a patronymic particle, with bracketed titles
-        stripped first.
+    An entry ends at the next entry OR at a section boundary, whichever comes first.
+    Without this the last entry before a boundary swallows the following section
+    prose, and any PID named in that prose inherits the entry's records — a
+    false-credit bug fixed 02 JUL 2026 and preserved here across the move to
+    meta-anchored detection.
     """
-    return not MPA._prose_reason(name) and T.looks_like_person_header(name)
+    lines = body.splitlines()
+    for i, ln in enumerate(lines[1:], start=1):
+        if re.match(r"^(?:---\s*|##\s.*)$", ln):
+            return "\n".join(lines[:i])
+    return body
 
 
-def extract_entries(text: str) -> List[Tuple[str, int, str]]:
-    """Return list of (bold_name, start_offset, body_text) for each narrative
-    entry in the text. body_text spans from the entry header to the next entry
-    or to the next blank-line-separated paragraph."""
-    entries = []
-    seen_starts: set = set()
+def entry_blocks_by_file(vault: "Optional[str]" = None) -> "Dict[str, List[Tuple[str, int, str]]]":
+    """path -> [(display_name, header_line_index, body_text)] for every person entry.
 
-    # Find all entry-header matches
-    matches = []
-    for m in ENTRY_HDR_A.finditer(text):
-        matches.append((m.start(), m.end(), m.group(1), m.group(2)))
-    for m in ENTRY_HDR_B.finditer(text):
-        # Don't double-record overlapping pattern-B matches
-        if not any(abs(m.start() - s) < 10 for s, _, _, _ in matches):
-            matches.append((m.start(), m.end(), m.group(1), m.group(2)))
+    META-ANCHORED (23 JUL 2026, spec/entry-boundary Spec 05): entries come from the
+    model-agnostic `person_store` seam, which detects a person by the `- meta:` block
+    the vault documents as the identity anchor, and takes the bold line above it as
+    the display header.
 
-    matches.sort()
+    This RETIRES the shape heuristics for census purposes. Reading entries by name
+    shape was the root of this whole lane: it could not tell a person from an
+    institution, it silently missed every name carrying quotes, parentheses or a
+    slash alias (52 entries, which then inherited a neighbour's records), and it
+    needed a growing filter to reject bold prose. None of that arises here — a bold
+    line without a meta block under it is simply not an entry.
 
-    # Reject BOLD PROSE headers before any body span is computed (22 JUL 2026).
-    #
-    # The header regexes are shape-based and permissive (NAME_TOKEN_REST matches
-    # any word), so bold prose bullets — "Death record", "Two marriages",
-    # "Status update 11 MAY 2026", "Corroborated by ..." — were being treated as
-    # narrative entries. Each such phantom entry captured the body of source
-    # citations beneath it, and because gather_records() credits a PID with
-    # max(ARKs) across EVERY block mentioning it, the phantom's ARK count was
-    # handed to every PID named inside — inflating the coverage census.
-    #
-    # Filtering here (rather than after the loop) is what makes this safe: a
-    # rejected header stops being a body boundary, so its text MERGES into the
-    # preceding real entry, which is where those citations belonged all along.
-    # Filtering afterwards would instead DISCARD the block and under-credit the
-    # very people it documents — measured at 23 spurious downgrades when tried.
-    #
-    # Measured effect of this filter on the reference vault: 4 category changes,
-    # ALL upgrades, 0 downgrades, SOURCE_GAP unchanged, no NO_NARRATIVE created.
-    # Deliberately preserved: the convention of recording one person's sources
-    # inline in a relative's entry (e.g. a wife's ARKs recorded inside her
-    # husband's entry) — her credit is unchanged, because the entry they sit
-    # under is itself a real person header.
-    matches = [m for m in matches if _is_entry_header(m[2].strip())]
+    The entry-boundary gate re-derives ownership independently, by its own top-down
+    line scan, and fails a commit on any disagreement with what this returns.
+    """
+    import person_store as PS
+    out: Dict[str, List[Tuple[str, int, str]]] = defaultdict(list)
+    for rec, path, hline, block in PS.iter_entry_blocks(vault or VAULT):
+        out[path].append((rec.name, hline, truncate_at_break(block)))
+    return dict(out)
 
-    # Structural breaks (a "---" rule or a "## " section heading) also terminate
-    # an entry body. Without this, the last entry before a section boundary
-    # swallows the following section prose until the NEXT recognized bold-name
-    # header, and any PID mentioned in that prose inherits the entry's ARK count
-    # (a false-credit bug fixed 02 JUL 2026).
-    BREAK_RE = re.compile(r"^(?:---\s*|##\s.*)$", re.MULTILINE)
-    break_offsets = [m.start() for m in BREAK_RE.finditer(text)]
 
-    for i, (start, end, name, paren) in enumerate(matches):
-        if start in seen_starts:
-            continue
-        seen_starts.add(start)
-        # Body spans from this header to the next header's start OR the next
-        # structural break, whichever comes first. Compare breaks against the
-        # header match's END, not its start — ENTRY_HDR_A's leading [\-\*\s]*
-        # can swallow a PRECEDING "---" line into the match, and truncating at
-        # that break would leave a 1-char body (the truncated-entry-body bug).
-        body_end = matches[i + 1][0] if i + 1 < len(matches) else len(text)
-        for boff in break_offsets:
-            if end <= boff < body_end:
-                body_end = boff
-                break
-        body = text[start:body_end]
-        entries.append((name.strip(), start, body))
+def _attributed_region(lines: "List[str]", i: int) -> str:
+    """The line at `i` plus its more-indented continuation lines (a bullet and its
+    sub-bullets). The unit a citation is attributed to."""
+    def indent(s: str) -> int:
+        return len(s) - len(s.lstrip())
+    base = indent(lines[i])
+    out = [lines[i]]
+    for j in range(i + 1, len(lines)):
+        if not lines[j].strip() or indent(lines[j]) <= base:
+            break
+        out.append(lines[j])
+    return "\n".join(out)
 
-    return entries
+
+def may_credit(body: str, pid: str) -> bool:
+    """May this entry's record count be credited to `pid`?
+
+    THE PROBLEM THIS SOLVES. `gather_records` credits a PID with max(records)
+    across every block that MENTIONS it. Two very different things get mentioned
+    in a person's entry:
+
+      (a) a relative whose sources are documented INLINE, here, on purpose —
+          "- **FS-attached sources for wife <Name>** (<PID>, inline collateral;
+          Recipe-S 30 MAY 2026): 1:1:..., 1:1:..." — a convention the vault uses
+          deliberately and which must keep working; and
+      (b) a relative merely NAMED in a cross-reference — "- Siblings (3, with FS
+          PIDs): ...", "- Children of X + Y: ...", "- Parents: ..." — a pointer,
+          not documentation.
+
+    Case (b) was inheriting the whole block's record count. Measured on the
+    reference vault: 112 people were credited ONLY that way, including a child who
+    died in infancy reading as WELL_SOURCED off his adult brother's 11 records, and
+    three entries whose own text says in so many words that no record ARK exists.
+    Integrity rule 6 already bans a foreign PID from a HEADER for the same reason;
+    this is the body-level counterpart for the census.
+
+    The discriminator is LOCATORS, not keywords: a mention that documents someone
+    carries citations on that bullet; a cross-reference carries none. So a PID is
+    creditable from this entry when EITHER
+      * it is the entry's OWN pid (present in the bold-name header or the `- meta:`
+        line — the block is about that person), OR
+      * some line mentioning it, together with that line's sub-bullets, carries at
+        least one record locator (the inline-collateral convention).
+    A mention that is only a name in a list credits nothing.
+    """
+    lines = body.splitlines()
+    if pid in "\n".join(lines[:2]):          # header + meta line: the entry's own person
+        return True
+    for i, line in enumerate(lines):
+        if pid in line and count_records(_attributed_region(lines, i)):
+            return True
+    return False
 
 
 def scan_family_tree_files() -> Dict[str, List[Tuple[str, str, int, int, dict]]]:
@@ -398,12 +453,8 @@ def scan_family_tree_files() -> Dict[str, List[Tuple[str, str, int, int, dict]]]
     import glob
     files = glob.glob(pattern)
 
-    for path in files:
+    for path, entries in entry_blocks_by_file().items():
         fname = os.path.basename(path)
-        with open(path) as f:
-            text = f.read()
-
-        entries = extract_entries(text)
 
         for name, start, body in entries:
             pids_in_entry = set(PID_RE.findall(body))
@@ -419,6 +470,10 @@ def scan_family_tree_files() -> Dict[str, List[Tuple[str, str, int, int, dict]]]
             per_host = per_host_locators(body)
             scholarly = has_scholarly_citation(body)
             for pid in pids_in_entry:
+                # A PID merely cross-referenced here (a name in a siblings /
+                # children / parents list) does NOT inherit this entry's records.
+                if not may_credit(body, pid):
+                    continue
                 out[pid].append((fname, name, record_count, len(body), per_host, scholarly))
 
     return out
@@ -668,7 +723,7 @@ def main():
     # Order categories by priority
     cat_order = [
         ("SOURCE_GAP",     "[1] SOURCE_GAP — 0 ARKs cited, ACTIONABLE (highest-priority Recipe-S / Source-Linker targets)"),
-        ("NO_NARRATIVE",   "[2] NO_NARRATIVE — PID in Person_Index but no bold-name narrative entry"),
+        ("NO_NARRATIVE",   "[2] NO_NARRATIVE — the roster has this PID but NO entry this parser can credit. Not 'no write-up': the roster comes FROM the narratives, so an entry exists. It means the census's shape-based header patterns cannot see that entry — typically a name carrying quotes, parentheses or a slash alias, which the name token classes cannot express. Until 23 JUL 2026 these people silently inherited the PRECEDING entry's record count, so the category read 0 and looked vacuous. See spec/entry-boundary Spec 05"),
         ("LOW_COVERAGE",   "[3] LOW_COVERAGE — 1-3 ARKs cited"),
         ("WELL_SOURCED",   "[4] WELL_SOURCED — 4+ ARKs cited"),
         ("UNCITED",        "[5] UNCITED — 0 ARKs, structurally unsourceable, AND no scholarly citation either. The hidden worklist: not harvestable, but not yet documented from the books either (deep medieval Gen>=%d / pre-register / off-FS lines per .autoresearch.json)" % STRUCTURAL_GEN),

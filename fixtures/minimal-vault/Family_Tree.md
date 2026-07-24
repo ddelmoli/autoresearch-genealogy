@@ -35,6 +35,28 @@ Jordan Example (Living)
 - Parents: unknown
 - Sources: [[Sources/Clara_Whitfield_Death_Index]]
 
+## Parser Boundary Fixture
+
+Regression fixture for `spec/entry-boundary`, exercised by
+`scripts/test_entry_boundary.py`. The source-census parser once treated ANY bold
+`Words (parenthetical)` span as a person-entry header, including one written
+mid-sentence, so the span became a body boundary and the `Sources` bullet below it
+was credited to a phantom entry instead of to the person.
+
+The entry below contains both populations that trigger it: an institution name with
+toponymic particles (indistinguishable from a personal name by shape) and a relative
+named in passing. Both are followed by the `Sources` bullet they used to steal, so a
+parser that mis-attributes fails visibly here.
+
+**Marta Example** (b. 1868, Example Village; d. 1931, Harbor Town, Example State; FS PID XXXX-XXX)
+- meta: {id: P-3XAMP2, evidence_tier: strong_signal, profile_status: complete, life_status: deceased, generation: 5, fs: XXXX-XXX, born: '1868', died: '1931'}
+- Her birth atto sits in the **Archivio di Stato di Example (Stato Civile)** series, filmed but not indexed.
+- Her brother **Paolo Example (1871-1940)** is written up in the collateral file.
+- **Sources**
+  - 1868 birth atto, Example Village — fs:3:1:YYYY-YYY
+  - 1900 census, Harbor Town — fs:1:1:ZZZZ-ZZZ
+  - 1931 death certificate, Harbor Town — fs:1:1:WWWW-WWW
+
 ## Data Discrepancies
 
 | Person | Field | Source A | Source B | Resolution |

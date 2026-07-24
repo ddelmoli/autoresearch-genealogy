@@ -38,8 +38,15 @@ ENTRY_HDR_A = re.compile(
     re.MULTILINE,
 )
 # Pattern B: **Name ( ... )**  (bold wraps the whole thing including PID)
+# ANCHORED to line start, like pattern A (23 JUL 2026, spec/entry-boundary): a real
+# entry header always begins its line, and an unanchored match treats a bold span in
+# mid-sentence prose as an entry. Here the damage was bounded (a PID must appear in
+# the parenthetical), but it is the same defect this module's descendant
+# harvest_sources.py was corrupting its census with, so the dialect is anchored
+# everywhere it is recognized.
 ENTRY_HDR_B = re.compile(
-    r"\*\*([A-ZÀ-Ý][\w\.\-'À-ÿ]+(?:\s+[\w\.\-'À-ÿ]+){1,8})\s*\(([^)]{0,800})\)\*\*",
+    r"^[\-\*\s]*\*\*([A-ZÀ-Ý][\w\.\-'À-ÿ]+(?:\s+[\w\.\-'À-ÿ]+){1,8})\s*\(([^)]{0,800})\)\*\*",
+    re.MULTILINE,
 )
 
 # Sub-entries within a paragraph (used only as a content-skip signal, no longer
