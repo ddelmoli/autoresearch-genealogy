@@ -74,19 +74,25 @@ def rows_with_bodies(vault):
     """Person records joined to their FULL narrative block (not just the meta line).
 
     parse_narrative()'s `block` is the meta line; the reason a person has no parents
-    is written in the surrounding prose, so the body has to be read from the file.
+    is written in the surrounding prose, so the body comes from the model-agnostic
+    `person_store` seam (24 JUL 2026 — this replaced a shape-based chunker keyed on
+    `line.startswith("**")`. Canonical entries written as `- **Name**` BULLETS, the
+    dominant style in the deep-royal shards, never start a chunk under that rule, so
+    their prose — including an existing terminus declaration — was invisible and only
+    the first meta id per chunk got a body at all. Measured on the reference vault:
+    Crínán of Dunkeld carried a full TERMINUS bullet, recorded the previous day, and
+    still reported SILENT. Same parser-drift family the census retired in
+    spec/entry-boundary Spec 05; the seam is the one reader that knows what an entry
+    is.)
     """
-    import pathlib
-    vault = pathlib.Path(vault)
+    import person_store as PS
     bodies = {}
-    for path in sorted(vault.glob("Family_Tree*.md")):
-        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        idx = [i for i, l in enumerate(lines) if l.startswith("**")]
-        for a, b in zip(idx, idx[1:] + [len(lines)]):
-            chunk = "".join(lines[a:b])
-            m = re.search(r"- meta: \{id: (P-[0-9A-Z]{6})", chunk)
-            if m:
-                bodies[m.group(1)] = chunk
+    for rec, _path, _hline, block in PS.iter_entry_blocks(vault):
+        if rec.id:
+            text = block if isinstance(block, str) else "\n".join(block)
+            # Same PID/id can appear on >1 block only pathologically; keep the longest.
+            if rec.id not in bodies or len(text) > len(bodies[rec.id]):
+                bodies[rec.id] = text
     out = []
     for p in g.parse_narrative():
         pid = p.get("id")
