@@ -250,6 +250,44 @@ def main():
           "a relative documented INLINE (her PID on a bullet carrying locators) is credited")
     check(HS.may_credit(body, "HHHH-HHH"), "and so is the entry's own person")
 
+    print("== the HEADER cross-reference vector (24 JUL 2026 fix) ==")
+    # A couple entry: the wife's FS PID sits in the bold-name HEADER, not on any
+    # locator-bearing bullet. Before the fix, the own-person test was `pid in
+    # lines[:2]`, so she inherited the husband's records AND his scholarly citation —
+    # the residual half of the #99 cross-reference-inheritance defect. Her own person
+    # is the meta line's `fs`, and only the husband's is there.
+    COUPLE = """**Sir John Example [1st Lord Example]** (b. 1274; d. 1337; FS PID RRRR-RRR) + **Joan Spouse** (FS PID SSSS-SSS). Richardson MCA III:105-106 EXAMPLE 5.
+- meta: {id: P-CXAMPC, generation: 26, fs: RRRR-RRR, spouse: '[P-DXAMPD]'}
+- **Sources**
+  - 1300 charter — fs:1:1:MMMM-MMM
+"""
+    body = entries_of(COUPLE)[0][1]
+    check(HS.own_pids(body) == {"RRRR-RRR"},
+          "own_pids is the meta `fs` ONLY — the spouse PID in the header is not an owner")
+    check(HS.may_credit(body, "RRRR-RRR"), "the entry's own person is credited")
+    check(not HS.may_credit(body, "SSSS-SSS"),
+          "a spouse whose PID is only in the couple HEADER is NOT credited the entry's records")
+    check(HS.has_scholarly_citation(body) and "SSSS-SSS" not in HS.own_pids(body),
+          "the entry cites apparatus, but the spouse is not an owner, so it does not "
+          "reach her (she would read UNCITED off her own stub, not BOOK_SOURCED)")
+
+    class broken_header_ownership:
+        """NEGATIVE CONTROL: restore the pre-fix own-person test (any PID in the first
+        two lines counts as the entry's own person). The spouse in the header then
+        wrongly inherits the entry's records again."""
+        def __enter__(self):
+            self._saved = HS.own_pids
+            HS.own_pids = lambda b: set(HS.PID_RE.findall("\n".join(b.splitlines()[:2])))
+            return self
+        def __exit__(self, *exc):
+            HS.own_pids = self._saved
+            return False
+
+    with broken_header_ownership():
+        regressed = HS.may_credit(body, "SSSS-SSS")
+    check(regressed,
+          "NEGATIVE CONTROL: with the header-based own-person test, the spouse inherits again")
+
     print("== the gate itself (entry_boundary_audit) ==")
     tmp = narrative_vault(TRAP + "\n" + TRAP_PERSON_IN_PROSE + "\n" + DIALECT_B + "\n" + RULED)
     try:
