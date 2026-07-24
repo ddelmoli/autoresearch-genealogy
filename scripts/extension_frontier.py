@@ -62,10 +62,16 @@ DECLARED_RE = re.compile(
     # dead end, and omitting them produced a FALSE SILENT on Pavia, whose entry already
     # said "Parentage not given by Cawley". A missed DECLARED is the expensive error
     # here: it sends someone researching a question the vault already closed.
-    r"|parentage[^.;]{0,40}(?:unknown|not known|not given|not stated|not recorded|unproven|doubtful|not securely)"
+    r"|parentage[^.;]{0,40}(?:unknown|not known|not given|not stated|not recorded|unproven|doubtful|not securely|not established)"
     r"|parents? (?:are )?(?:unknown|not known|not recorded)|no parents recorded|brick wall"
     r"|legendary|fabricat|unknown per Cawley|origin.{0,24}(?:unknown|doubt)"
-    r"|NOT WORKED|not yet worked|deliberate stop|do NOT (?:adopt|extend)",
+    r"|NOT WORKED|not yet worked|deliberate stop|NOT EXTENDED|do NOT (?:adopt|extend|wire)"
+    # The explicit marker (24 JUL 2026): entries now open a recorded stop with a
+    # literal "FRONTIER DECLARATION <date>" bullet, so a declaration registers
+    # mechanically instead of depending on its prose wording. Same write-end
+    # lesson as the header grammar: give the writer a vocabulary the reader
+    # matches exactly. Free-text reasons above remain accepted for the backlog.
+    r"|FRONTIER DECLARATION",
     re.I,
 )
 
