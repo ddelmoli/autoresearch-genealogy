@@ -659,12 +659,22 @@ class NarrativeBackend:
     name = "narrative"
 
     @staticmethod
-    def iter_people(vault):
+    def _iter_entries(vault):
+        """Yield (record, path, header_line_index, block_lines) per entry.
+
+        The single narrative scan. `iter_people` drops everything but the record;
+        `iter_entry_blocks` keeps the block, which is what a consumer needs when it
+        must read an entry's BODY rather than its fields — e.g. the source-coverage
+        census counting the records cited inside each entry.
+        """
         for path in sorted(glob.glob(os.path.join(vault, "Family_Tree*.md"))):
             lines = _read(path).splitlines()
             gens = [(i, int(mm.group(1))) for i, ln in enumerate(lines)
                     for mm in [_GEN_HDR.match(ln)] if mm]
             # Pass 1: locate each entry (its bold header line + its `- meta:` line).
+            # Detection is META-ANCHORED: a bold line is a header only when a
+            # `- meta:` line follows it, which is why no shape heuristic is needed
+            # and why bold PROSE can never be mistaken for an entry.
             entries = []
             last_name = last_rest = None
             last_line = -1
@@ -681,7 +691,17 @@ class NarrativeBackend:
                 rec = _record_from_meta(meta, name, rest, gens, hline, path, vault, mline)
                 rec.sources = _extract_sources(lines[mline + 1:body_end])
                 rec.raw["line"] = lines[mline]   # raw meta line (consumers re-parse it as `block`)
-                yield rec
+                yield rec, path, hline, lines[hline:body_end]
+
+    @staticmethod
+    def iter_people(vault):
+        for rec, _path, _hline, _block in NarrativeBackend._iter_entries(vault):
+            yield rec
+
+    @staticmethod
+    def iter_entry_blocks(vault):
+        for rec, path, hline, block in NarrativeBackend._iter_entries(vault):
+            yield rec, path, hline, "\n".join(block)
 
     @staticmethod
     def write_person(vault, record, promote_dates=False):
@@ -930,6 +950,22 @@ def backend_name(vault):
 
 def iter_people(vault):
     return _backend(vault).iter_people(vault)
+
+
+def iter_entry_blocks(vault):
+    """Yield (record, path, header_line_index, block_text) per person entry.
+
+    `iter_people` gives a consumer the FIELDS; this gives it the entry's raw
+    Markdown BLOCK as well, for the consumers that must read what is written inside
+    an entry — the source-coverage census counts the record locators cited there.
+    Model-agnostic like the rest of the seam: on the file model each person IS a
+    file, so the block is that file's text.
+    """
+    backend = _backend(vault)
+    if hasattr(backend, "iter_entry_blocks"):
+        return backend.iter_entry_blocks(vault)
+    return ((r, r.raw.get("path", ""), 0, r.raw.get("text", ""))
+            for r in backend.iter_people(vault))
 
 
 def get_person(vault, id):
