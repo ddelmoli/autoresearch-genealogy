@@ -400,6 +400,25 @@ def _attributed_region(lines: "List[str]", i: int) -> str:
     return "\n".join(out)
 
 
+_META_LINE_RE = re.compile(r"^\s*-\s*meta:\s*\{")
+_META_FS_RE = re.compile(r"\bfs:\s*([A-Z0-9]{4}-[A-Z0-9]{3})\b")
+
+
+def own_pids(body: str) -> "set":
+    """The PID(s) this entry is ABOUT — the `fs:` value on its `- meta:` line(s).
+
+    This is the meta-anchored identity the roster keys on (`gen_person_index`
+    reads the same `fs`). A PID that appears only in the bold-name HEADER — a
+    spouse in a couple header "**A** (…) + **B** (…, FS PID …)", or a relative
+    named in a prose header — is a CROSS-REFERENCE, not the entry's own person.
+    """
+    own = set()
+    for ln in body.splitlines():
+        if _META_LINE_RE.match(ln):
+            own |= set(_META_FS_RE.findall(ln))
+    return own
+
+
 def may_credit(body: str, pid: str) -> bool:
     """May this entry's record count be credited to `pid`?
 
@@ -425,15 +444,24 @@ def may_credit(body: str, pid: str) -> bool:
     The discriminator is LOCATORS, not keywords: a mention that documents someone
     carries citations on that bullet; a cross-reference carries none. So a PID is
     creditable from this entry when EITHER
-      * it is the entry's OWN pid (present in the bold-name header or the `- meta:`
-        line — the block is about that person), OR
+      * it is the entry's OWN pid — the `fs:` on its `- meta:` line (`own_pids`); OR
       * some line mentioning it, together with that line's sub-bullets, carries at
         least one record locator (the inline-collateral convention).
     A mention that is only a name in a list credits nothing.
+
+    THE HEADER VECTOR (24 JUL 2026). The own-person test was `pid in lines[:2]`
+    (header + meta), which trusts the bold-name HEADER to name only the entry's
+    own person. A couple header names the SPOUSE too ("**A** (…) + **B** (…, FS
+    PID …)"), and a prose header can name a relative's PID, so a 0-record stub
+    inherited a rich relative's whole record count AND its scholarly citation —
+    the residual half of the #99 cross-reference-inheritance defect. Spec 05
+    closed the body-LIST vector (the locator test below); anchoring the own-person
+    test on the `- meta:` line, which carries ONLY the entry's own `fs`, closes the
+    header vector. Measured: 18 stubs dropped LOW/WELL → SOURCE_GAP, 0 the other way.
     """
-    lines = body.splitlines()
-    if pid in "\n".join(lines[:2]):          # header + meta line: the entry's own person
+    if pid in own_pids(body):                # the entry's own person (meta-anchored)
         return True
+    lines = body.splitlines()
     for i, line in enumerate(lines):
         if pid in line and count_records(_attributed_region(lines, i)):
             return True
@@ -469,12 +497,20 @@ def scan_family_tree_files() -> Dict[str, List[Tuple[str, str, int, int, dict]]]
             record_count = count_records(body)
             per_host = per_host_locators(body)
             scholarly = has_scholarly_citation(body)
+            owners = own_pids(body)
             for pid in pids_in_entry:
                 # A PID merely cross-referenced here (a name in a siblings /
-                # children / parents list) does NOT inherit this entry's records.
+                # children / parents list, or a spouse in a couple header) does
+                # NOT inherit this entry's records.
                 if not may_credit(body, pid):
                     continue
-                out[pid].append((fname, name, record_count, len(body), per_host, scholarly))
+                # NOR its scholarly citation: an entry's Cawley/Richardson cite
+                # documents the entry's OWN person, not a relative named in it.
+                # (An inline-collateral relative is credited via the locator test,
+                # so ark_count > 0 and this scholarly flag never decides its
+                # BOOK/UNCITED split.) Same header-vector fix as may_credit.
+                pid_scholarly = scholarly and pid in owners
+                out[pid].append((fname, name, record_count, len(body), per_host, pid_scholarly))
 
     return out
 
@@ -515,8 +551,15 @@ STRUCTURAL_GEN, _STRUCTURAL_RULES = (
 #
 # The list is scholarly APPARATUS, deliberately NOT user trees. Geni/Ancestry/
 # RootsFinder stay excluded under the invariant-8 independence rule (they copy each
-# other and often copy this vault); WikiTree counts only because this vault already
-# treats its CITED sources as a distinct corroboration layer.
+# other and often copy this vault).
+#
+# WIKITREE IS NOT ON THIS LIST (removed 24 JUL 2026). A bare WikiTree ID in a header
+# ("WikiTree Surname-NN") is a POINTER used exactly like an FS PID — an assertion, not
+# apparatus — and integrity rule 8 is explicit that "corroboration comes from what
+# WikiTree CITES, never its bare assertion." Counting the token let 16 entries whose
+# only citation was a bare WT id read as BOOK_SOURCED ("finished work") when they cite
+# nothing. WikiTree's cited sources remain a separate corroboration layer, captured in
+# a `- **WikiTree corroboration**` bullet, which is off this ARK/BOOK metric entirely.
 SCHOLARLY_CITATION_RE = re.compile(
     r"Cawley|Medlands|\bFMG\b|fmg\.ac"                     # Foundation for Medieval Genealogy
     r"|Richardson|Magna Carta Ancestry|Royal Ancestry"      # Richardson
@@ -525,8 +568,7 @@ SCHOLARLY_CITATION_RE = re.compile(
     r"|\bWeis\b|Ancestral Roots"
     r"|Flodoard|Regino|Monumenta Germaniae|\bMGH\b|Primary Chronicle"
     r"|Great Migration|NEHGR|NEHGS|\bTAG\b|Silver Book"
-    r"|Visitation of|Chamberlain|Savage.{0,20}Genealogical Dictionary"
-    r"|WikiTree",
+    r"|Visitation of|Chamberlain|Savage.{0,20}Genealogical Dictionary",
     re.I,
 )
 
