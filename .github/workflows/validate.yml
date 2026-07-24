@@ -18,3 +18,16 @@ jobs:
 
       - name: Validate repository
         run: scripts/validate-repo
+
+      # The Python test modules are self-contained (stdlib only — PyYAML is
+      # optional everywhere it is imported) and build their own temp vaults, so
+      # they need no fixture setup. Until 23 JUL 2026 nothing ran them: a
+      # regression fixture that only executes when someone remembers is not a
+      # gate, and spec/entry-boundary shipped one that must outlive its author.
+      - name: Run script tests
+        run: |
+          set -e
+          for t in scripts/test_*.py; do
+            echo "--- $t"
+            python3 "$t"
+          done

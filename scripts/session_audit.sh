@@ -133,6 +133,12 @@ parts = [
     # parent-gen mismatch count is the known gen-numbering backlog signal, not edge bugs.
     "edges -> " + run("build_edges.py", r"structural violations|PARENT-GEN MISMATCH \(",
                       args=["--validate"]),
+    # Entry-boundary attribution (spec/entry-boundary). ENTRY_MISATTRIBUTION is the
+    # HARD one, baseline 0: any narrative line credited to an entry other than the
+    # header that precedes it at line start means the census parser has lost a body
+    # boundary — the silent defect that under-credited 92 people. SOURCE_MISATTRIBUTION
+    # is the subset that lands on a `Sources` bullet, i.e. moves the census today.
+    "entry-boundary -> " + run("entry_boundary_audit.py", r"ENTRY_BOUNDARY:", max_lines=1),
     "watchlist -> " + run("watchlist_age.py", r"Watchlist:"),
     # New-Records Watch (discovery) aging: reads .maintenance.json `new_records`
     # tiers (A/B/C = 90/180/365d) + prints per-tier DUE/OK. Sibling of the
