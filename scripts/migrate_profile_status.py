@@ -58,7 +58,36 @@ import gen_person_index as g  # noqa: E402
 import vault_config  # noqa: E402
 
 SOURCES_BULLET_RE = re.compile(r"^\s*-\s*\*\*Sources\*\*", re.M)
-STATUS_RE = re.compile(r"(profile_status:\s*)(stub)\b")
+STATUS_RE = re.compile(r"(profile_status:\s*)(stub|partial)\b")
+LOCATOR_RE = re.compile(r"ark:/\d+/|\b(?:fs|antenati|metryki|anc|wt|szukajwarchiwach):[0-9a-zA-Z:./_-]{4,}"
+                        r"|\b\d:\d:[0-9A-Z-]{4,}")
+APPARATUS_RE = re.compile(r"(?:Cawley|Medlands|Richardson|Complete Peerage|ODNB|Copinger|Visitation|"
+                          r"History of Parliament|VCH|Great Migration|NEHGR|Macnamara|Muskett|"
+                          r"Vital Records of|FreeREG|inquisition|will dated)", re.I)
+
+
+def sources_bullet_text(body):
+    """The `- **Sources**` bullet and its sub-bullets, or '' if there is none.
+
+    Read directly from the entry because the source CENSUS only covers PID-bearing
+    people: an entry sourced entirely to Ancestry or a parish register, with
+    `fs: TBD`, is invisible to `harvest_sources` however well documented it is.
+    Three such entries were found on the reference vault carrying real `anc:`
+    locators and FreeREG register readings. Trusting only the census would have
+    left them mislabelled forever.
+    """
+    m = SOURCES_BULLET_RE.search(body or "")
+    if not m:
+        return ""
+    out, started = [], False
+    for ln in (body or "").splitlines():
+        if SOURCES_BULLET_RE.match(ln):
+            started = True; out.append(ln); continue
+        if started:
+            if ln.strip().startswith("-") and not ln.startswith((" ", "\t")):
+                break          # next top-level bullet ends the block
+            out.append(ln)
+    return "\n".join(out)
 
 
 def census_records(vault):
@@ -112,35 +141,75 @@ def main(argv=None):
     bodies = bodies_by_id(vault)
 
     plan = []
+    empty_bullets = []
     for r in rows:
-        if (r.get("profile_status") or "").strip() != "stub":
+        cur = (r.get("profile_status") or "").strip()
+        if cur not in ("stub", "partial"):
             continue
+        body = bodies.get(r["id"], "")
         pid = (r.get("pid") or "").strip()
         n, cat = recs.get(pid, (0, ""))
-        # Proof of work = the census found RECORDS, or it found scholarly APPARATUS.
-        if n < 1 and cat != "BOOK_SOURCED":
+        bullet = sources_bullet_text(body)
+        # A bullet EARNS `complete` only if it actually cites something. An empty
+        # `- **Sources**:` line is itself a defect, not a qualification.
+        bullet_cites = bool(bullet) and bool(LOCATOR_RE.search(bullet)
+                                             or APPARATUS_RE.search(bullet))
+        # ⚠ A bullet that cites no LOCATOR is not thereby empty. Most such bullets
+        # record a documented NEGATIVE ("0 record ARKs — structural gap", "primary
+        # records at the parish, not on FS"), which CLAUDE.md's style rule
+        # explicitly asks for: "Log negative results." Only a bullet with NO
+        # payload at all is a defect.
+        payload = re.sub(r"^\s*-\s*\*\*Sources\*\*\s*", "", bullet).strip(" :.\n\t")
+        if bullet and not payload:
+            empty_bullets.append(r.get("name") or "?")
+        proof = (n >= 1) or cat == "BOOK_SOURCED" or bullet_cites
+        if not proof:
             continue  # no independent proof of work; leave it alone
-        has_bullet = bool(SOURCES_BULLET_RE.search(bodies.get(r["id"], "")))
+        to = "complete" if bullet_cites else "partial"
+        if to == cur:
+            continue  # already correct
+        if cur == "partial" and to == "partial":
+            continue
         plan.append({"id": r["id"], "name": r.get("name") or "?",
                      "file": r.get("file") or "?", "recs": n, "cat": cat,
-                     "to": "complete" if has_bullet else "partial"})
+                     "frm": cur, "to": to})
 
-    plan.sort(key=lambda x: (-x["recs"], x["cat"], x["name"]))
+    plan.sort(key=lambda x: (x["frm"], -x["recs"], x["name"]))
     to_c = sum(1 for p in plan if p["to"] == "complete")
     to_p = len(plan) - to_c
 
     print("=== profile_status re-derivation — UPGRADES ONLY ===")
-    nbook = sum(1 for p in plan if p["cat"] == "BOOK_SOURCED")
-    print(f"    {len(plan)} entries say `stub` while the census shows real work")
-    print(f"    ({len(plan)-nbook} credited with RECORDS, {nbook} BOOK_SOURCED on scholarly apparatus).")
-    print(f"    -> complete : {to_c}  (entry already has a `- **Sources**` bullet)")
-    print(f"    -> partial  : {to_p}  (sources exist but in PROSE; `complete` not yet earned)")
+    fs_ = {}
+    for p in plan:
+        fs_[(p["frm"], p["to"])] = fs_.get((p["frm"], p["to"]), 0) + 1
+    print(f"    {len(plan)} entries whose profile_status UNDERSTATES the work done.")
+    for (frm, to), k in sorted(fs_.items()):
+        note = ("entry carries a `- **Sources**` bullet that cites something"
+                if to == "complete" else
+                "sources exist but in PROSE; `complete` not yet earned")
+        print(f"    {frm:>8} -> {to:<9} {k:>4}   ({note})")
     print()
-    print(f"{'ARKs':>5}  {'CENSUS':<14} {'TO':<9} NAME")
+    print(f"{'ARKs':>5}  {'CENSUS':<14} {'FROM':<8} {'TO':<9} NAME")
     for p in plan[:a.limit]:
-        print(f'{p["recs"]:>5}  {p["cat"][:14]:<14} {p["to"]:<9} {p["name"][:48]}')
+        print(f'{p["recs"]:>5}  {p["cat"][:14]:<14} {p["frm"]:<8} {p["to"]:<9} {p["name"][:40]}')
     if len(plan) > a.limit:
         print(f"      ... and {len(plan)-a.limit} more")
+    print()
+
+    if empty_bullets:
+        print(f"\n  [flag] {len(empty_bullets)} entries carry a `- **Sources**` bullet with NO")
+        print( "         payload at all — a heading and nothing else. That IS a defect.")
+        for nm in empty_bullets[:8]:
+            print(f"           {nm[:60]}")
+    else:
+        print("\n  [ok] no contentless `- **Sources**` bullets.")
+        print("       ⚠ NOTE FOR THE NEXT READER: a Sources bullet carrying no LOCATOR is")
+        print("       NOT a defect. On the reference vault 43 such bullets record a")
+        print("       documented NEGATIVE — '0 record ARKs, structural gap', 'primary")
+        print("       records at the parish, not on FS', 'confirmed genuine gap, not a")
+        print("       harvest miss'. CLAUDE.md asks for exactly that: 'Log negative")
+        print("       results.' An earlier version of this flag reported them as empty")
+        print("       and was wrong. Do not delete them and do not upgrade them.")
     print()
 
     if not a.apply:
