@@ -150,6 +150,12 @@ parts = [
     # SOURCE_GAP/LOW/WELL counts + DUE/OK vs the .maintenance.json `harvest` cadence.
     "privacy-repo -> " + privacy_repo(),
     "recipe-s -> " + run("harvest_sources.py", r"RECIPE-S:", args=["--heartbeat"], max_lines=1),
+    # Extension frontier (extension_frontier.py --heartbeat): SILENT = parentless AND
+    # no stated reason. STANDING GOAL IS SILENT 0 — every row exits either by gaining
+    # parents or by gaining a written reason. Surfaced every session so the goal is
+    # standing rather than remembered; the trailing "[review]" counts DECLARED rows
+    # that cite no source or route, which is the cheap-win failure mode.
+    "frontier -> " + run("extension_frontier.py", r"FRONTIER:", args=["--heartbeat"], max_lines=1),
 ]
 # The project-specific "known baseline" (which advisory findings are expected and
 # at what counts) lives in an OPTIONAL vault-local file so this hook stays generic.

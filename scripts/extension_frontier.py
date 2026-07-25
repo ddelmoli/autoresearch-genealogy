@@ -35,7 +35,21 @@ USAGE
   python3 scripts/extension_frontier.py --gen-min 29     # deep medieval only
   python3 scripts/extension_frontier.py --all            # DECLARED rows too
   python3 scripts/extension_frontier.py --csv
-  python3 scripts/extension_frontier.py --summary        # counts only (banner use)
+  python3 scripts/extension_frontier.py --summary        # counts only
+  python3 scripts/extension_frontier.py --heartbeat      # one line, SessionStart banner
+
+THE STANDING GOAL: DRIVE SILENT TO ZERO. Not "give everyone parents" — that is not
+in anyone's power — but leave no parentless person whose entry is SILENT about why.
+Every row exits one of two ways: it gains PARENTS, or it gains a written REASON. The
+target is reported in the SessionStart banner every session so it stays a standing
+objective rather than something each session has to rediscover.
+
+⚠ THE CHEAP WIN TO REFUSE: closing rows by writing "parentage unknown" without
+consulting anything. That zeroes the metric and destroys its meaning in one pass. A
+declaration must say what was checked and, where possible, name the onward route.
+`--heartbeat` therefore also counts DECLARED rows whose entry cites NO source and NO
+route, and flags them for review — an advisory proxy, since no regex can judge
+whether the reasoning was any good, only whether any was offered.
 
 Advisory. Never blocks a commit: a silent frontier is a research to-do, not a defect.
 """
@@ -72,6 +86,24 @@ DECLARED_RE = re.compile(
     # lesson as the header grammar: give the writer a vocabulary the reader
     # matches exactly. Free-text reasons above remain accepted for the backlog.
     r"|FRONTIER DECLARATION",
+    re.I,
+)
+
+
+# A declaration is only worth the SILENT row it closes if it says WHY on some
+# authority. "Parentage unknown" written after looking at Cawley is a research
+# result; the same words written after looking at nothing are a way to make the
+# worklist shorter without doing any work — and the vault has learned repeatedly
+# that a number moving in the flattering direction deserves the most scrutiny.
+# BACKED_RE is the cheap mechanical proxy: does the entry name a source, an
+# authority, or an explicit onward route? It is advisory and deliberately broad —
+# it cannot judge whether the reasoning is good, only whether any was offered.
+BACKED_RE = re.compile(
+    r"Cawley|Medlands|\bFMG\b|Richardson|Complete Peerage|ODNB|Henry Project|\bWeis\b"
+    r"|Visitation|Muskett|History of Parliament|\bVCH\b|British History Online"
+    r"|Macnamara|Clutterbuck|\bIPM\b|inquisition|charter|register|probate|\bwill\b"
+    r"|FamilySearch|\bFS\b|WikiTree"
+    r"|[Rr]oute:|not yet worked|NOT WORKED|re-read|read directly",
     re.I,
 )
 
@@ -117,6 +149,7 @@ def rows_with_bodies(vault):
             "tier": tier.group(1) if tier else "",
             "spouse": bool(SPOUSE_RE.search(meta)),
             "declared": bool(DECLARED_RE.search(body)),
+            "backed": bool(BACKED_RE.search(body)),
         })
     return out
 
@@ -133,6 +166,8 @@ def main(argv=None):
     ap.add_argument("--all", action="store_true", help="include DECLARED rows")
     ap.add_argument("--csv", action="store_true")
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--heartbeat", action="store_true",
+                    help="one-line SILENT/DECLARED status for the SessionStart audit suite")
     a = ap.parse_args(argv)
 
     vault = vault_config.resolve_vault(a.vault)
@@ -144,6 +179,21 @@ def main(argv=None):
 
     silent = [r for r in rows if not r["declared"]]
     declared = [r for r in rows if r["declared"]]
+
+    if a.heartbeat:
+        # STANDING GOAL: drive SILENT to 0 — every parentless person either gains
+        # parents or gains a written reason. Reported every session so the goal is
+        # standing rather than remembered. `backed` guards the cheap win: closing a
+        # row by asserting "parentage unknown" without consulting anything.
+        n_s, n_d = len(silent), len(declared)
+        tot = n_s + n_d
+        pct = (100 * n_d // tot) if tot else 100
+        unbacked = sum(1 for r in declared if not r["backed"])
+        line = (f"FRONTIER: SILENT {n_s}, DECLARED {n_d} ({pct}% closed; target SILENT 0)")
+        if unbacked:
+            line += f", {unbacked} DECLARED cite no source/route [review]"
+        print(line)
+        return 0
 
     if a.summary:
         print(f"EXTENSION FRONTIER: SILENT {len(silent)} (no parents, no stated reason); "
