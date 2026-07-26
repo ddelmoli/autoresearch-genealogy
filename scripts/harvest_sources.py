@@ -9,10 +9,21 @@ need a Recipe-S harvest pass.
 
 Strategy:
 1. Read the canonical roster from the NARRATIVES via
-   gen_person_index.parse_narrative() — PID -> (name, gen, tier, file) — for every
-   entry that carries an FS PID (Person_Index.md was retired; see memory
-   project_person_index_retirement). Entries with no FS PID are skipped (no FS
-   profile to harvest). NO_NARRATIVE is vacuous by construction ONCE the roster and
+   gen_person_index.parse_narrative() — VAULT-ID -> (name, gen, tier, file, pid) —
+   for EVERY entry (Person_Index.md was retired; see memory
+   project_person_index_retirement).
+
+   ** KEYED ON THE VAULT `id`, NOT THE FS PID (26 JUL 2026). ** This step used to
+   read "entries with no FS PID are skipped (no FS profile to harvest)". True for
+   HARVESTING, false for CENSUSING, and one function served both: 210 of 1,320
+   entries — 16% of the reference vault — reached no category at all, 60 of them
+   carrying a Sources bullet and 12 carrying real locators. `fs: none` is the
+   sharpest case: it MEANS "searched FS, confirmed absent", a proper finding, and
+   it erased the person from the vault's own coverage numbers. The `id` is unique,
+   never reused, and BLOCKING in `gen_person_index --integrity`, so keying on it
+   cannot drop anyone. `pid` rides along and still drives all FS-facing work.
+
+   NO_NARRATIVE is vacuous by construction ONCE the roster and
    this module agree on what an entry is — which they now do, both reading through
    the meta-anchored `person_store` seam. It was NOT vacuous while this module
    detected entries by bold-name shape: 52 entries the roster could see were
@@ -24,7 +35,7 @@ Strategy:
 3. Count ARK references in each entry's body:
    - Long-form  `ark:/61903/(1:1:[A-Z0-9-]+)`
    - Short-form `1:1:[A-Z0-9-]{6,}` standalone tokens
-4. Classify each PID-bearing entry by ARK count:
+4. Classify EVERY entry by record count (PID-bearing or not):
    - SOURCE_GAP (0 ARKs) — highest priority Recipe-S target
    - BOOK_SOURCED / UNCITED (0 ARKs, but structurally unsourceable) — a 0-ARK entry
      that can essentially NEVER acquire an indexed-record ARK, so it must not inflate
@@ -311,29 +322,56 @@ APPENDIX_RE = re.compile(r"^##\s+Appendix")
 
 
 def parse_person_index() -> Dict[str, dict]:
-    """Return PID -> {name, gen, confidence, file_col, region} for every
-    PID-bearing person entry.
+    """Return vault-id -> {name, gen, confidence, file_col, region, pid} for EVERY
+    person entry.
 
     Person_Index.md was RETIRED (memory project_person_index_retirement); the
     canonical roster now comes from the narratives via
     gen_person_index.parse_narrative() — each entry's bold-name header + `- meta:`
-    block (id / FS / tier / gen). Only entries with an FS PID are returned (an
-    entry without one has no FS profile whose Sources tab could be harvested).
-    Region is classified from the narrative's file name via the optional shard
-    manifest (shard_manifest.region_for expects the basename WITHOUT `.md`)."""
+    block (id / FS / tier / gen).
+
+    ** KEYED ON THE VAULT `id`, NOT THE FS PID (26 JUL 2026 — the census blind
+    spot). ** This function used to open with `if not pid: continue`, on the
+    reasoning quoted in its old docstring: "an entry without one has no FS profile
+    whose Sources tab could be harvested." That is TRUE FOR HARVESTING and FALSE
+    FOR CENSUSING, and this one function fed both jobs.
+
+    The cost, measured on the reference vault the day it was fixed: **210 of 1,320
+    entries — 16% of the vault — never reached the census at all.** Not
+    SOURCE_GAP, not UNCITED, not any category: absent. 60 of them carried a
+    `- **Sources**` bullet and 12 carried real locators. The sharpest case is
+    `fs: none`, which MEANS "searched FamilySearch, confirmed no profile" — a
+    finding, recorded properly, and it erased the person from the vault's own
+    statistics. `fs: TBD` (not yet searched) did the same to 162 more.
+
+    So the roster now keys on the meta `id`: unique, never reused, and BLOCKING in
+    `gen_person_index --integrity`, so no entry can lack one. `pid` rides along as
+    an attribute and stays the key for FS-facing work (`--csv`, the harvest target
+    list, the structural-gap PID allowlists). Region is classified from the
+    narrative's file name via the optional shard manifest (shard_manifest.region_for
+    expects the basename WITHOUT `.md`)."""
     manifest = shard_manifest.load_shard_manifest(VAULT)
     out: Dict[str, dict] = {}
     for e in G.parse_narrative():
-        pid = e["pid"]
-        if not pid:
+        key = e["id"]
+        if not key:
+            # Defensive only: MISSING_ID is a HARD integrity violation that blocks
+            # the commit, so this cannot happen in a gated vault. Skipping here
+            # would reintroduce the very silence this change removes, so say so.
+            sys.stderr.write(
+                f"harvest_sources: entry {e.get('name','?')!r} in {e.get('file','?')} "
+                "has no meta id and is EXCLUDED from the census "
+                "(run gen_person_index.py --integrity)\n")
             continue
+        pid = e["pid"]          # None for TBD / none / malformed — no longer fatal
         file_col = e["file"][:-3] if e["file"].endswith(".md") else e["file"]
         region = shard_manifest.region_for(file_col, manifest)
         tier = e["tier"] or "U"
-        # Same PID can legitimately appear on >1 entry (FS conflation / a
-        # duplicate-candidate flag); keep the first, matching prior behavior.
-        if pid not in out:
-            out[pid] = {
+        # ids are unique by the integrity gate, so the old "same PID on >1 entry,
+        # keep the first" dedup is no longer needed to avoid collisions.
+        if key not in out:
+            out[key] = {
+                "pid": pid,
                 "name": e["name"].strip("* "),
                 "gen": e["gen"],
                 "confidence": tier,
@@ -386,6 +424,37 @@ def entry_blocks_by_file(vault: "Optional[str]" = None) -> "Dict[str, List[Tuple
     return dict(out)
 
 
+def entry_blocks_with_ids(vault: "Optional[str]" = None):
+    """path -> [(vault_id, display_name, header_line_index, body_text)].
+
+    Same seam as `entry_blocks_by_file`, but carries the record's `id` straight
+    from `person_store` instead of re-parsing it out of the body text.
+
+    ** WHY NOT A REGEX (26 JUL 2026). ** The first cut of the id-keyed census
+    scraped the id from the `- meta:` line with a pattern built from the
+    DOCUMENTED grammar — `P-` + 6 Crockford base32 chars, no I/L/O/U
+    (CLAUDE.method). 15 entries promptly fell out and landed in NO_NARRATIVE,
+    because the live vault contains ids the documented grammar forbids: twelve
+    using `L` or `O` (`P-MLV258`, `P-AOE190`, `P-MOL565`, ...) and one only five
+    characters long (`P-TMC22`). The integrity gate enforces DUP_ID and
+    MISSING_ID — it does NOT validate the id's SHAPE — so those ids are legal in
+    practice.
+
+    The lesson is the recurring one in this module: **encode what the data is,
+    not what the spec says it should be.** An id is an opaque primary key here;
+    validating its charset is the integrity gate's job, and duplicating that
+    judgement in a consumer just invents a second, stricter, silent filter — which
+    is precisely the failure this whole change exists to remove.
+
+    `entry_blocks_by_file` keeps its 3-tuple shape because `entry_boundary_audit`
+    and its test unpack it."""
+    import person_store as PS
+    out = defaultdict(list)
+    for rec, path, hline, block in PS.iter_entry_blocks(vault or VAULT):
+        out[path].append((rec.id, rec.name, hline, truncate_at_break(block)))
+    return dict(out)
+
+
 def _attributed_region(lines: "List[str]", i: int) -> str:
     """The line at `i` plus its more-indented continuation lines (a bullet and its
     sub-bullets). The unit a citation is attributed to."""
@@ -402,6 +471,23 @@ def _attributed_region(lines: "List[str]", i: int) -> str:
 
 _META_LINE_RE = re.compile(r"^\s*-\s*meta:\s*\{")
 _META_FS_RE = re.compile(r"\bfs:\s*([A-Z0-9]{4}-[A-Z0-9]{3})\b")
+_META_ID_RE = re.compile(r"\bid:\s*(P-[0-9A-HJKMNP-TV-Z]{6})\b")
+
+
+def own_ids(body: str) -> "set":
+    """The vault `id`(s) this entry is ABOUT — the `id:` value on its `- meta:` line.
+
+    The id is the vault's PRIMARY KEY (CLAUDE.method "the meta block is the identity
+    and detection anchor"), it is unique and non-reusable, and `gen_person_index
+    --integrity` BLOCKS a commit unless every entry has one. So it is the only
+    identifier the census can key on without silently dropping people — which is
+    exactly what keying on the FS PID did. See `parse_person_index`.
+    """
+    own = set()
+    for ln in body.splitlines():
+        if _META_LINE_RE.match(ln):
+            own |= set(_META_ID_RE.findall(ln))
+    return own
 
 
 def own_pids(body: str) -> "set":
@@ -468,25 +554,42 @@ def may_credit(body: str, pid: str) -> bool:
     return False
 
 
-def scan_family_tree_files() -> Dict[str, List[Tuple[str, str, int, int, dict]]]:
-    """Return PID -> list of (filename, name, record_count, body_length, per_host).
+def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict[str, List[Tuple[str, str, int, int, dict]]]:
+    """Return vault-id -> list of (filename, name, record_count, body_length, per_host, scholarly).
 
-    For each narrative entry that references a PID, count the number of source
-    RECORDS in the entry's body (Spec 03). For un-migrated entries this equals
-    the legacy ARK-token count; migrated entries count `Sources` record lines.
-    `per_host` is host_id -> distinct-locator count for the entry."""
+    For each narrative entry, count the number of source RECORDS in its body
+    (Spec 03). For un-migrated entries this equals the legacy ARK-token count;
+    migrated entries count `Sources` record lines. `per_host` is host_id ->
+    distinct-locator count for the entry.
+
+    ** KEYED ON THE VAULT `id` (26 JUL 2026). ** Two crediting paths, and keeping
+    them separate is the whole point:
+
+      (1) THE ENTRY'S OWN PERSON is credited via the meta `id` — no PID required.
+          This is the fix: an entry with `fs: TBD` / `fs: none` / no `fs` at all
+          used to fall out here and reach no category at all.
+      (2) A FOREIGN PID in the body still credits ONLY under the inline-collateral
+          convention (`may_credit`: the PID must appear on a line that carries its
+          own locators). Those records are attributed to the id of the entry that
+          OWNS that PID, via `pid_to_id`. This preserves Spec 05 exactly — a name
+          in a `- Siblings` / `- Children of` / `- Parents:` list still credits
+          nothing, because it documents nothing.
+
+    Path (2) is why the PID machinery stays: dropping it would silently un-credit
+    every inline-collateral relative, which is the mirror-image defect of the one
+    being fixed."""
     out: Dict[str, List[Tuple[str, str, int, int, dict]]] = defaultdict(list)
+    pid_to_id = pid_to_id or {}
 
-    pattern = os.path.join(VAULT, "Family_Tree*.md")
-    import glob
-    files = glob.glob(pattern)
-
-    for path, entries in entry_blocks_by_file().items():
+    for path, entries in entry_blocks_with_ids().items():
         fname = os.path.basename(path)
 
-        for name, start, body in entries:
+        for rec_id, name, start, body in entries:
+            # The id comes from the person_store seam, NOT a regex over the body —
+            # see entry_blocks_with_ids for the 15 entries that taught us why.
+            entry_ids = {rec_id} if rec_id else set()
             pids_in_entry = set(PID_RE.findall(body))
-            if not pids_in_entry:
+            if not entry_ids and not pids_in_entry:
                 continue
             # Count RECORDS (Spec 03). For an un-migrated body this is exactly
             # len(extract_arks(body)) — the legacy locator-token count — so the
@@ -498,19 +601,32 @@ def scan_family_tree_files() -> Dict[str, List[Tuple[str, str, int, int, dict]]]
             per_host = per_host_locators(body)
             scholarly = has_scholarly_citation(body)
             owners = own_pids(body)
+
+            # (1) THE ENTRY'S OWN PERSON, keyed on the meta id. No PID needed —
+            # this is the path that used to not exist. The entry's own scholarly
+            # citation documents its own person, so it applies here unconditionally.
+            for eid in entry_ids:
+                out[eid].append((fname, name, record_count, len(body), per_host, scholarly))
+
+            # (2) INLINE COLLATERAL: a FOREIGN pid credited only under the Spec 05
+            # locator test, attributed to the entry that owns that pid.
             for pid in pids_in_entry:
+                if pid in owners:
+                    continue            # own person — already credited by id above
                 # A PID merely cross-referenced here (a name in a siblings /
                 # children / parents list, or a spouse in a couple header) does
                 # NOT inherit this entry's records.
                 if not may_credit(body, pid):
                     continue
-                # NOR its scholarly citation: an entry's Cawley/Richardson cite
-                # documents the entry's OWN person, not a relative named in it.
-                # (An inline-collateral relative is credited via the locator test,
-                # so ark_count > 0 and this scholarly flag never decides its
-                # BOOK/UNCITED split.) Same header-vector fix as may_credit.
-                pid_scholarly = scholarly and pid in owners
-                out[pid].append((fname, name, record_count, len(body), per_host, pid_scholarly))
+                target = pid_to_id.get(pid)
+                if not target:
+                    continue            # no entry in the roster owns this PID
+                # NOT the entry's scholarly citation: an entry's Cawley/Richardson
+                # cite documents the entry's OWN person, not a relative named in
+                # it. An inline-collateral relative is credited via the locator
+                # test, so record_count > 0 and this flag never decides its
+                # BOOK/UNCITED split. Same header-vector fix as may_credit.
+                out[target].append((fname, name, record_count, len(body), per_host, False))
 
     return out
 
@@ -586,11 +702,16 @@ def classify(ark_count: int) -> str:
     return "WELL_SOURCED"
 
 
-def is_structural(pid: str, gen: Optional[int], region: Optional[str]) -> bool:
-    """A 0-ARK entry that can essentially never acquire an indexed-record ARK."""
+def is_structural(pid: Optional[str], gen: Optional[int], region: Optional[str]) -> bool:
+    """A 0-ARK entry that can essentially never acquire an indexed-record ARK.
+
+    `pid` may be None since the census stopped requiring one (26 JUL 2026). The
+    deep-generation test is PID-free and still applies; the region-scoped
+    allowlists are keyed on FS PIDs, so a PID-less entry simply cannot match them
+    — correctly, since those rules exist to name specific FS-profiled clusters."""
     if gen is not None and gen >= STRUCTURAL_GEN:
         return True
-    if not region:
+    if not region or not pid:
         return False
     for rule in _STRUCTURAL_RULES:
         rregion = rule.get("region")
@@ -607,18 +728,23 @@ def is_structural(pid: str, gen: Optional[int], region: Optional[str]) -> bool:
 def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, include_structural=False):
     """Build the per-PID coverage records (shared by the report and the heartbeat)."""
     pi = parse_person_index()
-    narrative_index = scan_family_tree_files()
+    # pid -> id, so inline-collateral records found under a FOREIGN pid can be
+    # attributed to the entry that owns it (scan_family_tree_files path 2).
+    pid_to_id = {info["pid"]: key for key, info in pi.items() if info.get("pid")}
+    narrative_index = scan_family_tree_files(pid_to_id)
     records = []
-    for pid, info in pi.items():
+    for key, info in pi.items():
+        pid = info.get("pid")
         if gen_lo is not None and (info["gen"] is None or info["gen"] < gen_lo or info["gen"] > gen_hi):
             continue
         if confidence and info["confidence"] != confidence:
             continue
         if region and (info["region"] is None or region.lower() not in info["region"].lower()):
             continue
-        matches = narrative_index.get(pid, [])
+        matches = narrative_index.get(key, [])
         if not matches:
             records.append({
+                "id": key,
                 "pid": pid,
                 "name": info["name"],
                 "gen": info["gen"],
@@ -641,6 +767,7 @@ def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, inclu
                 # unresearched. Both stay out of the actionable SOURCE_GAP count.
                 category = "BOOK_SOURCED" if scholarly else "UNCITED"
             records.append({
+                "id": key,
                 "pid": pid,
                 "name": info["name"],
                 "gen": info["gen"],
@@ -739,9 +866,9 @@ def main():
     if args.csv:
         import csv
         w = csv.writer(sys.stdout)
-        w.writerow(["pid", "name", "gen", "confidence", "region", "category", "ark_count", "narr_file", "narr_name"])
+        w.writerow(["id", "pid", "name", "gen", "confidence", "region", "category", "ark_count", "narr_file", "narr_name"])
         for r in sorted(records, key=lambda r: (r["gen"] or 999, r["category"], -r["ark_count"])):
-            w.writerow([r["pid"], r["name"], r["gen"], r["confidence"], r["region"], r["category"], r["ark_count"], r["narr_file"], r["narr_name"]])
+            w.writerow([r.get("id",""), r["pid"] or "", r["name"], r["gen"], r["confidence"], r["region"], r["category"], r["ark_count"], r["narr_file"], r["narr_name"]])
         return
 
     # Categorized report
@@ -777,7 +904,12 @@ def main():
         for r in items[: args.limit]:
             gen_str = f"Gen {r['gen']:>2}" if r["gen"] is not None else "Gen ??"
             ark_str = f"{r['ark_count']:>2} ARKs" if cat in ("LOW_COVERAGE", "WELL_SOURCED") else ""
-            print(f"  {gen_str} {r['confidence']:<2} {r['pid']:<10} {r['name'][:55]:<55} {ark_str:<9} [{r['region']}, {r['narr_file']}]")
+            # PID may be absent (fs: TBD / none / unset) now that the census keys
+            # on the vault id. Show the id instead, prefixed, so the row is still
+            # actionable AND it is obvious at a glance that there is no FS profile
+            # to harvest — these are the entries that used to be invisible here.
+            ident = r["pid"] or ("=" + (r.get("id") or "?"))
+            print(f"  {gen_str} {r['confidence']:<2} {ident:<10} {r['name'][:55]:<55} {ark_str:<9} [{r['region']}, {r['narr_file']}]")
         if len(items) > args.limit:
             print(f"  ... and {len(items) - args.limit} more")
         print()
