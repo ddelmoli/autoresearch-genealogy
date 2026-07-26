@@ -866,9 +866,15 @@ def main():
     if args.csv:
         import csv
         w = csv.writer(sys.stdout)
-        w.writerow(["id", "pid", "name", "gen", "confidence", "region", "category", "ark_count", "narr_file", "narr_name"])
+        w.writerow(["pid", "name", "gen", "confidence", "region", "category", "ark_count", "narr_file", "narr_name", "id"])
+        # `id` is APPENDED, never inserted: two consumers (keystone_report,
+        # migrate_profile_status) parsed this CSV BY COLUMN POSITION, and putting id
+        # first silently shifted ark_count from index 6 to 7 -> both read the category
+        # string as the count, skipped every row, and returned an EMPTY census.
+        # keystone_report then lost its THIN veto and over-flagged (79 -> 85 rows).
+        # Both now read by header name; the append keeps any unknown consumer safe.
         for r in sorted(records, key=lambda r: (r["gen"] or 999, r["category"], -r["ark_count"])):
-            w.writerow([r.get("id",""), r["pid"] or "", r["name"], r["gen"], r["confidence"], r["region"], r["category"], r["ark_count"], r["narr_file"], r["narr_name"]])
+            w.writerow([r["pid"] or "", r["name"], r["gen"], r["confidence"], r["region"], r["category"], r["ark_count"], r["narr_file"], r["narr_name"], r.get("id","")])
         return
 
     # Categorized report

@@ -223,11 +223,17 @@ def census_records(vault):
                            env={**os.environ, "AUTORESEARCH_VAULT": vault})
     except Exception:
         return {}
+    # BY HEADER NAME, never by column index. This parsed positionally until
+    # 26 JUL 2026; adding one column to the census CSV shifted `ark_count` and this
+    # silently returned {} -- THIN lost its veto and the report over-flagged with no
+    # error anywhere. A census that cannot be read must look different from a census
+    # that says zero.
+    import csv, io as _io
     out = {}
-    for ln in r.stdout.splitlines()[1:]:
-        parts = ln.split(",")
-        if len(parts) > 6 and parts[6].strip().isdigit():
-            out[parts[0]] = int(parts[6])
+    for row in csv.DictReader(_io.StringIO(r.stdout)):
+        pid, n = (row.get("pid") or "").strip(), (row.get("ark_count") or "").strip()
+        if pid and n.isdigit():
+            out[pid] = int(n)
     return out
 
 

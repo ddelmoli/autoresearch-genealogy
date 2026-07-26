@@ -103,11 +103,14 @@ def census_records(vault):
     r = subprocess.run([sys.executable, os.path.join(here, "harvest_sources.py"), "--csv"],
                        capture_output=True, text=True, timeout=900,
                        env={**os.environ, "AUTORESEARCH_VAULT": vault})
+    # BY HEADER NAME, never by column index -- see keystone_report.census_records
+    # for the 26 JUL 2026 breakage this avoids.
+    import csv, io as _io
     out = {}
-    for ln in r.stdout.splitlines()[1:]:
-        p = ln.split(",")
-        if len(p) > 6 and p[6].strip().isdigit():
-            out[p[0]] = (int(p[6]), p[5].strip())
+    for row in csv.DictReader(_io.StringIO(r.stdout)):
+        pid, n = (row.get("pid") or "").strip(), (row.get("ark_count") or "").strip()
+        if pid and n.isdigit():
+            out[pid] = (int(n), (row.get("category") or "").strip())
     return out
 
 
