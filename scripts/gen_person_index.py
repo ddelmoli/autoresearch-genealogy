@@ -357,8 +357,23 @@ def integrity_check(entries, args):
                        some may be known pre-existing cross-file rows recorded in
                        your .autoresearch.json baseline). Review, do not block.
       NEEDS_META     — entry missing tier / gen (ADVISORY; meta is incomplete).
+      ID_GRAMMAR     — id is not `P-` + 6 Crockford base32 chars (ADVISORY, added
+                       26 JUL 2026). The gate checked that an id EXISTS and is
+                       UNIQUE, never its SHAPE, so hand-authored ids drifted from
+                       the documented grammar unnoticed. It surfaced only when a
+                       consumer (`harvest_sources`) built a regex from the SPEC and
+                       silently stranded 15 entries. Advisory on purpose: those ids
+                       are unique and working, several are deliberately MNEMONIC
+                       (initials + death year — `P-MLV258` = Margaret Leveland
+                       d.1258, `P-WML531` = Walter Merell d.1531), and CLAUDE.method
+                       says an id is NEVER hand-edited, so re-minting is an operator
+                       decision, not a cleanup. What this check is for is stopping
+                       the drift GROWING. `mint_ids.py` already emits conforming ids;
+                       every violation is hand-authored.
     Exit 1 only on a HARD violation (DUP_ID or MISSING_ID)."""
     from collections import Counter
+    import re as _re
+    _ID_GRAMMAR = _re.compile(r"^P-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{6}$")
     id_counts = Counter(e["id"] for e in entries if e["id"])
     dup_ids = {i: c for i, c in id_counts.items() if c > 1}
     noid = [e for e in entries if not e["id"]]
@@ -373,6 +388,7 @@ def integrity_check(entries, args):
     # = profile_status: stub), so it is NOT part of the completeness check anymore.
     needs_meta = [e for e in entries
                   if not (e["id"] and e["gen"] is not None)]
+    odd_ids = [e for e in entries if e["id"] and not _ID_GRAMMAR.match(e["id"])]
 
     print(f"narrative canonical entries: {len(entries)}")
     print("\n=== NARRATIVE INTEGRITY (post-Person_Index retirement) ===")
@@ -380,6 +396,7 @@ def integrity_check(entries, args):
     print(f"  MISSING_ID (entry has no id):        {len(noid)}   [HARD]")
     print(f"  DUP_FS_PID (1 FS PID, >1 entry):     {len(dup_pids)}   [advisory; compare vs your .autoresearch.json baseline]")
     print(f"  NEEDS_META (no id or no generation): {len(needs_meta)}   [advisory]")
+    print(f"  ID_GRAMMAR (id not P- + 6 Crockford):  {len(odd_ids)}   [advisory; hand-authored, see docstring]")
     for i, c in list(dup_ids.items())[:args.limit]:
         print(f"    DUP_ID {i} x{c}")
     for e in noid[:args.limit]:
@@ -389,6 +406,8 @@ def integrity_check(entries, args):
     for e in needs_meta[:args.limit]:
         miss = ([] if e["id"] else ["id"]) + ([] if e["gen"] is not None else ["generation"])
         print(f"    NEEDS_META {e['file']:<34} {e['name'][:34]:<34} missing {','.join(miss)}")
+    for e in odd_ids[:args.limit]:
+        print(f"    ID_GRAMMAR {e['id']:<10} {e['file']:<34} {e['name'][:34]}")
     hard = len(dup_ids) + len(noid)
     print(f"\n  HARD violations (DUP_ID + MISSING_ID): {hard}")
     return 1 if hard else 0
