@@ -364,8 +364,8 @@ def integrity_check(entries, args):
                        consumer (`harvest_sources`) built a regex from the SPEC and
                        silently stranded 15 entries. Advisory on purpose: those ids
                        are unique and working, several are deliberately MNEMONIC
-                       (initials + death year — `P-MLV258` = Margaret Leveland
-                       d.1258, `P-WML531` = Walter Merell d.1531), and CLAUDE.method
+                       (initials + death year: a person with initials A.B.C. who
+                       died in 1258 becomes `P-ABC258`), and CLAUDE.method
                        says an id is NEVER hand-edited, so re-minting is an operator
                        decision, not a cleanup. What this check is for is stopping
                        the drift GROWING. `mint_ids.py` already emits conforming ids;

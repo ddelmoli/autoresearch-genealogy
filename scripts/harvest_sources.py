@@ -435,8 +435,8 @@ def entry_blocks_with_ids(vault: "Optional[str]" = None):
     DOCUMENTED grammar — `P-` + 6 Crockford base32 chars, no I/L/O/U
     (CLAUDE.method). 15 entries promptly fell out and landed in NO_NARRATIVE,
     because the live vault contains ids the documented grammar forbids: twelve
-    using `L` or `O` (`P-MLV258`, `P-AOE190`, `P-MOL565`, ...) and one only five
-    characters long (`P-TMC22`). The integrity gate enforces DUP_ID and
+    using `L` or `O` (mnemonic ids built from initials, e.g. `P-ABC258`) and one
+    only five characters long. The integrity gate enforces DUP_ID and
     MISSING_ID — it does NOT validate the id's SHAPE — so those ids are legal in
     practice.
 

@@ -212,17 +212,17 @@ INLINE_COLLATERAL = f"""### Generation 9
 """
 
 # ids the DOCUMENTED grammar forbids but the vault actually contains: `L` and `O` are
-# not Crockford base32, and P-TMC22 is five characters, not six. The integrity gate
+# not Crockford base32, and P-SHORT1 below is five characters, not six. The gate
 # enforces DUP_ID and MISSING_ID - not the id's SHAPE - so these are legal in practice.
 ODD_IDS = f"""### Generation 10
 
 **Lottie Oddid** (b. 1650; d. 1700)
-- meta: {{id: P-MLV258, profile_status: complete, life_status: deceased, generation: 10, fs: TBD}}
+- meta: {{id: P-ABL258, profile_status: complete, life_status: deceased, generation: 10, fs: TBD}}
 - **Sources** (fixture):
   - {ARK1}
 
 **Shorty Oddid** (b. 1652; d. 1702)
-- meta: {{id: P-TMC22, profile_status: complete, life_status: deceased, generation: 10, fs: TBD}}
+- meta: {{id: P-SHRT2, profile_status: complete, life_status: deceased, generation: 10, fs: TBD}}
 - **Sources** (fixture):
   - {ARK2}
 """
