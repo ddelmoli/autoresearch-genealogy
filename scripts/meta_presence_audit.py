@@ -15,6 +15,24 @@ meta_presence_audit.py — two structural checks on `- meta:` blocks.
    particles, a date signal in the parenthetical, no embedded year) so
    section-label bold lines are not flagged.
 
+   ⚠ IT ALSO READS BULLET-FORM ENTRIES (`- **Name** (vitals)`), added 27 JUL 2026.
+   It did not before, and that was a blind spot, not a design choice: the record
+   layer (`person_store._BOLD`) has always accepted a leading bullet, so those
+   people were real entries that this check could not see. It reported 0 while the
+   deep-royal shards were full of meta-less person write-ups.
+
+   KNOWN PRECISION, measured on the reference vault at the change (16 reported):
+   11 are real, all in one file. The residue is 3 label bullets whose
+   parenthetical happens to open with a date (`Sources`, `WWII Draft
+   Registration`, a `Society of Descendants ...` line) plus 2 `SURNAME,FORENAME`
+   military-audit rows that are arguably real people. Two structural false-positive
+   classes ARE filtered: role-prefixed cross-references (`- **Wife: ...**`) and
+   indented child-list items. **This is an ADVISORY count with a known ~30% false
+   positive rate — read the rows, do not treat the number as a defect total.**
+   There is also a known FALSE NEGATIVE class: `T._is_person` rejects bold names
+   carrying an embedded parenthetical (`Duncan I (Donnchad mac Crínáin), King of
+   Scots`), so some bullet entries are still missed. Tightening that is future work.
+
 2. ORPHANED_META — a meta block SEPARATED from its bold-name header.
 
    The mirror-image blind spot, and a nastier one because the entry still looks
@@ -62,7 +80,19 @@ META = re.compile(r"^\s*-\s*meta:")
 # strict HDR_A misses exactly these, which is why such entries became the blind
 # spot. T._is_person then filters non-people (label bolds, year-in-name) via the
 # same heuristic the rest of the suite uses.
-HDR_LENIENT = re.compile(r"^\*\*([^*]+?)\*\*\s*\(([^)]{0,400})")
+#
+# ⚠ THE BULLET PREFIX IS LOAD-BEARING (added 27 JUL 2026). This pattern was
+# anchored `^\*\*`, i.e. LINE START only — while `person_store._BOLD`, the reader
+# that actually decides what an entry is, has always been `^\s*[-*]*\s*\*\*`, which
+# ACCEPTS a leading bullet. So a person written as `- **Name** (vitals)` was a valid
+# entry to the record layer and INVISIBLE to the audit whose whole job is to find
+# missing meta blocks: META_PRESENCE could not report them, and reported 0 while the
+# deep-royal shards were full of them. That bullet form is not a rarity — it is the
+# dominant style in those shards (extension_frontier's docstring says so, having been
+# bitten by the same divergence). Two readers disagreeing about what an entry is, the
+# same defect family as spec/entry-boundary and the census PID-keying bug.
+# Keep this prefix identical to `person_store._BOLD`'s.
+HDR_LENIENT = re.compile(r"^\s*[-*]*\s*\*\*([^*]+?)\*\*\s*\(([^)]{0,400})")
 
 # --- ORPHANED_META ---------------------------------------------------------
 # Strip bullet / blockquote / whitespace ONLY. Never strip '*' — that would eat
@@ -122,12 +152,56 @@ def audit_orphaned(vault=VAULT):
     return issues
 
 
+# A bullet-form entry needs a STRICTER person test than a line-start one.
+# `T._is_person` accepts any capitalized bold text whose parenthetical carries a
+# date signal — fine at line start, where a body-bullet label never appears, and
+# useless on bullets, where `- **Sources** (Recipe-S harvest 22 JUN 2026, ...)` is
+# the single most common line in the vault. Enabling the bullet prefix without
+# this filter reported 698 violations, of which the overwhelming majority were
+# `Sources` bullets: a number that looks like a finding and is an artefact.
+#
+# The discriminator is the VITALS SLOT, which is what the header grammar already
+# requires of a real entry: the parenthetical must OPEN with a date token (or
+# carry an explicit `Gen N` / `FS PID`), not merely contain a date somewhere in
+# running prose.
+VITALS_PAREN = re.compile(
+    r"^\s*(?:b\.|d\.|bapt\.|chr\.|born|died|m\.|c\.\s*\d|ABT|BEF|AFT|EST|CAL|BET|FROM|"
+    r"\d{3,4}\s*[-–—]|\d{1,2}\s+[A-Z]{3}\s+\d{3,4}|\d{3,4}\s*[;)])",
+    re.I)
+GEN_OR_PID = re.compile(r"\bGen\s*\d+\b|\bFS(?:\s+PID|:)\s*[A-Z0-9]{4}-[A-Z0-9]{3}\b")
+
+
+def _is_entry_paren(paren):
+    """True when this parenthetical reads as an entry's vitals slot."""
+    return bool(VITALS_PAREN.match(paren) or GEN_OR_PID.search(paren))
+
+
+# Two structural shapes that are never entries, both observed in the first run:
+#   `- **Wife: Lena Dora Buchdrucker** (1878-1943, FS ...)`  — a ROLE-PREFIXED
+#     cross-reference. The vault writes kin cross-refs this way on purpose
+#     (integrity rule 6 sends foreign PIDs to body bullets), so a colon inside the
+#     bold name marks a pointer at somebody, not that person's own entry.
+#   `  - **Thomas** (bapt. 25 SEP 1810 - Gen 7, our ancestor)` — an INDENTED
+#     child-list item. A real entry bullet sits at column 0; a nested list is a
+#     sub-item of the entry above it.
+ROLE_PREFIX = re.compile(r"^\s*(?:wife|husband|spouse|sibling|siblings|child|children|"
+                         r"son|daughter|father|mother|parents?|widow|widower)\s*:", re.I)
+
+
+def _is_crossref_bullet(raw_line, name):
+    return bool(raw_line[:1].isspace() or ":" in name or ROLE_PREFIX.match(name))
+
+
 def audit(vault=VAULT):
     issues = []
     for path in sorted(glob.glob(os.path.join(vault, "Family_Tree*.md"))):
         lines = open(path, encoding="utf-8").read().splitlines()
+        # Block boundaries must use the SAME entry shape as HDR_LENIENT above,
+        # or a bullet-style entry's block would run on to the next line-start
+        # header and swallow that neighbour's meta line — reporting 0 for exactly
+        # the entries this check exists to find.
         bounds = [i for i, l in enumerate(lines)
-                  if l.startswith("**") or re.match(r"^#{1,4}\s", l)]
+                  if re.match(r"^\s*[-*]*\s*\*\*", l) or re.match(r"^#{1,4}\s", l)]
         bounds.append(len(lines))
         for k, i in enumerate(bounds[:-1]):
             m = HDR_LENIENT.match(lines[i])
@@ -136,6 +210,14 @@ def audit(vault=VAULT):
             name, paren = m.group(1), m.group(2)
             if not T._is_person(name, paren):
                 continue
+            # Bullet-form candidates must additionally show a vitals slot; a
+            # line-start header is trusted as before, so this cannot mask any
+            # violation the check already reported.
+            if not lines[i].startswith("**"):
+                if not _is_entry_paren(paren):
+                    continue
+                if _is_crossref_bullet(lines[i], name):
+                    continue
             if not any(META.match(b) for b in lines[i:bounds[k + 1]]):
                 issues.append((os.path.basename(path), name.strip()))
     return issues
