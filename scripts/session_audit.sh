@@ -39,11 +39,23 @@ def next_session_size():
         return "Handoff.md missing"
     txt = p.read_text(encoding="utf-8")
     nlines = txt.count("\n") + 1
-    # Keep this list identical to archive_next_session.PINNED_PATTERNS -- it was
-    # missing LONGER-TERM OPTIONS, so the heartbeat counted one more "session
-    # section" than the archiver did and the two tools disagreed on every run.
-    pinned = ("Start here", "WATCHLIST AGING REMINDER", "Quick-resume commands",
-              "Reminders for next session", "LONGER-TERM OPTIONS")
+    # READ THE PINNED LIST FROM .maintenance.json, which is what the ARCHIVER reads.
+    # It used to be hardcoded here "identical to archive_next_session.PINNED_PATTERNS",
+    # and it drifted twice: first by missing LONGER-TERM OPTIONS, then again on
+    # 28 JUL 2026 when the protocol block moved out and 'Operating protocol' was
+    # pinned in its place -- each time the heartbeat counted one more "session
+    # section" than the archiver did, and the two tools disagreed on every run.
+    # One list, one reader. The literal is only a fallback for a vault with no config.
+    pinned = ("Start here", "Operating protocol", "WATCHLIST AGING REMINDER",
+              "Quick-resume commands", "Reminders for next session", "LONGER-TERM OPTIONS")
+    try:
+        import json as _json
+        _cfg = _json.loads((VAULT / ".maintenance.json").read_text(encoding="utf-8"))
+        for _t in _cfg.get("targets", []):
+            if _t.get("name") == "handoff" and _t.get("pinned_patterns"):
+                pinned = tuple(_t["pinned_patterns"])
+    except Exception:
+        pass
     session = sum(1 for ln in txt.splitlines()
                   if ln.startswith("## ") and not any(k in ln for k in pinned))
     # Nested `### #NN CLOSE` blocks live inside the pinned "Start here" H2 and are
@@ -145,6 +157,13 @@ parts = [
     # contributor-change watchlist; registry in New_Records_Watch.md.
     "new-records -> " + run("new_records_age.py", r"New-Records:", max_lines=1),
     "handoff -> " + next_session_size(),
+    # Handoff close-block conformance (handoff_lint.py --quiet). ADVISORY; promote to
+    # blocking once its baseline is 0. Checks the item-12 template: required fields
+    # (RETRACTIONS and NEGATIVES / DO-NOT-REDO especially), the ~120-line cap, that
+    # exactly ONE close block is live, and that no banner-computed metric has been
+    # hand-copied into prose — the failure mode that carried `SOURCE_GAP 218` forward
+    # while the live value was 243. READ THE FLAGGED ROWS before trusting the count.
+    "handoff-lint -> " + run("handoff_lint.py", r"HANDOFF_LINT:", args=["--quiet"], max_lines=1),
     "housekeeping -> " + run("size_heartbeat.py", r"HOUSEKEEPING", max_lines=1),
     # Recipe-S FS source-harvest coverage + cadence (harvest_sources.py --heartbeat):
     # SOURCE_GAP/LOW/WELL counts + DUE/OK vs the .maintenance.json `harvest` cadence.
