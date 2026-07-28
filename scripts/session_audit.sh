@@ -156,6 +156,13 @@ parts = [
     # tiers (A/B/C = 90/180/365d) + prints per-tier DUE/OK. Sibling of the
     # contributor-change watchlist; registry in New_Records_Watch.md.
     "new-records -> " + run("new_records_age.py", r"New-Records:", max_lines=1),
+    # Profile-review rotation (profile_review.py --heartbeat): the THIRD timed loop,
+    # asking whether a SLICE of the vault has gained new sources / relationships /
+    # vitals on FS, WikiTree or Ancestry since we last looked. Reads .maintenance.json
+    # `profile_review` + profile_review_snapshots.json only -- no census, so it is
+    # cheap. Absent config => a "not configured" line, so the check stays upstream-safe.
+    "profile-review -> " + run("profile_review.py", r"Profile-Review:",
+                               args=["--heartbeat"], max_lines=1),
     "handoff -> " + next_session_size(),
     # Handoff close-block conformance (handoff_lint.py --quiet). ADVISORY; promote to
     # blocking once its baseline is 0. Checks the item-12 template: required fields

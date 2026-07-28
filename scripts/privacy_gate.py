@@ -35,6 +35,49 @@ import vault_config
 PUBLIC_DENY = frozenset({"living", "unknown"})
 VALID_VISIBILITY = frozenset({"public", "private"})
 
+# life_status values that AUTONOMOUS RESEARCH must never touch, on any platform.
+# Same two values as PUBLIC_DENY, deliberately a SEPARATE name: they answer
+# different questions (may I publish this person? vs may I go look this person
+# up?) and one could change without the other.
+RESEARCH_DENY = frozenset({"living", "unknown"})
+# The only value that is affirmatively researchable. Anything else — a typo, a
+# vocabulary a future vault invents, an absent field — denies (fail closed).
+RESEARCHABLE = frozenset({"deceased"})
+
+
+def may_research(life_status):
+    """(allowed, reason) for AUTONOMOUS WEB RESEARCH about a person of
+    `life_status`. Fails closed: an absent or unrecognized value denies.
+
+    THE ONE PLACE THE RESEARCH-SIDE RULE LIVES (added 28 JUL 2026, session #111,
+    closing deferred_decisions item 11). The vault's standing rule is that
+    autonomous runs must not web-search anyone `living` or `unknown`, and until
+    now that rule existed only as PROSE in CLAUDE.method.md while `may_write`
+    (the publication-side rule) was the only thing implemented.
+
+    What the prose-only version cost: framework fc6efe2 (26 JUL) re-keyed the
+    source-coverage census on the vault `id` instead of the FS PID — a good fix,
+    closing a blind spot in which 210 entries reached no category at all. Living
+    people are PID-less BY DESIGN (`fs_private_keys`, no `fs`), so they were swept
+    into the census with every other non-PID entry: 15 living/unknown people
+    landed inside it and 9 of them inside SOURCE_GAP, the bucket this vault's own
+    integrity rule 8 documents as "the highest-priority Recipe-S harvest target".
+    Recipe-S is a web-research workflow. A session working that worklist top-down
+    would have met the operator's own children as targets. Nothing leaked — but a
+    worklist that names living people is a defect whether or not it is acted on.
+
+    So every RESEARCH target-set builder calls this, exactly as every write path
+    calls `gate`: harvest_sources (the census) and profile_review (the rotation
+    bandit) both do. Do not restate the rule inline where it can drift — that is
+    how it came to be true in the docs and false in the code.
+    """
+    ls = (life_status or "unknown").strip().lower()
+    if ls in RESEARCH_DENY:
+        return (False, f"{ls} person is never web-researched (autonomous research gate)")
+    if ls not in RESEARCHABLE:
+        return (False, f"unrecognized life_status {ls!r} — refusing (fail closed)")
+    return (True, f"{ls} person may be researched")
+
 
 def may_write(life_status, visibility):
     """(allowed, reason) for writing data about a person of `life_status` to a
@@ -88,3 +131,7 @@ if __name__ == "__main__":
         for ls in ("deceased", "living", "unknown"):
             ok, reason, _ = gate(vault, rid, ls)
             print(f"  {rid:<6} {ls:<9} -> {'ALLOW' if ok else 'DENY '}  ({reason})")
+    print("research gate (autonomous web research; no target — the rule is blanket):")
+    for ls in ("deceased", "living", "unknown", None):
+        ok, reason = may_research(ls)
+        print(f"  {str(ls):<9} -> {'ALLOW' if ok else 'DENY '}  ({reason})")

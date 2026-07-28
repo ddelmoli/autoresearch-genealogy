@@ -84,6 +84,7 @@ from typing import Dict, List, Optional, Tuple
 
 import shard_manifest
 import gen_person_index as G
+import privacy_gate
 import vault_config
 # NOTE: `tree_locator` and `meta_presence_audit` are no longer imported. They supplied
 # the person-name heuristic that decided whether a bold string was a header; entry
@@ -378,6 +379,10 @@ def parse_person_index() -> Dict[str, dict]:
                 "confidence_raw": tier,
                 "file_col": file_col.strip(),
                 "region": region,
+                # Carried so gather_records can apply the RESEARCH gate. Absent =>
+                # the gate fails closed, which is the intended reading of a person
+                # whose life status nobody has recorded.
+                "life_status": e.get("life_status"),
             }
     return out
 
@@ -743,19 +748,7 @@ def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, inclu
             continue
         matches = narrative_index.get(key, [])
         if not matches:
-            records.append({
-                "id": key,
-                "pid": pid,
-                "name": info["name"],
-                "gen": info["gen"],
-                "confidence": info["confidence"],
-                "region": info["region"],
-                "category": "NO_NARRATIVE",
-                "ark_count": 0,
-                "per_host": {},
-                "narr_file": "",
-                "narr_name": "",
-            })
+            category, ark_count, per_host, fname, narr_name = "NO_NARRATIVE", 0, {}, "", ""
         else:
             # Use the match with the most records (best-cited entry).
             best = max(matches, key=lambda m: m[2])
@@ -766,19 +759,39 @@ def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, inclu
                 # Split (23 JUL 2026): documented-but-unharvestable vs genuinely
                 # unresearched. Both stay out of the actionable SOURCE_GAP count.
                 category = "BOOK_SOURCED" if scholarly else "UNCITED"
-            records.append({
-                "id": key,
-                "pid": pid,
-                "name": info["name"],
-                "gen": info["gen"],
-                "confidence": info["confidence"],
-                "region": info["region"],
-                "category": category,
-                "ark_count": ark_count,
-                "per_host": per_host,
-                "narr_file": fname,
-                "narr_name": narr_name,
-            })
+
+        # THE RESEARCH GATE, applied LAST so it overrides every other category
+        # (28 JUL 2026, session #111 — deferred_decisions item 11). A living or
+        # unknown person is not a coverage GAP: they are someone this vault
+        # forbids web-searching at all, so a coverage caption cannot apply to
+        # them. Before this, 15 of them sat in the census and 9 of them in
+        # SOURCE_GAP, which integrity rule 8 calls "the highest-priority Recipe-S
+        # harvest target" — and Recipe-S is a web-research workflow.
+        #
+        # They are RE-CATEGORIZED, not dropped, deliberately: the categories sum
+        # to the whole vault, and a person who silently vanishes from a census is
+        # the exact failure the 26 JUL id-keying fix existed to remove. The rule
+        # itself lives in privacy_gate.may_research — one place, called by every
+        # research target-set builder, never restated inline where it can drift.
+        # --include-structural does NOT fold these back; nothing does.
+        researchable, _why = privacy_gate.may_research(info.get("life_status"))
+        if not researchable:
+            category = "LIVING_EXCLUDED"
+
+        records.append({
+            "id": key,
+            "pid": pid,
+            "name": info["name"],
+            "gen": info["gen"],
+            "confidence": info["confidence"],
+            "region": info["region"],
+            "life_status": info.get("life_status"),
+            "category": category,
+            "ark_count": ark_count,
+            "per_host": per_host,
+            "narr_file": fname,
+            "narr_name": narr_name,
+        })
     return records
 
 
@@ -794,10 +807,14 @@ def heartbeat():
     from datetime import date
 
     counts = defaultdict(int)
+    sg_pid = 0
     for r in gather_records():
         counts[r["category"]] += 1
+        if r["category"] == "SOURCE_GAP" and r.get("pid"):
+            sg_pid += 1
     sg, low, well = counts["SOURCE_GAP"], counts["LOW_COVERAGE"], counts["WELL_SOURCED"]
-    base = f"RECIPE-S: SOURCE_GAP {sg}, LOW_COVERAGE {low}, WELL_SOURCED {well}"
+    base = (f"RECIPE-S: SOURCE_GAP {sg} (harvestable {sg_pid}), LOW_COVERAGE {low}, "
+            f"WELL_SOURCED {well}, LIVING_EXCLUDED {counts['LIVING_EXCLUDED']}")
 
     cfg = {}
     try:
@@ -822,8 +839,15 @@ def heartbeat():
             days = (date.today() - d).days
             if interval and days >= interval:
                 reasons.append(f"{days}d since last round >= {interval}d cadence")
-    if ceiling is not None and sg >= ceiling:
-        reasons.append(f"SOURCE_GAP {sg} >= ceiling {ceiling}")
+    # THE CEILING WATCHES THE HARVESTABLE SUBSET, NOT THE WHOLE BUCKET (28 JUL
+    # 2026, #111 — the second half of deferred_decisions item 11). SOURCE_GAP
+    # mixes populations a Recipe-S round cannot touch: entries with NO FS PID have
+    # no /tree/person/sources/{PID} to visit, so their route is a library/archive
+    # pass. Comparing the whole bucket to a harvest ceiling fired a DUE alarm on a
+    # number that was not the worklist, and the response was to raise the ceiling
+    # — twice. The honest worklist is the PID-bearing subset; watch that.
+    if ceiling is not None and sg_pid >= ceiling:
+        reasons.append(f"harvestable SOURCE_GAP {sg_pid} >= ceiling {ceiling}")
 
     cad = f"; last round {last}" + (f" ({days}d ago)" if days is not None else "") if last else ""
     if reasons:
@@ -866,7 +890,7 @@ def main():
     if args.csv:
         import csv
         w = csv.writer(sys.stdout)
-        w.writerow(["pid", "name", "gen", "confidence", "region", "category", "ark_count", "narr_file", "narr_name", "id"])
+        w.writerow(["pid", "name", "gen", "confidence", "region", "category", "ark_count", "narr_file", "narr_name", "id", "life_status"])
         # `id` is APPENDED, never inserted: two consumers (keystone_report,
         # migrate_profile_status) parsed this CSV BY COLUMN POSITION, and putting id
         # first silently shifted ark_count from index 6 to 7 -> both read the category
@@ -874,7 +898,7 @@ def main():
         # keystone_report then lost its THIN veto and over-flagged (79 -> 85 rows).
         # Both now read by header name; the append keeps any unknown consumer safe.
         for r in sorted(records, key=lambda r: (r["gen"] or 999, r["category"], -r["ark_count"])):
-            w.writerow([r["pid"] or "", r["name"], r["gen"], r["confidence"], r["region"], r["category"], r["ark_count"], r["narr_file"], r["narr_name"], r.get("id","")])
+            w.writerow([r["pid"] or "", r["name"], r["gen"], r["confidence"], r["region"], r["category"], r["ark_count"], r["narr_file"], r["narr_name"], r.get("id",""), r.get("life_status") or ""])
         return
 
     # Categorized report
@@ -903,10 +927,18 @@ def main():
         ("WELL_SOURCED",   "[4] WELL_SOURCED — 4+ ARKs cited"),
         ("UNCITED",        "[5] UNCITED — 0 ARKs, structurally unsourceable, AND no scholarly citation either. The hidden worklist: not harvestable, but not yet documented from the books either (deep medieval Gen>=%d / pre-register / off-FS lines per .autoresearch.json)" % STRUCTURAL_GEN),
         ("BOOK_SOURCED",   "[6] BOOK_SOURCED — 0 ARKs and structurally unsourceable, but DOCUMENTED: cites Cawley/Medlands, Richardson, ODNB, Complete Peerage, the Henry Project, MGH/chronicles or Great Migration. Finished work that can never earn a record ARK — not a gap"),
+        ("LIVING_EXCLUDED", "[7] LIVING_EXCLUDED — life_status living/unknown (or unrecorded, which fails closed). NEVER a target: this vault forbids web-searching these people, so no coverage caption applies to them. Listed so the count stays VISIBLE rather than silently dropped; --include-structural does not fold these back"),
     ]
     for cat, label in cat_order:
         items = sorted(by_cat[cat], key=lambda r: (r["gen"] or 999, -r["ark_count"], r["name"]))
         print(f"{label}: {len(items)} entries")
+        if cat == "LIVING_EXCLUDED":
+            # The COUNT is the finding; the roster is not. These are living family
+            # members and this report is a worklist, so it names none of them —
+            # the vault's living-person privacy rule applies to its own tooling.
+            print("  (rows suppressed by design — living people are not a worklist)")
+            print()
+            continue
         for r in items[: args.limit]:
             gen_str = f"Gen {r['gen']:>2}" if r["gen"] is not None else "Gen ??"
             ark_str = f"{r['ark_count']:>2} ARKs" if cat in ("LOW_COVERAGE", "WELL_SOURCED") else ""
