@@ -105,7 +105,7 @@ Before using public AI tools or sharing exports, follow [Privacy Mode](guides/pr
 
 ### Prompts (`prompts/`)
 
-13 autoresearch prompts designed for Claude Code's `/autoresearch` command. Each defines inputs to replace, a Goal, Metric, Direction, Verify condition, Guard rails, Iterations, and Protocol. They run autonomously: searching the web, browsing image archives, updating your vault, and verifying their own work.
+15 autoresearch prompts designed for Claude Code's `/autoresearch` command. Each defines inputs to replace, a Goal, Metric, Direction, Verify condition, Guard rails, Iterations, and Protocol. They run autonomously: searching the web, browsing image archives, updating your vault, and verifying their own work.
 
 | Prompt | Purpose |
 |---|---|
