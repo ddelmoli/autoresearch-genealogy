@@ -75,7 +75,6 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 11 Immigration Search | [review-cards/11-immigration-search.md](../review-cards/11-immigration-search.md) |
 | 12 DNA Chromosome Analysis | [review-cards/12-dna-chromosome-analysis.md](../review-cards/12-dna-chromosome-analysis.md) |
 | 13 Image Archive Deep Dive | [review-cards/13-image-archive-deep-dive.md](../review-cards/13-image-archive-deep-dive.md) |
-| 20 Creative Vault Review | [review-cards/20-creative-vault-review.md](../review-cards/20-creative-vault-review.md) |
 | 21 Session Start | [review-cards/21-session-start.md](../review-cards/21-session-start.md) |
 | 22 Session Close | [review-cards/22-session-close.md](../review-cards/22-session-close.md) |
 
