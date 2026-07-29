@@ -186,12 +186,31 @@ parts = [
 # The project-specific "known baseline" (which advisory findings are expected and
 # at what counts) lives in an OPTIONAL vault-local file so this hook stays generic.
 # If the file is absent, fall back to a neutral reminder.
+#
+# CURRENT BASELINE ONLY: the file is injected into context EVERY session, and by
+# 29 JUL 2026 it had accumulated 712 lines of appended history (~14k tokens per
+# session, the single largest context cost of the whole suite). Superseded blocks
+# now live in .audit_baseline_history.txt; as a guard against the history creeping
+# back, this hook injects only the content ABOVE the first `----` divider line,
+# and hard-caps the injected baseline at 4000 chars (with an explicit truncation
+# note, never silently).
 _bp = VAULT / ".audit_baseline.txt"
-baseline = (_bp.read_text(encoding="utf-8").strip() if _bp.exists()
-            else "Compare against your project's known baseline; investigate anything above it "
-                 "before new vault work. The pre-commit hook enforces gen_person_index --integrity "
-                 "(HARD: unique id + complete meta) on every vault commit; prose_audit + header_xref "
-                 "are advisory.")
+if _bp.exists():
+    baseline = _bp.read_text(encoding="utf-8")
+    _kept = []
+    for _ln in baseline.splitlines():
+        if _ln.strip().startswith("----"):
+            _kept.append("[baseline truncated at history divider; rest in .audit_baseline_history.txt]")
+            break
+        _kept.append(_ln)
+    baseline = "\n".join(_kept).strip()
+    if len(baseline) > 4000:
+        baseline = baseline[:4000] + " [baseline truncated at 4000 chars — trim .audit_baseline.txt to CURRENT only]"
+else:
+    baseline = ("Compare against your project's known baseline; investigate anything above it "
+                "before new vault work. The pre-commit hook enforces gen_person_index --integrity "
+                "(HARD: unique id + complete meta) on every vault commit; prose_audit + header_xref "
+                "are advisory.")
 ctx = (f"VAULT AUDIT SUITE (SessionStart hook, scripts/session_audit.sh; vault={VAULT.name}): "
        + " || ".join(parts) + ". " + baseline)
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
