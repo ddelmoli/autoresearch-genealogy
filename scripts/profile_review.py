@@ -513,8 +513,16 @@ def heartbeat(vault):
         return 0
     days = (date.today() - last).days
     due = iv is not None and days >= iv
+    # ** interval_days 0 MEANS EVERY SESSION, and it is spelled 0 because "per
+    # session" IS NOT A TIME INTERVAL. ** The spec's cadence is "~1% of the vault
+    # per session"; a session is not a day, and several can happen in one day (or
+    # one across two). A positive interval silently converts a per-session
+    # obligation into a per-calendar one and the loop then skips sessions --
+    # which is exactly what a 7-day value did on the day this shipped.
+    # Rendered in words, not as "DUE(0d)", so nobody later "fixes" the 0.
+    cadence = "every session" if iv == 0 else f"{iv}d"
     print(f"Profile-Review: last slice {days}d ago ({last.isoformat()}); "
-          f"{'DUE' if due else 'OK'}({iv}d); {tally}"
+          f"{'DUE' if due else 'OK'} ({cadence}); {tally}"
           + ("" if not due else
              " — ACTION: run scripts/profile_review.py for the draw, poll it, "
              "--record each outcome, then --complete."))
