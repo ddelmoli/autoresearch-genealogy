@@ -147,6 +147,13 @@ parts = [
     # UP, which means a new entry was written in a dialect the grammar forbids.
     "header_grammar -> " + run("header_audit.py", r"HEADER_GRAMMAR:"),
     "dup_name -> " + run("dup_name_audit.py", r"DUP_NAME_STRONG:|DUP_NAME_POSSIBLE:"),
+    # File-level frontmatter (frontmatter_audit.py): the layer no other gate reads.
+    # On the reference vault 3 files had frontmatter that did not PARSE (unquoted
+    # `: ` in a prose value), 2 had duplicate keys silently dropping data, and 10
+    # carried session narratives in `updated:`. Advisory; baseline 0 as of 29 JUL
+    # 2026 — a non-zero here is a REGRESSION, not a backlog.
+    "frontmatter -> " + run("frontmatter_audit.py", r"FRONTMATTER:",
+                            args=["--heartbeat"], max_lines=1),
     # Both metrics from meta_presence_audit: META_PRESENCE (narrative with no meta
     # block — invisible to the integrity gate) and ORPHANED_META (meta block split
     # from its bold name, so the parser adopts the WRONG display name + vitals).
