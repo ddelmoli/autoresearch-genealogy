@@ -19,3 +19,21 @@ Prompt: [21 Session Start](../prompts/21-session-start.md)
 - The lane bandit's early draws second-guessed or tuned on tiny n ("EXPAND keeps winning, skip the floor").
 - Living/unknown people touched by any web-facing step.
 - Priorities re-argued from prose instead of taken from the plan (the exact failure the loop exists to end).
+
+## Verify Manually
+
+- Re-run `python3 scripts/session_plan.py` yourself: the counts shown at session start should match (allowing for work done since).
+- Spot-check 2-3 rows the session worked against the plan's ranking — were they actually the top of the drawn lane?
+- Check the banner section of the transcript: was anything above baseline, and if so, was it triaged before research?
+- `git -C <vault> log --oneline` — one logical unit per commit, no gate bypasses.
+
+## Reject The Result When
+
+- Research started before the plan was run or shown.
+- A hard gate was red at session start and work proceeded anyway.
+- The session drifted across lanes or into unranked targets without saying so.
+- A living/unknown person was touched by any web-facing step.
+
+## Next Prompt
+
+`22-session-close` — always. The close records the lane outcome; skipping it starves the lane bandit of its signal.
