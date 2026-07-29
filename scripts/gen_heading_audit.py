@@ -100,13 +100,21 @@ def scan(vault):
 
 
 def body_has_kept_marker(vault, file, entry_id):
-    """Cheap targeted check, only run for candidate mismatches."""
+    """Cheap targeted check, only run for candidate mismatches.
+
+    Anchors on the entry's OWN `- meta:` line (`id: <entry_id>`), not the first
+    file occurrence of the id — the first occurrence is often a RELATIVE's
+    `parents:`/`spouse:` edge listing this id, and searching that neighborhood
+    missed a real marker sitting on the entry itself (an immigrant-generation
+    father whose id first appears in his son's parents edge ~35 lines earlier;
+    found on the very first burn-down, corrected 29 JUL 2026).
+    """
     path = os.path.join(vault, file)
     text = open(path, encoding="utf-8").read()
-    i = text.find(entry_id)
+    i = text.find(f"id: {entry_id}")
     if i < 0:
         return False
-    # the entry's neighborhood: from its meta line to ~15 lines on
+    # the entry's neighborhood: its header just above to ~15 lines of body below
     seg = text[max(0, i - 400): i + 1500]
     return bool(KEPT_RE.search(seg))
 
