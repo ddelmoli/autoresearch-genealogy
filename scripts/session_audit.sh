@@ -48,12 +48,16 @@ def next_session_size():
     # One list, one reader. The literal is only a fallback for a vault with no config.
     pinned = ("Start here", "Operating protocol", "WATCHLIST AGING REMINDER",
               "Quick-resume commands", "Reminders for next session", "LONGER-TERM OPTIONS")
+    keep = 1  # archive_sections handoff default; overridden by the config below
     try:
         import json as _json
         _cfg = _json.loads((VAULT / ".maintenance.json").read_text(encoding="utf-8"))
         for _t in _cfg.get("targets", []):
-            if _t.get("name") == "handoff" and _t.get("pinned_patterns"):
-                pinned = tuple(_t["pinned_patterns"])
+            if _t.get("name") == "handoff":
+                if _t.get("pinned_patterns"):
+                    pinned = tuple(_t["pinned_patterns"])
+                if _t.get("keep") is not None:
+                    keep = int(_t["keep"])
     except Exception:
         pass
     session = sum(1 for ln in txt.splitlines()
@@ -63,13 +67,16 @@ def next_session_size():
     # Same shape the archiver's CLOSE_RE requires (`### #<digits> CLOSE`), so the
     # two tools cannot disagree about what counts as a close.
     closes = len(re.findall(r"^### #\d+ CLOSE", txt, re.M))
-    # Nudge ONLY when the archiver can actually act, i.e. mirror its own defaults
-    # (--keep 5 H2 sessions, --keep-closes 3). The old condition included
-    # `nlines > 450`, which fired forever on a file whose 3 kept closes are ~400
-    # lines by themselves -- an unactionable nag that trained everyone to ignore it.
-    # Size alone is reported in the line count; it is not an archiver action.
-    nudge = ("  <-- run scripts/archive_next_session.py"
-             if session > 5 or closes > 3 else " OK")
+    # Nudge ONLY when the archiver can actually act. The archiver is
+    # archive_sections.py --target handoff, and its `keep` comes from the SAME
+    # .maintenance.json read above (one list, one reader — this line previously
+    # pointed at the legacy archive_next_session.py with a hardcoded keep of 5,
+    # 5x looser than the configured policy; corrected 29 JUL 2026). The old
+    # condition also included `nlines > 450`, which fired forever on a file whose
+    # kept closes are ~400 lines by themselves -- an unactionable nag that trained
+    # everyone to ignore it. Size alone is reported in the line count.
+    nudge = ("  <-- run scripts/archive_sections.py --target handoff --apply"
+             if session > keep or closes > 3 else " OK")
     # ASCII guard: defer to ascii_handoff's policy (Latin letters with
     # diacritics are ALLOWED as real names; only symbols/emoji/typographic
     # punctuation/non-Latin scripts are flagged). A naive ord()>127 count
@@ -118,6 +125,12 @@ def privacy_repo():
     return f"** FINDINGS ** (exit {pr.returncode}) {tail[:200]}"
 
 parts = [
+    # THE PLAN COMES FIRST (29 JUL 2026): the banner used to lead with 10 integrity
+    # gates and bury the work signals, which pointed sessions at INTEGRITY when the
+    # stated priority is EXTENSION-first. The plan heartbeat is state-only (cheap);
+    # the session's first COMMAND is `python3 scripts/session_plan.py`, which prints
+    # the ranked worklist and draws the lane. Close with scripts/session_close.py.
+    "plan -> " + run("session_plan.py", r"PLAN:", args=["--heartbeat"], max_lines=1),
     "integrity -> " + run("gen_person_index.py",
                           r"DUP_ID \(|MISSING_ID \(|DUP_FS_PID \(|HARD violations",
                           args=["--integrity"]),

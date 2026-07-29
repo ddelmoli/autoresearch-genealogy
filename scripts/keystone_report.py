@@ -237,32 +237,19 @@ def census_records(vault):
     return out
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--vault")
-    ap.add_argument("--limit", type=int, default=25,
-                    help="rows to print (default 25)")
-    ap.add_argument("--min-load", type=int, default=1,
-                    help="only rows carrying at least this many dependants (default 1)")
-    ap.add_argument("--min-thin", type=int, default=3,
-                    help="only rows this bare or barer, 0-6 (default 3)")
-    ap.add_argument("--all", action="store_true",
-                    help="ignore --min-load/--min-thin; rank everything")
-    ap.add_argument("--csv", action="store_true")
-    ap.add_argument("--summary", action="store_true")
-    ap.add_argument("--stale-meta", action="store_true",
-                    help="instead: entries the meta block UNDERSTATES "
-                         "(says stub / no tier while the body and the census "
-                         "show real work). A relabelling backlog, not research.")
-    a = ap.parse_args(argv)
+def build_rows(vault, warn=None):
+    """Every entry scored: LOAD, THIN, score = LOAD x THIN. Unfiltered, unsorted.
 
-    vault = vault_config.resolve_vault(a.vault)
+    The one candidate-builder, shared by main() and by session_plan.py's IMPROVE
+    lane — extracted 29 JUL 2026 so the plan cannot drift from the report (the
+    "two readers, one entry" failure class: a second reader with its own parse of
+    the same population silently disagrees with the first).
+    """
     rows = {r["id"]: r for r in g.parse_narrative() if r.get("id")}
     bodies = bodies_by_id(vault)
     recs = census_records(vault)
-    if not recs:
-        print('  [warn] census unavailable; THIN veto disabled', file=sys.stderr)
+    if not recs and warn:
+        warn("census unavailable; THIN veto disabled")
 
     # child -> parents, restricted to ids that actually exist (build_edges --validate
     # keeps dangling refs at 0, but never trust that here; a dangling ref would
@@ -303,6 +290,31 @@ def main(argv=None):
             "stale": stale_meta(r, body, n) or "",
             "score": load.get(pid, 0) * thin,
         })
+    return out
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--vault")
+    ap.add_argument("--limit", type=int, default=25,
+                    help="rows to print (default 25)")
+    ap.add_argument("--min-load", type=int, default=1,
+                    help="only rows carrying at least this many dependants (default 1)")
+    ap.add_argument("--min-thin", type=int, default=3,
+                    help="only rows this bare or barer, 0-6 (default 3)")
+    ap.add_argument("--all", action="store_true",
+                    help="ignore --min-load/--min-thin; rank everything")
+    ap.add_argument("--csv", action="store_true")
+    ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--stale-meta", action="store_true",
+                    help="instead: entries the meta block UNDERSTATES "
+                         "(says stub / no tier while the body and the census "
+                         "show real work). A relabelling backlog, not research.")
+    a = ap.parse_args(argv)
+
+    vault = vault_config.resolve_vault(a.vault)
+    out = build_rows(vault, warn=lambda m: print(f"  [warn] {m}", file=sys.stderr))
 
     if not a.all:
         out = [o for o in out if o["load"] >= a.min_load and o["thin"] >= a.min_thin]
