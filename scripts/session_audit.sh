@@ -147,6 +147,13 @@ parts = [
     # UP, which means a new entry was written in a dialect the grammar forbids.
     "header_grammar -> " + run("header_audit.py", r"HEADER_GRAMMAR:"),
     "dup_name -> " + run("dup_name_audit.py", r"DUP_NAME_STRONG:|DUP_NAME_POSSIBLE:"),
+    # Generation-heading drift (gen_heading_audit.py): the `### Generation N`
+    # heading vs the meta `generation:` field — two copies of one fact, same
+    # defect class as DATE_DRIFT. 81 entries had drifted when the check landed
+    # (29 JUL 2026), and in 80 of 81 the FIELD agreed with the edge graph — the
+    # headings were lying. Advisory; drive to 0, then promote.
+    "gen-heading -> " + run("gen_heading_audit.py", r"GEN_HEADING_DRIFT:",
+                            args=["--heartbeat"], max_lines=1),
     # File-level frontmatter (frontmatter_audit.py): the layer no other gate reads.
     # On the reference vault 3 files had frontmatter that did not PARSE (unquoted
     # `: ` in a prose value), 2 had duplicate keys silently dropping data, and 10
