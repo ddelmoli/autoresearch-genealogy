@@ -50,6 +50,11 @@ SOURCE_BULLET_RE = re.compile(
     r"(?P<ann>[ \t]*\([^)\n]*\))?[ \t]*:?[ \t]*(?P<payload>.*)$"
 )
 
+# The legacy labels, for a SURGICAL in-place relabel (see migrate_bullet's
+# no-locator branch): swapping the label inside the original line preserves every
+# other byte, which rebuilding the line from parsed groups did not.
+LEGACY_LABEL_RE = re.compile(r"\*\*(?:FS[- ]attached sources?|FamilySearch sources?)\*\*", re.IGNORECASE)
+
 # Markers that make a bullet FREEFORM (unsafe to parse into clean descriptors).
 FREEFORM_MARKERS = re.compile(r"[✅⛔🟢🔴⚠️]|(?:\.\s+[A-Z])|(?:\bindexed?\b.*\bimage\b)", re.IGNORECASE)
 
@@ -131,11 +136,26 @@ def migrate_bullet(line: str):
 
     locs = find_locators(payload)
     if not locs:
-        # A `**Sources**`/`**FS-attached sources**` bullet with no locators: just
-        # relabel (nothing to restructure).
-        head = f"{indent}- **Sources**" + (f" {ann}" if ann else "") + (":" if payload.strip() else "")
-        tail = f" {payload.strip()}" if payload.strip() else ""
-        return ([head + tail], 0, 0, False, "no-locators"),
+        # NO LOCATORS => NOTHING TO RESTRUCTURE, so DO NOT REBUILD THE LINE FROM
+        # PARSED GROUPS. Rebuilding was actively destructive (found 28 JUL 2026 by
+        # diffing a trial --apply against a throwaway copy of four files; it would
+        # have damaged 59 lines while migrating 0 locators and 0 records):
+        #
+        #   * `ann` is `\([^)\n]*\)`, which CANNOT NEST. An annotation like
+        #     "(scholarly apparatus, rule 8 limb (b))" truncates at the INNER ')',
+        #     so the rebuild spliced ": " into the middle of it and emitted
+        #     "- **Sources** (scholarly apparatus, rule 8 limb (b): ):".
+        #   * the ":" was appended whenever the payload was non-empty, regardless of
+        #     whether the ORIGINAL had one, turning "- **Sources** — cited with
+        #     pages:" into "- **Sources**: — cited with pages:".
+        #
+        # Both vanish once the line is treated as text to LABEL, not to re-emit. A
+        # bullet already labelled `Sources` needs nothing at all; a legacy label gets
+        # a surgical in-place swap that preserves every other byte.
+        if label_is_sources:
+            return ([line], 0, 0, False, "no-locators-noop"),
+        relabeled = LEGACY_LABEL_RE.sub("**Sources**", line, count=1)
+        return ([relabeled], 0, 0, False, "no-locators-relabel"),
 
     freeform = bool(FREEFORM_MARKERS.search(payload))
     n_locators = len(locs)
@@ -204,7 +224,7 @@ def migrate_text(text: str):
     lines = text.splitlines()
     out_lines = []
     stats = {"bullets": 0, "records": 0, "locators": 0, "merged_pairs": 0,
-             "flagged": [], "relabeled": 0}
+             "flagged": [], "relabeled": 0, "untouched": 0}
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -219,6 +239,14 @@ def migrate_text(text: str):
             i += 1
             continue
         (new_lines, nrec, nloc, flagged, reason), = res
+        if reason == "no-locators-noop":
+            # A `**Sources**` bullet with nothing to migrate. Counting it as a
+            # migrated bullet is how a run that achieved NOTHING reported "86
+            # bullets" - a summary that reads like work was done. Track it apart.
+            stats["untouched"] += 1
+            out_lines.extend(new_lines)
+            i += 1
+            continue
         stats["bullets"] += 1
         stats["records"] += nrec
         stats["locators"] += nloc
