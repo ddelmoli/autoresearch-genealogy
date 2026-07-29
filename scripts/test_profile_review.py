@@ -215,6 +215,56 @@ def test_cadence_clamp():
     check(got == 2, "a small pool clamps the cadence down, not up")
 
 
+def test_cadence_tracks_pool_growth():
+    """1% is a TARGET, not merely a ceiling (corrected 29 JUL 2026): with no
+    per_session configured the cadence follows the LIVE pool, so it grows as the
+    vault grows. The first version pinned 13 forever — a snapshot of 1% of 1,324
+    that would have silently stopped scaling the day the vault passed 1,300."""
+    print("\n-- cadence TRACKS pool growth when per_session is absent --")
+    got, want, ceiling = PR.resolve_cadence({}, 2600)
+    check((got, want, ceiling) == (26, 26, 26),
+          "a 2,600 pool draws 26 with no config — the target moved with the vault")
+    got, _w, _c = PR.resolve_cadence({"per_session": None}, 2600)
+    check(got == 26, "an explicit null per_session also tracks the pool")
+    got, _w, _c = PR.resolve_cadence({"per_session": 13}, 2600)
+    check(got == 13, "an explicit number is honored as a below-1% override")
+
+
+def test_no_exploitation_on_tiny_sample():
+    """The protocol says 'do not tune the allocation on n<=3' — and until
+    29 JUL 2026 that rule bound the human while the CODE exploited a 3-for-3
+    arm into 46% of the next draw. Now an arm below MIN_EXPLOIT_SAMPLES
+    completed polls is filled by exploration (least-sampled first), never by
+    its rate."""
+    print("\n-- no exploitation on a tiny sample (n < MIN_EXPLOIT_SAMPLES) --")
+    arms = {a: {"polled": 0, "hits": 0} for a in ARMS}
+    arms["SOURCE_GAP"] = {"polled": 3, "hits": 3}   # perfect record, tiny n
+    st = {"arms": arms, "entries": {}, "history": []}
+    r = PR.allocate(pool(), st, today=TODAY, cadence=13)
+    drawn = {}
+    for c in r["draw"]:
+        drawn[c["arm"]] = drawn.get(c["arm"], 0) + 1
+    check(drawn.get("SOURCE_GAP", 0) == 1,
+          f"the 3-for-3 arm gets ONLY its floor slot ({drawn.get('SOURCE_GAP')}), "
+          "not the exploitation slots")
+    extras = [c["draw_reason"] for c in r["draw"] if c["draw_reason"] != "exploration floor"]
+    check(all(reason.startswith("explore (n=") for reason in extras),
+          "every non-floor slot says explore, none claims an exploit rate")
+
+    # And the positive control: once every arm has a real sample, exploitation
+    # resumes and the printed rate is the SELECTION score (assigned counted).
+    st2 = {"arms": {a: {"polled": 20, "hits": 0} for a in ARMS}, "entries": {}, "history": []}
+    st2["arms"]["SOURCE_GAP"] = {"polled": 20, "hits": 19}
+    r2 = PR.allocate(pool(), st2, today=TODAY, cadence=13)
+    hot = [c for c in r2["draw"]
+           if c["arm"] == "SOURCE_GAP" and c["draw_reason"].startswith("exploit")]
+    check(len(hot) >= 2, "a well-sampled hot arm wins exploitation slots again")
+    rates = [c["draw_reason"] for c in hot]
+    check(len(set(rates)) == len(rates),
+          f"successive exploit slots print DIFFERENT (self-damped) rates {rates} — "
+          "the draw no longer misreports its own reasoning")
+
+
 def test_record_updates_state():
     print("\n-- recording an outcome --")
     st = PR.empty_state()
@@ -324,6 +374,8 @@ def main():
     test_arms_are_derived_not_hardcoded()
     test_determinism()
     test_cadence_clamp()
+    test_cadence_tracks_pool_growth()
+    test_no_exploitation_on_tiny_sample()
     test_record_updates_state()
     test_research_privacy_gate()
     test_census_excludes_living()

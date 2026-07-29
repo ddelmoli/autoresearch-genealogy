@@ -80,13 +80,18 @@ CONFIG_KEY = "profile_review"
 # Constants that encode a DECIDED rule. Each is here because changing it changes
 # the design, not merely a default.
 # ---------------------------------------------------------------------------
-# ~1% of the vault per session. "Not negotiable upward" (operator, 28 JUL 2026) —
-# so it is CLAMPED against the live pool size rather than merely defaulted, and a
+# ~1% of the vault per session — a TARGET that tracks the live pool (see
+# resolve_cadence), and "not negotiable upward" (operator, 28 JUL 2026): a
 # configured value above 1% is reported as clamped instead of silently obeyed.
+# DEFAULT_CADENCE is only the no-vault fallback for allocate()'s signature.
 DEFAULT_CADENCE = 13
 CADENCE_FRACTION = 0.01
 # At least one entry from EVERY arm, every session. The anti-assumption device.
 EXPLORATION_FLOOR = 1
+# No exploitation on a tiny sample: an arm with fewer than this many COMPLETED
+# polls is filled by exploration (least-sampled first), never by its hit-rate.
+# The code-side enforcement of the protocol's "do not tune on n<=3" rule.
+MIN_EXPLOIT_SAMPLES = 5
 # Do not re-poll an entry inside its cooldown. Change-polling and existence-probing
 # get different cadences because profile CREATION is slower than profile EDITING.
 POLL_COOLDOWN_DAYS = 180
@@ -304,18 +309,38 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
                 floor_unmet.append(arm)
                 break
 
-    # Phase 2: exploitation by observed hit-rate, highest first.
+    # Phase 2: exploitation by observed hit-rate, highest first — but NEVER on a
+    # tiny sample. The protocol has said from day one "do not tune the allocation
+    # on one session of data / leave the bandit weights alone (n<=3)", yet the
+    # first version enforced that rule on the HUMAN and ignored it in the CODE:
+    # a 3-for-3 arm drew 46% of the very next session's slots. Now an arm whose
+    # OBSERVED n (completed polls, not this session's assignments) is below
+    # MIN_EXPLOIT_SAMPLES is not exploitable on its rate; while any such arm has
+    # eligible candidates, remaining slots go to the least-sampled of them
+    # (counting this session's assignments, so the fill spreads). Only when every
+    # available arm has a real sample does the loop exploit. (29 JUL 2026)
     while len(draw) < cadence:
-        ranked = sorted(
-            (a for a in ordered if assigned[a] < len(eligible_by_arm.get(a) or [])),
-            key=lambda a: (-smoothed_rate((arms_state.get(a) or {}).get("hits", 0),
-                                          (arms_state.get(a) or {}).get("polled", 0) + assigned[a]),
-                           ordered.index(a)))
-        if not ranked:
+        avail = [a for a in ordered if assigned[a] < len(eligible_by_arm.get(a) or [])]
+        if not avail:
             break                      # pool exhausted; report it, never pad
-        arm = ranked[0]
+        def _polled(a):
+            return (arms_state.get(a) or {}).get("polled", 0)
+        undersampled = [a for a in avail if _polled(a) < MIN_EXPLOIT_SAMPLES]
+        if undersampled:
+            arm = min(undersampled,
+                      key=lambda a: (_polled(a) + assigned[a], ordered.index(a)))
+            take(arm, f"explore (n={_polled(arm)} < {MIN_EXPLOIT_SAMPLES})")
+            continue
+        arm = min(avail,
+                  key=lambda a: (-smoothed_rate((arms_state.get(a) or {}).get("hits", 0),
+                                                _polled(a) + assigned[a]),
+                                 ordered.index(a)))
+        # The printed rate is the SELECTION score (denominator includes this
+        # session's assignments). The first version recomputed it without
+        # `assigned`, so slots 2..n printed a stale rate — the draw lied about
+        # its own reasoning. (29 JUL 2026)
         rate = smoothed_rate((arms_state.get(arm) or {}).get("hits", 0),
-                             (arms_state.get(arm) or {}).get("polled", 0))
+                             _polled(arm) + assigned[arm])
         take(arm, f"exploit (hit-rate {rate:.2f})")
 
     return {
@@ -440,13 +465,22 @@ def probe_targets(cand, state, today):
 
 
 def resolve_cadence(config, pool_size):
-    """The configured cadence, CLAMPED to ~1% of the live pool.
+    """The cadence: ~1% of the LIVE pool, tracked, and clamped upward.
 
     "CADENCE ~1% = ~13 entries per session. Not negotiable upward." Enforced in
     code rather than trusted to a comment, and a clamp is REPORTED, never silent.
+
+    ⚠ CORRECTED 29 JUL 2026: 1% is a TARGET, not merely a ceiling. The first
+    version read `per_session` (13, a snapshot of 1% of 1,324) and used the live
+    1% only as a clamp — so the draw would have stayed 13 forever as the vault
+    grew, scaling DOWN but never UP. The operator's spec is "~1% of the vault,
+    adjusting as the vault grows". Now: an ABSENT/null `per_session` means
+    "track ~1% of the live pool" (the recommended config); an explicit number is
+    honored as a smaller-than-1% override and still clamped to the ceiling.
     """
-    want = int(config.get("per_session") or DEFAULT_CADENCE)
     ceiling = max(1, round(pool_size * CADENCE_FRACTION))
+    raw = config.get("per_session")
+    want = int(raw) if raw else ceiling
     return min(want, ceiling), want, ceiling
 
 
