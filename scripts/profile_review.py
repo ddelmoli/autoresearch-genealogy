@@ -83,23 +83,33 @@ CONFIG_KEY = "profile_review"
 # Constants that encode a DECIDED rule. Each is here because changing it changes
 # the design, not merely a default.
 # ---------------------------------------------------------------------------
-# The per-session sample rate — a TARGET that tracks the live pool (see
-# resolve_cadence). A configured value ABOVE it is reported as clamped rather
-# than silently obeyed; that guard is unchanged and is the point of the constant.
+# THE SAMPLE RATE HAS THREE LAYERS, highest wins (added 30 JUL 2026 — the rate
+# was a code constant, and "easily configurable" is not the same as "one line to
+# edit in a script"):
 #
-# ** RAISED 1% -> 1.5% ON 30 JUL 2026, BY THE OPERATOR WHO SET THE ORIGINAL 1%. **
-# The old comment quoted them as "not negotiable upward" (28 JUL 2026), which was
-# a real constraint and not a stylistic flourish: the rationale was that "the FS
-# half costs one rendered page visit per person". Two things changed. The rotation
-# was fixed on 30 JUL (it had never actually rotated — the draw printed one key
-# and the cooldown read another), so a slice now advances coverage instead of
-# re-polling the same people; and a poll now reads a SECOND surface (Research
-# Help), so it is worth more per person AND costs more per person. The rate is
-# the operator's dial, not the code's: change it here, in one place.
+#   1. --sample-percent X   per-SESSION override, one run only
+#   2. `sample_percent` in .maintenance.json `profile_review`   the standing rate
+#   3. DEFAULT_SAMPLE_PERCENT below                             no-config fallback
+#
+# ** WHAT THE CLAMP NOW MEANS. ** It was "not negotiable upward" (operator,
+# 28 JUL 2026), enforcing a fixed 1%. That guard is kept but narrowed to what it
+# was actually protecting against: nothing may exceed the standing rate SILENTLY
+# or BY ACCIDENT. So an absolute count (`--cadence N`, or `per_session` in config)
+# is still clamped DOWN to the effective rate's ceiling and the clamp is reported.
+# An explicit `--sample-percent` is a deliberate act by the operator for one
+# session, so it is HONORED even above the standing rate — and announced, with the
+# standing rate named, so an override can never be mistaken for the norm.
+#
+# History: 1% (28 JUL 2026) -> 1.5% (30 JUL 2026). It moved because the rotation
+# was fixed that day (it had never rotated — the draw printed one key, the
+# cooldown read another) and because a poll now reads a SECOND surface (Research
+# Help), so each person costs more and yields more.
 #
 # DEFAULT_CADENCE is only the no-vault fallback for allocate()'s signature.
+DEFAULT_SAMPLE_PERCENT = 1.5
 DEFAULT_CADENCE = 20
-CADENCE_FRACTION = 0.015
+# Back-compat alias: the fraction form of the default rate.
+CADENCE_FRACTION = DEFAULT_SAMPLE_PERCENT / 100.0
 # At least one entry from EVERY arm, every session. The anti-assumption device.
 EXPLORATION_FLOOR = 1
 # No exploitation on a tiny sample: an arm with fewer than this many COMPLETED
@@ -478,23 +488,46 @@ def probe_targets(cand, state, today):
     return out
 
 
-def resolve_cadence(config, pool_size):
-    """The cadence: ~1.5% of the LIVE pool, tracked, and clamped upward.
+def resolve_sample_percent(config, override=None):
+    """The effective rate for this run, and WHERE it came from.
 
-    The rate lives in CADENCE_FRACTION (1.5% since 30 JUL 2026; 1% before that).
-    The CEILING is enforced in code rather than trusted to a comment, and a clamp
-    is REPORTED, never silent — raising the rate did not remove the guard.
-
-    ⚠ CORRECTED 29 JUL 2026: 1% is a TARGET, not merely a ceiling. The first
-    version read `per_session` (13, a snapshot of 1% of 1,324) and used the live
-    1% only as a clamp — so the draw would have stayed 13 forever as the vault
-    grew, scaling DOWN but never UP. The operator's spec is "a fixed fraction of
-    the vault,
-    adjusting as the vault grows". Now: an ABSENT/null `per_session` means
-    "track the live pool at CADENCE_FRACTION" (the recommended config); an
-    explicit number is honored as a smaller override and still clamped.
+    Precedence: `override` (per-session CLI) > config `sample_percent` (standing)
+    > DEFAULT_SAMPLE_PERCENT. Returns (percent, source, standing_percent) so the
+    caller can say which layer won and what the standing rate is — an override
+    that is not announced is indistinguishable from a changed setting.
     """
-    ceiling = max(1, round(pool_size * CADENCE_FRACTION))
+    raw = config.get("sample_percent")
+    try:
+        standing = float(raw) if raw is not None else DEFAULT_SAMPLE_PERCENT
+    except (TypeError, ValueError):
+        standing = DEFAULT_SAMPLE_PERCENT
+    if standing <= 0:
+        standing = DEFAULT_SAMPLE_PERCENT
+    if override is None:
+        src = "config" if raw is not None else "default"
+        return standing, src, standing
+    pct = float(override)
+    if pct <= 0:
+        raise SystemExit("profile_review: --sample-percent must be > 0")
+    return pct, "session-override", standing
+
+
+def resolve_cadence(config, pool_size, sample_percent=None):
+    """Size the slice: a fraction of the LIVE pool, tracked, with the ceiling
+    enforced in code and any clamp REPORTED rather than applied silently.
+
+    ⚠ 1% was a TARGET, not merely a ceiling (corrected 29 JUL 2026): the first
+    version read `per_session` and used the live rate only as a clamp, so the draw
+    would have stayed at a snapshot value forever as the vault grew — scaling DOWN
+    but never UP. An ABSENT/null `per_session` means "track the live pool at the
+    effective rate" (the recommended config); an explicit number is honored as a
+    smaller override and still clamped.
+
+    `sample_percent` is the already-resolved effective rate (see
+    resolve_sample_percent); None means "use the code default".
+    """
+    pct = DEFAULT_SAMPLE_PERCENT if sample_percent is None else float(sample_percent)
+    ceiling = max(1, round(pool_size * pct / 100.0))
     raw = config.get("per_session")
     want = int(raw) if raw else ceiling
     return min(want, ceiling), want, ceiling
@@ -503,9 +536,12 @@ def resolve_cadence(config, pool_size):
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
-def print_draw(result, clamp_note=None):
+def print_draw(result, clamp_note=None, rate=None):
     print("=== PROFILE-REVIEW ROTATION — DRAW (dry run; nothing written, no network) ===")
-    print(f"date {result['date']}  cadence {result['cadence']}  "
+    # `rate` = (percent, source). Shown because the slice size is meaningless
+    # without it: 20 could be the standing rate or a one-off override.
+    rate_s = f"  rate {rate[0]:g}% ({rate[1]})" if rate else ""
+    print(f"date {result['date']}  cadence {result['cadence']}{rate_s}  "
           f"exploration floor {result['floor']}/arm  "
           f"pool {result['pool_total']}  eligible {result['eligible_total']}")
     if clamp_note:
@@ -666,6 +702,12 @@ def main():
     ap.add_argument("--gen-range", help='Narrow the pool, e.g. "4-6".')
     ap.add_argument("--region", help="Narrow the pool by region substring.")
     ap.add_argument("--confidence", help="Narrow the pool by tier (S/M/Sp/U).")
+    ap.add_argument("--sample-percent", "--pct", type=float, dest="sample_percent",
+                    metavar="X",
+                    help="Sample X%% of the pool THIS RUN ONLY (e.g. --pct 3). Overrides "
+                         "the standing `sample_percent` in .maintenance.json and is "
+                         "announced in the output. The standing rate is the config key; "
+                         "this flag does not change it.")
     ap.add_argument("--cadence", type=int, help="Override the per-session draw size "
                                                 "(still clamped to CADENCE_FRACTION of the pool).")
     ap.add_argument("--json", action="store_true", help="Machine-readable draw.")
@@ -766,19 +808,35 @@ def main():
     cfg = load_config(vault)
     if args.cadence:
         cfg = dict(cfg, per_session=args.cadence)
-    cadence, want, ceiling = resolve_cadence(cfg, len(candidates))
-    clamp = (f"** cadence CLAMPED {want} -> {cadence}: ~{CADENCE_FRACTION:.1%} of a "
-             f"{len(candidates)}-entry pool is {ceiling}. Raise CADENCE_FRACTION to change it. **"
+    pct, pct_src, standing = resolve_sample_percent(cfg, args.sample_percent)
+    cadence, want, ceiling = resolve_cadence(cfg, len(candidates), pct)
+    clamp = (f"** cadence CLAMPED {want} -> {cadence}: ~{pct:g}% of a "
+             f"{len(candidates)}-entry pool is {ceiling}. Raise the rate with "
+             f"--pct X (this run) or `sample_percent` in .maintenance.json. **"
              if cadence < want else None)
+    if pct_src == "session-override":
+        # ** stderr, NOT stdout. ** --json is a machine contract (session_plan
+        # parses it); a banner on stdout broke it, and session_plan's except
+        # turned the parse error into "ROTATE 0 candidates" — a tool failure
+        # rendered as an empty worklist. The JSON carries sample_percent +
+        # sample_percent_source, so nothing is lost to a machine reader.
+        print(f"** SAMPLE RATE OVERRIDDEN FOR THIS RUN: {pct:g}% (standing rate "
+              f"{standing:g}%) -> {cadence} entries, not {max(1, round(len(candidates) * standing / 100.0))}. "
+              f"This does NOT change the standing rate; edit `sample_percent` in "
+              f"{MAINTENANCE_FILE} for that. **", file=sys.stderr)
 
     result = allocate(candidates, state, today=today, cadence=cadence)
     for c in result["draw"]:
         c["probes"] = probe_targets(c, state, today)
 
     if args.json:
+        # Carry the effective rate + which layer set it, so a machine reader
+        # (session_plan) sees the same provenance the human banner states.
+        result = dict(result, sample_percent=pct, sample_percent_source=pct_src,
+                      standing_sample_percent=standing)
         print(json.dumps(result, indent=2, default=str))
     else:
-        print_draw(result, clamp)
+        print_draw(result, clamp, rate=(pct, pct_src))
     return 0
 
 

@@ -205,6 +205,54 @@ def test_determinism():
           "the same pool + state + date draws the same slice")
 
 
+def test_sample_rate_precedence():
+    """** THE RATE IS A DIAL WITH THREE LAYERS, highest wins. ** Added 30 JUL 2026
+    after the operator pointed out that a code constant is not "configurable":
+    --sample-percent (this run) > `sample_percent` in .maintenance.json (standing)
+    > DEFAULT_SAMPLE_PERCENT (fallback). Each layer is asserted WITH its reported
+    source, because an override that is not announced is indistinguishable from a
+    changed setting."""
+    print("\n-- sample-rate precedence, and the source is reported --")
+    pct, src, standing = PR.resolve_sample_percent({})
+    check((pct, src) == (PR.DEFAULT_SAMPLE_PERCENT, "default"),
+          f"no config -> the code default ({PR.DEFAULT_SAMPLE_PERCENT}%), reported as 'default'")
+    pct, src, standing = PR.resolve_sample_percent({"sample_percent": 2.0})
+    check((pct, src, standing) == (2.0, "config", 2.0),
+          "a configured sample_percent wins over the default, reported as 'config'")
+    pct, src, standing = PR.resolve_sample_percent({"sample_percent": 2.0}, 5)
+    check((pct, src, standing) == (5.0, "session-override", 2.0),
+          "a per-session override wins over config AND still reports the standing rate")
+
+    # ** The override is honored ABOVE the standing rate — that is the whole point.
+    # The old guard read 'not negotiable upward'; it is now narrowed to 'nothing
+    # exceeds the standing rate SILENTLY', which the source field is what enforces.
+    cad, _w, _c = PR.resolve_cadence({}, 1000, 5.0)
+    check(cad == 50, "an override of 5% on a 1,000 pool really draws 50, not the standing size")
+
+    # Bad input is refused, not silently coerced.
+    for bad in (0, -1):
+        try:
+            PR.resolve_sample_percent({}, bad); ok = False
+        except SystemExit:
+            ok = True
+        check(ok, f"--sample-percent {bad} is refused")
+
+    # An unparseable config value falls back rather than crashing the session.
+    pct, src, _s = PR.resolve_sample_percent({"sample_percent": "not-a-number"})
+    check(pct == PR.DEFAULT_SAMPLE_PERCENT, "a junk sample_percent falls back to the default")
+
+
+def test_absolute_count_still_clamps_to_the_rate():
+    """The surviving half of the original 'not negotiable upward' guard: an
+    ABSOLUTE count (--cadence / per_session) is clamped DOWN to whatever the
+    effective rate allows, even when that rate came from a session override."""
+    print("\n-- absolute counts still clamp to the effective rate --")
+    got, want, ceiling = PR.resolve_cadence({"per_session": 999}, 1000, 1.5)
+    check((got, want, ceiling) == (15, 999, 15), "999 clamps to 15 at the standing 1.5%")
+    got, _w, ceiling = PR.resolve_cadence({"per_session": 999}, 1000, 4.0)
+    check((got, ceiling) == (40, 40), "and to 40 when the session override raises the rate to 4%")
+
+
 def test_cadence_clamp():
     """** DERIVED FROM CADENCE_FRACTION, NOT HARD-CODED. ** These asserted 13 and 26
     literally until 30 JUL 2026, when the operator raised the rate 1% -> 1.5% and
@@ -392,6 +440,46 @@ tags: [test]
 """
 
 
+def test_json_stdout_stays_machine_readable():
+    """** REGRESSION, 30 JUL 2026: --json IS A MACHINE CONTRACT. **
+
+    The per-session override banner was first written to STDOUT. That broke
+    `json.loads` in session_plan.lane_rotate, whose bare `except` returned [] —
+    so a tool failure rendered as "ROTATE 0 candidates", i.e. an empty worklist,
+    which is the most dangerous possible way for it to fail. The banner now goes
+    to stderr and the JSON carries the rate provenance instead.
+
+    Asserted through a real subprocess, because the bug lived in WHICH STREAM was
+    written, and an in-process call to main() would not have caught it.
+    """
+    print("\n-- --json stdout is parseable even with a session override --")
+    tmp = tempfile.mkdtemp(prefix="pr_json_")
+    try:
+        with open(os.path.join(tmp, ".autoresearch.json"), "w", encoding="utf-8") as f:
+            json.dump({"person_model": "narrative"}, f)
+        with open(os.path.join(tmp, "Family_Tree_Test.md"), "w", encoding="utf-8") as f:
+            f.write(FIXTURE_TREE)
+        import subprocess
+        env = {**os.environ, "AUTORESEARCH_VAULT": tmp}
+        r = subprocess.run([sys.executable, os.path.join(SCRIPT_DIR, "profile_review.py"),
+                            "--json", "--sample-percent", "50"],
+                           capture_output=True, text=True, env=env, timeout=120)
+        try:
+            payload = json.loads(r.stdout)
+            parsed = True
+        except Exception:
+            parsed = False
+        check(parsed, "stdout parses as JSON while an override banner is in flight")
+        if parsed:
+            check(payload.get("sample_percent_source") == "session-override",
+                  "the JSON carries the rate provenance a machine reader needs")
+        check("SAMPLE RATE OVERRIDDEN" in r.stderr,
+              "and the human-facing banner went to STDERR, where it cannot corrupt the contract")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.environ.pop("AUTORESEARCH_VAULT", None)
+
+
 def test_census_excludes_living():
     """The deferred_decisions-11 regression: living/unknown people must not appear
     in ANY coverage category, and must not silently vanish from the census either.
@@ -444,12 +532,15 @@ def main():
     test_prior_is_a_tilt_within_an_arm()
     test_arms_are_derived_not_hardcoded()
     test_determinism()
+    test_sample_rate_precedence()
+    test_absolute_count_still_clamps_to_the_rate()
     test_cadence_clamp()
     test_cadence_tracks_pool_growth()
     test_no_exploitation_on_tiny_sample()
     test_record_updates_state()
     test_record_by_displayed_pid_enters_cooldown()
     test_research_privacy_gate()
+    test_json_stdout_stays_machine_readable()
     test_census_excludes_living()
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)

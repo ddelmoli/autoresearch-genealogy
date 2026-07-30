@@ -121,17 +121,28 @@ def lane_verify(vault):
     return rows
 
 
-def lane_rotate(vault):
+def lane_rotate(vault, sample_percent=None):
     """The profile-review draw, delegated: that tool owns its own bandit state.
     Subprocess, not import — its draw path reads/derives its own census and the
     --json contract is the stable surface."""
     script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profile_review.py")
     try:
-        r = subprocess.run([sys.executable, script, "--json"],
+        cmd = [sys.executable, script, "--json"]
+        if sample_percent:                      # per-session rate override, forwarded
+            cmd += ["--sample-percent", str(sample_percent)]
+        r = subprocess.run(cmd,
                            capture_output=True, text=True, timeout=600,
                            env={**os.environ, "AUTORESEARCH_VAULT": vault})
         d = json.loads(r.stdout)
-    except Exception:
+    except Exception as e:
+        # ** DO NOT return [] SILENTLY. ** An empty list renders as "ROTATE 0
+        # candidates", which reads as "nothing to poll" when it actually means
+        # the subprocess failed or its --json contract broke. That exact
+        # confusion happened on 30 JUL 2026 when a banner was written to stdout.
+        print(f"session_plan: WARNING - the ROTATE lane could not be read from "
+              f"profile_review.py ({type(e).__name__}: {e}). Reporting 0 "
+              f"candidates, which is a TOOL FAILURE, not an empty worklist.",
+              file=sys.stderr)
         return []
     return [{"id": e.get("id"), "name": e.get("name"), "gen": e.get("gen"),
              "file": e.get("region") or "", "why": f"rotation draw [{e.get('arm')}]: "
@@ -230,6 +241,11 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--vault")
     ap.add_argument("--limit", type=int, help="rows per lane (default 5)")
+    ap.add_argument("--sample-percent", "--pct", type=float, dest="sample_percent",
+                    metavar="X",
+                    help="Sample X%% of the pool in the ROTATE lane THIS SESSION only "
+                         "(forwarded to profile_review.py). The standing rate is "
+                         "`sample_percent` in .maintenance.json.")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--heartbeat", action="store_true")
     ap.add_argument("--record", action="store_true",
@@ -268,8 +284,11 @@ def main(argv=None):
         "EXPAND": lane_expand(vault),
         "IMPROVE": lane_improve(vault),
         "VERIFY": lane_verify(vault),
-        "ROTATE": lane_rotate(vault),
+        "ROTATE": lane_rotate(vault, a.sample_percent),
     }
+    if a.sample_percent:
+        print(f"** ROTATE sample rate overridden for this session: {a.sample_percent:g}% "
+              f"(standing rate is `sample_percent` in .maintenance.json). **")
     sizes = {ln: len(rows) for ln, rows in lanes.items()}
     pick, reason = draw_lane(state, sizes, min_sample, stale_after)
 
