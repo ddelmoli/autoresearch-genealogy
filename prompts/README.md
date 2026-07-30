@@ -62,6 +62,33 @@ Run `20-creative-vault-review` to pass every direct-line ancestor and significan
 
 **Running routine research sessions on a vault with the mechanized session loop?**
 Open every session with `21-session-start` (banner -> `scripts/session_plan.py` -> work the drawn lane) and close it with `22-session-close` (`scripts/session_close.py` checklist -> Handoff close block -> commit). These two are dispatchers, not campaigns: the numbered prompts above are what a lane dispatches TO (e.g. VERIFY -> prompt 18, a harvest target -> prompt 19).
+## Overriding A Field For One Run
+
+Every field in `## Autoresearch Configuration` is a default, not a fixed value.
+To change one for a single run, **name the field and give it a value**:
+
+```
+run 19-fs-source-harvest with Iterations=12
+run 01-tree-expansion with Iterations=5, Scope=Family_Tree_<Region>.md
+```
+
+`Field=value` is unambiguous. A bare count ("run 19 with 12 iterations") usually
+reads the same way, with one exception worth knowing.
+
+**`Iterations` is a work-volume dial in 01-20, and a structural fact in 21-22.**
+For 01-20 it means "how many autonomous loops of the Protocol to run", so raising
+it asks for more work. For **21-session-start** it means *one lane draw per
+session* and **cannot be raised** — a second draw inside one session would record
+a second bandit observation for a single session. The dial that scales work there
+is **`Lane targets`**:
+
+```
+run 21-session-start with Lane targets=10
+```
+
+So: if a prompt's `Iterations` is a plain number, "with Iterations=N" is the
+override. If you want *more work* out of 21, say `Lane targets`.
+
 ## Human Review Cards
 
 Every prompt has a matching review card. Read the card after the prompt finishes and before accepting changes.

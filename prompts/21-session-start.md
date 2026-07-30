@@ -77,7 +77,9 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
      this session's lane — a re-run does not mint a fresh draw, and the lane
      there is not an unrecorded outcome from the last session.
 
-3. WORK THE DRAWN LANE per the vault's Operating_Protocol: check-before-
+3. WORK THE DRAWN LANE, for [LANE_TARGETS] rows off its ranked worklist
+   (default: as many as the session has room for), per the vault's
+   Operating_Protocol: check-before-
    searching per source (grep logs/ and Open_Questions first), log negatives,
    wire only source-backed relationships (new edges carry ?), never web-search
    living/unknown people.
@@ -105,6 +107,9 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
 
 - **[VAULT_PATH]** — absolute path to the vault working tree (the private
   repo/directory holding `Family_Tree*.md`; e.g. `$(git rev-parse --show-toplevel)/vault-yourname`).
+- **[LANE_TARGETS]** (optional) — how many rows to work off the drawn lane's
+  ranked worklist. Omit for "as many as the session has room for". ⚠ This is the
+  volume dial for this prompt; **`Iterations` is not** (see the field below).
 
 ## Autoresearch Configuration
 
@@ -175,8 +180,17 @@ counts via the owning tool's heartbeat at close
 - One logical unit per commit; the pre-commit gates pass every time; no
   `--no-verify`.
 
-**Iterations**: 1 (one draw per session; the loop across sessions is the
-bandit's).
+**Iterations**: 1 — and this is a STRUCTURAL FACT, not a volume dial. One draw
+per session; the loop across sessions is the bandit's. **This is the one prompt
+whose `Iterations` cannot be raised**, because a second draw inside one session
+would mint a second bandit observation for a single session and corrupt the
+signal the bandit exists to carry. To ask for MORE WORK, raise **Lane targets**
+below — that is the dial you want, and it is the one that scales.
+
+**Lane targets**: as many as the session has room for (default). The number of
+rows to work off the DRAWN lane's ranked worklist — the plan prints them in
+priority order, and this says how far down to go. Override it per run
+(`with Lane targets=10`); partial is fine and must be stated at close.
 
 **Protocol**:
 
@@ -190,7 +204,8 @@ bandit's).
 2. Check for a pending draw; otherwise run `session_plan.py`. Present the
    counts, the drawn lane, and the top candidates to the operator before
    starting.
-3. Work the lane top-down (the plan's ranking is the priority order), applying
+3. Work the lane top-down for **Lane targets** rows (the plan's ranking is the
+   priority order; the default is "as many as the session has room for"), applying
    the owning prompt/workflow for the work type (e.g. prompt 18 for VERIFY
    edges, prompt 19 for a ROTATE/harvest target, the frontier declaration
    pattern for EXPAND rows that terminate). Run the profile-review slice this
