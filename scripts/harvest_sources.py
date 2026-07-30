@@ -182,7 +182,8 @@ HOST_LOCATOR_PATTERNS = [
 # these (not full words like "FamilySearch") so a prose "FamilySearch: the site"
 # is never mistaken for a locator line. Includes hosts with no legacy pattern
 # (anc/wt/etc.) whose locators only ever appear host-prefixed.
-EMITTED_HOST_IDS = ["fs", "anc", "wt", "antenati", "metryki", "szukajwarchiwach", "agad"]
+EMITTED_HOST_IDS = ["fs", "anc", "wt", "antenati", "metryki", "szukajwarchiwach",
+                    "agad", "tna"]
 # A host-prefixed locator token: a short host id, a colon, then a non-space run.
 # PREFIX detector only — it says "a locator starts here", not "this cites a record".
 # The census must not count on it alone (a prose `fs:1:1:` matches); use
@@ -260,6 +261,49 @@ def per_host_locators(text: str) -> "Dict[str, int]":
             seen.add(key)
             counts[host] += 1
     return dict(counts)
+
+
+SOURCES_BULLET_RE = re.compile(r"^\s*-\s+\*\*(Sources|FS-attached sources)", re.I)
+
+
+def sources_bullet_text(body: str) -> str:
+    """Just the `- **Sources**` / `- **FS-attached sources**` bullet(s) of an entry
+    body, including their indented sub-bullets.
+
+    ** WHY A STRUCTURAL SPLIT AND NOT A KEYWORD ONE (deferred_decisions 19,
+    settled 30 JUL 2026). ** The census credited a locator cited as a research
+    ROUTE exactly as it credited one cited as EVIDENCE, so a `FRONTIER
+    DECLARATION` naming the images somebody should go and read made the
+    unresolved person look well sourced. The obvious fix — skip lines carrying a
+    route marker — was measured and REJECTED: it wrongly zeroed an entry whose
+    line contained the word "unread" (about a register image) *and* cited the
+    real marriage record that documents him. A line can hold a citation and a
+    caveat at once, so exclusion must key on WHERE a citation sits, not on what
+    words surround it. Same position-over-guesswork principle as the
+    entry-boundary gate.
+
+    Measured on the reference vault the day it was written: strict counting drops
+    339 of 7,868 records (4.3%) and takes 44 entries to zero — and roughly half of
+    those are legitimate prose citations that need MIGRATING into a Sources
+    bullet, not deleting. Hence the staged rollout: this function exists and is
+    reported, but `--strict-sources` is opt-in until that migration is done."""
+    out, inside = [], False
+    for ln in body.splitlines():
+        if SOURCES_BULLET_RE.search(ln):
+            inside = True
+            out.append(ln)
+            continue
+        if inside:
+            if ln.strip() == "" or re.match(r"^\s{2,}", ln):
+                out.append(ln)
+                continue
+            inside = False
+    return "\n".join(out)
+
+
+def count_records_strict(body: str) -> int:
+    """count_records restricted to what a Sources bullet actually asserts."""
+    return count_records(sources_bullet_text(body))
 
 
 def count_records(body: str) -> int:
@@ -816,6 +860,18 @@ def heartbeat():
     base = (f"RECIPE-S: SOURCE_GAP {sg} (harvestable {sg_pid}), LOW_COVERAGE {low}, "
             f"WELL_SOURCED {well}, LIVING_EXCLUDED {counts['LIVING_EXCLUDED']}")
 
+    # deferred_decisions 19: the strict/loose gap, reported every session so the
+    # staged migration cannot quietly stall. Drops to 0 when the flip is safe.
+    loose_t = strict_t = 0
+    for _path, _rows in entry_blocks_with_ids().items():
+        for _id, _name, _ln, _body in _rows:
+            _b = truncate_at_break(_body)
+            loose_t += count_records(_b)
+            strict_t += count_records_strict(_b)
+    if loose_t - strict_t:
+        base += (f"; SOURCES-BULLET GAP {loose_t - strict_t} records cited outside a "
+                 f"Sources bullet [migrate: --sources-conformance]")
+
     cfg = {}
     try:
         with open(os.path.join(VAULT, ".maintenance.json"), encoding="utf-8") as f:
@@ -871,9 +927,45 @@ def main():
     parser.add_argument("--region", type=str, default=None, help="Filter by region substring (e.g. Italian, Polish, British).")
     parser.add_argument("--include-structural", action="store_true",
                         help="Fold STRUCTURAL_GAP entries (deep medieval / pre-register lines that can never get an indexed-record ARK) back into SOURCE_GAP.")
+    parser.add_argument("--sources-conformance", action="store_true",
+                        help="Report the deferred_decisions-19 migration worklist: entries whose "
+                             "records are cited OUTSIDE a `- **Sources**` bullet, and would stop "
+                             "counting when strict crediting is switched on.")
     parser.add_argument("--heartbeat", action="store_true",
                         help="Print a one-line coverage + cadence status for the SessionStart audit suite (reads .maintenance.json `harvest`).")
     args = parser.parse_args()
+
+    if args.sources_conformance:
+        loose = strict = 0
+        zero, partial = [], 0
+        for path, rows in entry_blocks_with_ids().items():
+            for _id, name, _ln, body in rows:
+                body = truncate_at_break(body)
+                w = count_records(body)
+                if not w:
+                    continue
+                st = count_records_strict(body)
+                loose += w
+                strict += st
+                if st == 0:
+                    zero.append((w, name, os.path.basename(path)))
+                elif st < w:
+                    partial += 1
+        print("=== SOURCES-BULLET CONFORMANCE (deferred_decisions 19) ===")
+        print(f"  records credited today                : {loose}")
+        print(f"  records inside a `- **Sources**` bullet: {strict}")
+        print(f"  would stop counting on the flip       : {loose - strict} "
+              f"({100.0 * (loose - strict) / loose:.1f}%)" if loose else "")
+        print(f"  entries dropping to ZERO              : {len(zero)}   <- MIGRATE THESE FIRST")
+        print(f"  entries losing SOME records           : {partial}")
+        print()
+        print("  Migration = move the entry's real record citations into a `- **Sources**`")
+        print("  bullet. A locator that is a research ROUTE is meant to stop counting; a")
+        print("  locator that documents the person is meant to move. That call is per-entry.")
+        print()
+        for w, name, f in sorted(zero, reverse=True):
+            print(f"    {w:>3} records  {name[:46]:<46} {f}")
+        return 0
 
     if args.heartbeat:
         return heartbeat()

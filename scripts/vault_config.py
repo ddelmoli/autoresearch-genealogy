@@ -74,6 +74,19 @@ DEFAULTS = {
         "metryki":          {"label": "Metryki (genealodzy.pl)", "url_pattern": "metryki.genealodzy.pl",  "locator_kind": "url"},
         "szukajwarchiwach": {"label": "Szukaj w Archiwach",  "url_pattern": "szukajwarchiwach.gov.pl",     "locator_kind": "url"},
         "agad":             {"label": "AGAD (Fond 300)",     "url_pattern": "agadd2.home.net.pl",          "locator_kind": "id"},
+        # TNA, added 30 JUL 2026 (deferred_decisions 17). A National Archives CLASS
+        # REFERENCE is a stable, resolvable identifier for a REAL primary record --
+        # which is what a locator is for -- even when the document is not digitised
+        # and what was read is the calendared catalogue abstract. That is NOT a book
+        # citation (rule 8 limb (b)), which is why it may count.
+        # ** SPELLING: NO SEPARATOR. ** TNA writes "C 1/548/65"; a locator token is a
+        # non-space run, so `tna:C 1/548/65` truncates at the space and cites "C".
+        # An underscore is not enough either: the record detector needs a 3+ char
+        # alphanumeric run and `C_78/3/3` has none, so that spelling counts for some
+        # references and silently not for others. Write `tna:C1/548/65`, `tna:C78/3/3`
+        # -- both verified to count -- and keep the human-readable reference in the
+        # sub-bullet description, which is where a reader wants it anyway.
+        "tna":              {"label": "The National Archives (UK)", "url_pattern": "discovery.nationalarchives.gov.uk", "locator_kind": "id"},
     },
 
     # --- optional person-record model (spec/optional-person-model) ---
