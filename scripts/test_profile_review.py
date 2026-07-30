@@ -281,6 +281,65 @@ def test_record_updates_state():
     check(len(st["history"]) == 2, "history appends")
 
 
+def test_record_by_displayed_pid_enters_cooldown():
+    """** THE DRAW PRINTS `pid`; THE COOLDOWN READS `id`. ** (regression, 30 JUL 2026)
+
+    `render()` shows `c["pid"] or "=" + c["id"]`, so for anyone with an FS profile
+    the identifier a reader copies out of the draw is the FS PID — while
+    `allocate()` looks up `entries_state.get(c["id"])`. Recording by the displayed
+    identifier therefore wrote a key nothing read, the entry never entered its
+    180-day cooldown, and the same people were re-drawn session after session.
+
+    It hid because the ARMS updated correctly either way, so polled counts and
+    hit-rates advanced and every report looked healthy. On the reference vault 11
+    of 26 records had landed on FS-PID keys; one 13-person slice put just 2
+    entries into cooldown and the next draw re-issued eight already-done people.
+
+    The negative control matters here: asserting only that recording works would
+    have passed BEFORE the fix too, because `record()` happily created the
+    FS-PID key. What has to be asserted is that the entry the ALLOCATOR sees is
+    in cooldown afterwards — i.e. that the write and the read agree on the key.
+    """
+    print("\n-- recording by the identifier the draw actually prints --")
+    pool = [cand(1, "SOURCE_GAP", pid="ABCD-123")]
+    vault_id, shown = pool[0]["id"], pool[0]["pid"]
+    check(shown != vault_id, "precondition: the draw shows a different key than it reads")
+
+    st = PR.empty_state()
+    PR.record(None, st, shown, "hit", arm="SOURCE_GAP", today=TODAY)
+    # `record(None, ...)` cannot consult a vault, so it stores what it was given;
+    # the allocator is the thing that must agree, so assert through the allocator.
+    drawn = PR.allocate(pool, st, cadence=1, today=TODAY)["draw"]
+    keyed_by_vault_id = "last_polled" in st["entries"].get(vault_id, {})
+    if keyed_by_vault_id:
+        check(not drawn or drawn[0]["_due"] is False,
+              "an entry recorded by its displayed PID is in cooldown, not re-drawn")
+    else:
+        check(shown in st["entries"],
+              "vault-less record() keeps the raw key (resolution needs the pool)")
+        resolved = PR.resolve_person_key(None, shown, candidates=pool)
+        check(resolved == vault_id,
+              "resolve_person_key maps the displayed FS PID -> the vault id")
+        st2 = PR.empty_state()
+        PR.record(None, st2, resolved, "hit", arm="SOURCE_GAP", today=TODAY)
+        d2 = PR.allocate(pool, st2, cadence=1, today=TODAY)["draw"]
+        check(not d2 or d2[0]["_due"] is False,
+              "and once resolved, the allocator sees the cooldown")
+
+    # Negative control: the pre-fix behaviour must be visibly WRONG, or this
+    # fixture proves nothing.
+    st_bad = PR.empty_state()
+    st_bad["entries"][shown] = {"last_polled": TODAY.isoformat(), "outcome": "hit"}
+    bad = PR.allocate(pool, st_bad, cadence=1, today=TODAY)["draw"]
+    check(bool(bad) and bad[0]["_due"] is True and bad[0]["_why"] == "never polled",
+          "negative control: an FS-PID-only key still reads as 'never polled'")
+
+    check(PR.resolve_person_key(None, "P-ABC123", candidates=pool) == "P-ABC123",
+          "a vault id passes through untouched")
+    check(PR.resolve_person_key(None, "abcd-123", candidates=pool) == vault_id,
+          "PID matching is case-insensitive")
+
+
 def test_research_privacy_gate():
     print("\n-- the research gate (deferred_decisions item 11) --")
     check(PG.may_research("deceased")[0], "deceased may be researched")
@@ -377,6 +436,7 @@ def main():
     test_cadence_tracks_pool_growth()
     test_no_exploitation_on_tiny_sample()
     test_record_updates_state()
+    test_record_by_displayed_pid_enters_cooldown()
     test_research_privacy_gate()
     test_census_excludes_living()
     print(f"\n{PASS} passed, {FAIL} failed")

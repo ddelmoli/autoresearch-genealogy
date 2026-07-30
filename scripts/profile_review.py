@@ -566,6 +566,40 @@ def heartbeat(vault):
 # ---------------------------------------------------------------------------
 # Recording
 # ---------------------------------------------------------------------------
+def resolve_person_key(vault, person_id, candidates=None):
+    """Normalize whatever the operator typed into the VAULT id the draw keys on.
+
+    ** THE DRAW DISPLAYS `pid`, THE COOLDOWN READS `id`, AND THAT MISMATCH SILENTLY
+    BROKE THE ROTATION FOR SEVEN WEEKS (found 30 JUL 2026, session #117). ** The
+    draw prints `c["pid"] or "=" + c["id"]` — so for anyone with a FamilySearch
+    profile the line the reader copies is the **FS PID**, while `allocate()` looks
+    up `entries_state.get(c["id"])`, the `P-xxxxxx` vault id. Recording by the
+    displayed identifier therefore wrote a key nothing ever read: the entry never
+    entered its 180-day cooldown, and the SAME people were re-drawn every session.
+
+    It was invisible because the *arms* were updated correctly either way, so the
+    bandit's hit-rates and the `polled` counts all advanced and the report looked
+    healthy. On this vault 11 of 26 records had landed on FS-PID keys, and session
+    #116's 13-person slice put only 2 entries into cooldown — the next session's
+    draw re-issued eight people whose work was already done and written up.
+
+    Accepting BOTH spellings is the fix, rather than telling the reader to type a
+    different identifier than the one printed: an interface that displays one key
+    and demands another will keep producing this bug.
+    """
+    if not person_id or person_id.startswith("P-"):
+        return person_id
+    if candidates is None:
+        try:
+            candidates = build_candidates(vault)
+        except Exception:                                    # pragma: no cover
+            return person_id
+    for c in candidates:
+        if c.get("pid") and str(c["pid"]).upper() == person_id.upper():
+            return c["id"]
+    return person_id
+
+
 def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), today=None):
     """Record ONE polled entry's outcome.
 
@@ -576,10 +610,14 @@ def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), tod
     ATTACHED. They measure different things, and a naive delta between them must
     never be read as "FS gained or lost sources" — the pilot's +125 delta was a
     WRITE-BACK queue, not a discovery.
+
+    `person_id` may be either the vault `P-xxxxxx` id or the FS PID the draw
+    prints; see `resolve_person_key`.
     """
     today = today or date.today()
     if outcome not in ("hit", "miss"):
         raise SystemExit("profile_review: --outcome must be 'hit' or 'miss'")
+    person_id = resolve_person_key(vault, person_id)
     e = state["entries"].setdefault(person_id, {})
     e["last_polled"] = today.isoformat()
     e["outcome"] = outcome
@@ -624,6 +662,11 @@ def main():
                                                  "comma-separated (fs,wt,anc).")
     ap.add_argument("--complete", action="store_true",
                     help="Reset the cadence clock in .maintenance.json.")
+    ap.add_argument("--migrate-keys", action="store_true",
+                    help="One-time repair: re-key any entry recorded under an FS PID "
+                         "to its vault id, so its cooldown is actually read. "
+                         "Dry-run unless --apply.")
+    ap.add_argument("--apply", action="store_true", help="With --migrate-keys: write.")
     args = ap.parse_args()
 
     vault = vault_config.resolve_vault(args.vault)
@@ -633,6 +676,40 @@ def main():
 
     state = load_state(vault)
     today = date.today()
+
+    if args.migrate_keys:
+        cands = build_candidates(vault)
+        moved, collided = [], []
+        for key in [k for k in list(state["entries"]) if not k.startswith("P-")]:
+            vid = resolve_person_key(vault, key, candidates=cands)
+            if vid == key:
+                collided.append((key, "no vault id found in the pool"))
+                continue
+            if vid in state["entries"]:
+                # Both spellings recorded: keep the LATER poll date, do not lose one.
+                a, b = state["entries"][vid], state["entries"][key]
+                keep = b if (b.get("last_polled") or "") > (a.get("last_polled") or "") else a
+                merged = {**a, **b, **keep}
+                if args.apply:
+                    state["entries"][vid] = merged
+                    del state["entries"][key]
+                moved.append((key, vid, "merged with existing vault-id record"))
+                continue
+            if args.apply:
+                state["entries"][vid] = state["entries"].pop(key)
+            moved.append((key, vid, "re-keyed"))
+        for k, v, how in moved:
+            print(f"  {k:<12} -> {v:<10} {how}")
+        for k, why in collided:
+            print(f"  {k:<12} !! LEFT AS-IS: {why}")
+        print(f"\n{'APPLIED' if args.apply else 'DRY-RUN'}: "
+              f"{len(moved)} re-keyed, {len(collided)} left as-is "
+              f"(arms/history are unchanged — only the cooldown lookup was broken).")
+        if args.apply:
+            print(f"wrote {os.path.basename(save_state(vault, state))}")
+        else:
+            print("re-run with --apply to write.")
+        return 0
 
     if args.record:
         if not args.outcome:
