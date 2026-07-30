@@ -77,8 +77,8 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
      this session's lane — a re-run does not mint a fresh draw, and the lane
      there is not an unrecorded outcome from the last session.
 
-3. WORK THE DRAWN LANE, for [LANE_TARGETS] rows off its ranked worklist
-   (default: as many as the session has room for), per the vault's
+3. WORK THE DRAWN LANE, for the **LANE TARGET** rows the plan prints (a percent
+   of the vault; override with `--lane-pct [LANE_PCT]`), per the vault's
    Operating_Protocol. If [ITERATIONS] > 1, RECORD this lane's outcome
    (`session_plan.py --record --lane <L> --outcome hit|miss`) and go back to
    step 2 for the next draw; the profile-review slice still runs ONCE for the
@@ -113,9 +113,10 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
 - **[ITERATIONS]** (optional, default 1) — how many **lane draws** to run in this
   sitting. Each is a full draw -> work -> record cycle, and the bandit updates
   between them.
-- **[LANE_TARGETS]** (optional) — how many rows to work off each drawn lane's
-  ranked worklist. Omit for "as many as the session has room for". The two are
-  independent: `Iterations` = how many lanes; `Lane targets` = how deep in each.
+- **[LANE_PCT]** (optional) — the Lane target as a **percent of the vault**
+  (`--lane-pct X`). Omit to inherit the profile-review `sample_percent`. The two
+  dials are independent: `Iterations` = how many lanes; `Lane target` = how deep
+  in each.
 
 ## Autoresearch Configuration
 
@@ -208,10 +209,23 @@ final `session_close.py` run for the checklist. ⚠ If you record cycles 1..N wi
 `session_plan.py --record`, run `session_close.py` **without** `--lane/--outcome`
 at the end, or the last cycle is recorded twice.
 
-**Lane targets**: as many as the session has room for (default). A second,
-independent dial: how far down the DRAWN lane's ranked worklist to work *within
-one iteration*. `Iterations` is how many lanes you draw; `Lane targets` is how
-deep you go in each. Partial is fine and must be stated at close.
+**Lane target**: **a PERCENT OF THE VAULT**, same metric as the profile-review
+sample rate — so one number describes a session's workload whatever lane is drawn,
+and it scales with the vault instead of being a row count that silently ages.
+`scripts/session_plan.py` computes and prints it:
+
+```
+LANE TARGET: work 20 rows this session — 1.5% of 1,352 (sample_percent)
+```
+
+It **defaults to `profile_review.sample_percent`**, so a vault sets one rate and
+both loops follow. Override for one session with `--lane-pct X`, or pin it
+separately as `session_plan.lane_target_percent` in `.maintenance.json` — worth
+doing once the two diverge in cost, because a profile poll is a page read or two
+while an EXPAND row can be an afternoon. It is capped at the lane's actual size
+(the plan says so when it caps). Partial is fine and must be stated at close.
+
+`Iterations` is how many lanes you draw; `Lane target` is how deep you go in each.
 
 **Protocol**:
 

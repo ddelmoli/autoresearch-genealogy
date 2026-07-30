@@ -69,7 +69,22 @@ SNAPSHOT_FILE = "session_plan_snapshots.json"
 CONFIG_KEY = "session_plan"
 LANES = ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")
 # Defaults; override via .maintenance.json `session_plan` block.
-PER_LANE = 5          # rows shown per lane
+PER_LANE = 5          # rows shown per lane (DISPLAY only -- not a work target)
+
+# ** THE LANE TARGET: how many rows to WORK off the drawn lane, as a PERCENT OF
+# THE VAULT ** (operator, 30 JUL 2026: "lane targets should use the sample size
+# metric -- i.e. X% of the vault"). Same form as the profile-review sample rate,
+# so ONE number describes a session's workload whatever lane is drawn, and it
+# scales with the vault instead of being a row count that silently ages.
+#
+# It DEFAULTS to the profile-review `sample_percent`, so a vault sets one rate and
+# both loops follow it. It is separately settable because the two are not the same
+# unit of effort: a profile poll is a page read or two, while an EXPAND row can be
+# an afternoon. Diverge them when that starts to bite.
+#
+# Resolution order: --lane-pct > .maintenance.json session_plan.lane_target_percent
+# > .maintenance.json profile_review.sample_percent > LANE_TARGET_PERCENT.
+LANE_TARGET_PERCENT = 1.5
 MIN_SAMPLE = 2        # bootstrap floor: no exploitation until every lane has this many
 STALE_AFTER = 6       # staleness floor: a lane undrawn for this many draws is due
 
@@ -168,6 +183,35 @@ def save_state(vault, state):
         f.write("\n")
 
 
+def resolve_lane_target(vault, cfg, override=None):
+    """(rows, percent, source) -- how many rows to work off the drawn lane.
+
+    A PERCENT of the person-record pool, mirroring profile_review's sample rate;
+    see LANE_TARGET_PERCENT. Falls back to that loop's `sample_percent` so a vault
+    that sets one rate gets both."""
+    src = "default"
+    pct = LANE_TARGET_PERCENT
+    try:
+        with open(os.path.join(vault, ".maintenance.json"), encoding="utf-8") as f:
+            m = json.load(f)
+        if (m.get("profile_review") or {}).get("sample_percent") is not None:
+            pct, src = float(m["profile_review"]["sample_percent"]), "sample_percent"
+        if cfg.get("lane_target_percent") is not None:
+            pct, src = float(cfg["lane_target_percent"]), "config"
+    except Exception:
+        pass
+    if override is not None:
+        pct, src = float(override), "session-override"
+    if pct <= 0:
+        raise SystemExit("session_plan: lane target percent must be > 0")
+    try:
+        import gen_person_index as _g
+        pool = sum(1 for _ in _g.parse_narrative())
+    except Exception:
+        pool = 0
+    return (max(1, round(pool * pct / 100.0)) if pool else 0), pct, src
+
+
 def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER):
     """Pick the recommended lane. Pure function of (state, lane_sizes) — pinned by
     scripts/test_session_plan.py. Returns (lane, reason)."""
@@ -240,7 +284,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--vault")
-    ap.add_argument("--limit", type=int, help="rows per lane (default 5)")
+    ap.add_argument("--limit", type=int, help="rows per lane SHOWN (display only; default 5)")
+    ap.add_argument("--lane-pct", type=float, dest="lane_pct", metavar="X",
+                    help="Work X%% of the vault off the drawn lane THIS SESSION "
+                         "(the Lane target). Defaults to the profile-review "
+                         "sample_percent so one rate drives both loops.")
     ap.add_argument("--sample-percent", "--pct", type=float, dest="sample_percent",
                     metavar="X",
                     help="Sample X%% of the pool in the ROTATE lane THIS SESSION only "
@@ -291,6 +339,12 @@ def main(argv=None):
               f"(standing rate is `sample_percent` in .maintenance.json). **")
     sizes = {ln: len(rows) for ln, rows in lanes.items()}
     pick, reason = draw_lane(state, sizes, min_sample, stale_after)
+    lane_target, lt_pct, lt_src = resolve_lane_target(vault, cfg, a.lane_pct)
+    try:
+        import gen_person_index as _g
+        pool_n = sum(1 for _ in _g.parse_narrative())
+    except Exception:
+        pool_n = 0
 
     if pick:
         state["pending"] = {"date": date.today().isoformat(), "lane": pick}
@@ -299,6 +353,8 @@ def main(argv=None):
     if a.json:
         print(json.dumps({"date": date.today().isoformat(), "lane": pick,
                           "reason": reason, "sizes": sizes,
+                          "lane_target": lane_target, "lane_target_percent": lt_pct,
+                          "lane_target_source": lt_src, "pool": pool_n,
                           "lanes": {ln: rows[:per_lane] for ln, rows in lanes.items()}},
                          indent=1, default=str))
         return 0
@@ -307,6 +363,11 @@ def main(argv=None):
     print("=== SESSION PLAN — one ranked worklist, one drawn lane ===")
     print(f"  {counts}")
     print(f"  RECOMMENDED LANE: {pick}  ({reason})")
+    if lane_target:
+        capped = min(lane_target, sizes.get(pick, 0)) if pick else lane_target
+        note = f" (lane has only {sizes.get(pick, 0)})" if pick and capped < lane_target else ""
+        print(f"  LANE TARGET: work {capped} rows this session "
+              f"— {lt_pct:g}% of {pool_n:,} ({lt_src}){note}")
     print("  The draw is a recommendation; if you work a different lane, record THAT")
     print("  one at close: python3 scripts/session_close.py --lane <L> --outcome hit|miss")
     ordered = ([pick] if pick else []) + [ln for ln in LANES if ln != pick]

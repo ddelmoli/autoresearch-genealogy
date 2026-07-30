@@ -82,14 +82,20 @@ run the prompt's main loop.** What one loop *is* differs by prompt:
 | **21-session-start** | one **lane draw**: draw a lane -> work it -> record the outcome |
 | 22-session-close | one close (raising it is meaningless) |
 
-**21 takes a second, independent dial.** `Iterations` says how many lanes you
-draw; **`Lane targets`** says how far down each drawn lane's ranked worklist to
-work. They compose:
+**21 takes a second, independent dial, and it is a PERCENT OF THE VAULT** — the
+same metric as the profile-review sample rate, so one number describes a session's
+workload whatever lane is drawn. `Iterations` says how many lanes you draw; the
+**Lane target** says how deep to go in each. They compose:
 
 ```
-run 21-session-start with Iterations=10                 # 10 draw/work/record cycles
-run 21-session-start with Iterations=3, Lane targets=8  # 3 lanes, 8 rows deep each
+run 21-session-start with Iterations=10              # 10 draw/work/record cycles
+run 21-session-start with Iterations=3, Lane pct=3   # 3 lanes, 3% of the vault deep each
 ```
+
+`session_plan.py` prints the resolved number so you never do the arithmetic:
+`LANE TARGET: work 20 rows this session — 1.5% of 1,352 (sample_percent)`. It
+defaults to `profile_review.sample_percent`; pin it separately as
+`session_plan.lane_target_percent` once the two diverge in cost.
 
 ⚠ **Some things are per-SITTING, not per-iteration**, however large `Iterations`
 is: the profile-review slice runs **once** (sized by `sample_percent`), and you

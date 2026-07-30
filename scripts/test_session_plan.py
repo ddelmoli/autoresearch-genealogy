@@ -89,6 +89,35 @@ class RecordTests(unittest.TestCase):
         self.assertIsNone(st["pending"])
         self.assertEqual(st["history"][0].get("note"), "note")
 
+    def test_lane_target_percent_precedence(self):
+        """** THE LANE TARGET IS A PERCENT OF THE VAULT, NOT A ROW COUNT ** (operator,
+        30 JUL 2026: "lane targets should use the sample size metric"). Same form as
+        profile_review's sample rate, so one number describes a session's workload
+        whatever lane is drawn, and it scales with the vault instead of ageing.
+
+        Precedence pinned here because it spans TWO config blocks: it falls back to
+        `profile_review.sample_percent` so a vault that sets one rate gets both loops,
+        and that cross-block fallback is the part a later refactor would silently drop.
+        """
+        import tempfile, json as _j, os as _o, shutil
+        tmp = tempfile.mkdtemp(prefix="sp_lt_")
+        try:
+            with open(_o.path.join(tmp, ".maintenance.json"), "w") as f:
+                _j.dump({"profile_review": {"sample_percent": 2.0}}, f)
+            _r, pct, src = sp.resolve_lane_target(tmp, {})
+            self.assertEqual((pct, src), (2.0, "sample_percent"),
+                             "falls back to the profile-review rate")
+            _r, pct, src = sp.resolve_lane_target(tmp, {"lane_target_percent": 4.0})
+            self.assertEqual((pct, src), (4.0, "config"),
+                             "its own config key wins over the fallback")
+            _r, pct, src = sp.resolve_lane_target(tmp, {"lane_target_percent": 4.0}, 7.5)
+            self.assertEqual((pct, src), (7.5, "session-override"),
+                             "a per-session override wins over both")
+            with self.assertRaises(SystemExit):
+                sp.resolve_lane_target(tmp, {}, 0)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
     def test_record_rejects_unknown_lane_and_outcome(self):
         with self.assertRaises(SystemExit):
             sp.record({"arms": {}, "history": []}, "NOPE", "hit")
