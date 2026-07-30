@@ -206,13 +206,21 @@ def test_determinism():
 
 
 def test_cadence_clamp():
-    print("\n-- cadence is clamped to ~1% of the pool, and the clamp is reported --")
-    got, want, ceiling = PR.resolve_cadence({"per_session": 50}, 1300)
-    check((got, want, ceiling) == (13, 50, 13), "a configured 50 clamps to 13 on a 1,300 pool")
-    got, _w, _c = PR.resolve_cadence({}, 1300)
-    check(got == 13, "the default is 13")
+    """** DERIVED FROM CADENCE_FRACTION, NOT HARD-CODED. ** These asserted 13 and 26
+    literally until 30 JUL 2026, when the operator raised the rate 1% -> 1.5% and
+    every one of them failed for the right reason but the wrong cost. The rate is a
+    dial; the CLAMP is the invariant, so that is what the test pins."""
+    frac = PR.CADENCE_FRACTION
+    pool = 1300
+    ceil_1300 = max(1, round(pool * frac))
+    print(f"\n-- cadence is clamped to ~{frac:.1%} of the pool, and the clamp is reported --")
+    got, want, ceiling = PR.resolve_cadence({"per_session": 500}, pool)
+    check((got, want, ceiling) == (ceil_1300, 500, ceil_1300),
+          f"a configured 500 clamps to {ceil_1300} on a {pool:,} pool")
+    got, _w, _c = PR.resolve_cadence({}, pool)
+    check(got == ceil_1300, f"the default tracks the pool: {ceil_1300}")
     got, _w, _c = PR.resolve_cadence({"per_session": 13}, 200)
-    check(got == 2, "a small pool clamps the cadence down, not up")
+    check(got == max(1, round(200 * frac)), "a small pool clamps the cadence down, not up")
 
 
 def test_cadence_tracks_pool_growth():
@@ -221,13 +229,17 @@ def test_cadence_tracks_pool_growth():
     vault grows. The first version pinned 13 forever — a snapshot of 1% of 1,324
     that would have silently stopped scaling the day the vault passed 1,300."""
     print("\n-- cadence TRACKS pool growth when per_session is absent --")
-    got, want, ceiling = PR.resolve_cadence({}, 2600)
-    check((got, want, ceiling) == (26, 26, 26),
-          "a 2,600 pool draws 26 with no config — the target moved with the vault")
-    got, _w, _c = PR.resolve_cadence({"per_session": None}, 2600)
-    check(got == 26, "an explicit null per_session also tracks the pool")
-    got, _w, _c = PR.resolve_cadence({"per_session": 13}, 2600)
-    check(got == 13, "an explicit number is honored as a below-1% override")
+    big = 2600
+    ceil_big = max(1, round(big * PR.CADENCE_FRACTION))
+    got, want, ceiling = PR.resolve_cadence({}, big)
+    check((got, want, ceiling) == (ceil_big, ceil_big, ceil_big),
+          f"a {big:,} pool draws {ceil_big} with no config — the target moved with the vault")
+    got, _w, _c = PR.resolve_cadence({"per_session": None}, big)
+    check(got == ceil_big, "an explicit null per_session also tracks the pool")
+    got, _w, _c = PR.resolve_cadence({"per_session": 5}, big)
+    check(got == 5, "an explicit number is honored as a below-rate override")
+    check(ceil_big > max(1, round(big * 0.01)),
+          "regression guard: the rate is genuinely above the historical 1%")
 
 
 def test_no_exploitation_on_tiny_sample():

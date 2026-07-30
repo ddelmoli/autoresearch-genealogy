@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """profile_review.py — the profile-review ROTATION: a multi-armed bandit that
-picks ~1% of the vault per session to re-check against FamilySearch, WikiTree and
+picks ~1.5% of the vault per session to re-check against FamilySearch, WikiTree and
 Ancestry, and records what each poll actually yielded.
 
 THE QUESTION THIS LOOP ASKS, which no existing loop asked:
@@ -56,7 +56,10 @@ NO NETWORK. Everything here — the census, the allocation, the state, the heart
 — runs headless. The actual page visits are the operator-Chrome half, driven from
 the worklist this prints. FS costs ONE RENDERED PAGE VISIT PER PERSON (its
 internal JSON API 404s and /tree/person/sources/{PID} is a ~13 KB SPA shell with
-no count in it), which is why the cadence is 13 and not 130.
+no count in it), which is why the cadence is a small slice and not the whole
+vault. Since 30 JUL 2026 a poll also reads the Research Help endpoints (record
+hints / duplicates / data problems / not-a-match), so it costs more per person
+and is worth more per person.
 """
 from __future__ import annotations
 
@@ -80,12 +83,23 @@ CONFIG_KEY = "profile_review"
 # Constants that encode a DECIDED rule. Each is here because changing it changes
 # the design, not merely a default.
 # ---------------------------------------------------------------------------
-# ~1% of the vault per session — a TARGET that tracks the live pool (see
-# resolve_cadence), and "not negotiable upward" (operator, 28 JUL 2026): a
-# configured value above 1% is reported as clamped instead of silently obeyed.
+# The per-session sample rate — a TARGET that tracks the live pool (see
+# resolve_cadence). A configured value ABOVE it is reported as clamped rather
+# than silently obeyed; that guard is unchanged and is the point of the constant.
+#
+# ** RAISED 1% -> 1.5% ON 30 JUL 2026, BY THE OPERATOR WHO SET THE ORIGINAL 1%. **
+# The old comment quoted them as "not negotiable upward" (28 JUL 2026), which was
+# a real constraint and not a stylistic flourish: the rationale was that "the FS
+# half costs one rendered page visit per person". Two things changed. The rotation
+# was fixed on 30 JUL (it had never actually rotated — the draw printed one key
+# and the cooldown read another), so a slice now advances coverage instead of
+# re-polling the same people; and a poll now reads a SECOND surface (Research
+# Help), so it is worth more per person AND costs more per person. The rate is
+# the operator's dial, not the code's: change it here, in one place.
+#
 # DEFAULT_CADENCE is only the no-vault fallback for allocate()'s signature.
-DEFAULT_CADENCE = 13
-CADENCE_FRACTION = 0.01
+DEFAULT_CADENCE = 20
+CADENCE_FRACTION = 0.015
 # At least one entry from EVERY arm, every session. The anti-assumption device.
 EXPLORATION_FLOOR = 1
 # No exploitation on a tiny sample: an arm with fewer than this many COMPLETED
@@ -465,18 +479,20 @@ def probe_targets(cand, state, today):
 
 
 def resolve_cadence(config, pool_size):
-    """The cadence: ~1% of the LIVE pool, tracked, and clamped upward.
+    """The cadence: ~1.5% of the LIVE pool, tracked, and clamped upward.
 
-    "CADENCE ~1% = ~13 entries per session. Not negotiable upward." Enforced in
-    code rather than trusted to a comment, and a clamp is REPORTED, never silent.
+    The rate lives in CADENCE_FRACTION (1.5% since 30 JUL 2026; 1% before that).
+    The CEILING is enforced in code rather than trusted to a comment, and a clamp
+    is REPORTED, never silent — raising the rate did not remove the guard.
 
     ⚠ CORRECTED 29 JUL 2026: 1% is a TARGET, not merely a ceiling. The first
     version read `per_session` (13, a snapshot of 1% of 1,324) and used the live
     1% only as a clamp — so the draw would have stayed 13 forever as the vault
-    grew, scaling DOWN but never UP. The operator's spec is "~1% of the vault,
+    grew, scaling DOWN but never UP. The operator's spec is "a fixed fraction of
+    the vault,
     adjusting as the vault grows". Now: an ABSENT/null `per_session` means
-    "track ~1% of the live pool" (the recommended config); an explicit number is
-    honored as a smaller-than-1% override and still clamped to the ceiling.
+    "track the live pool at CADENCE_FRACTION" (the recommended config); an
+    explicit number is honored as a smaller override and still clamped.
     """
     ceiling = max(1, round(pool_size * CADENCE_FRACTION))
     raw = config.get("per_session")
@@ -548,7 +564,7 @@ def heartbeat(vault):
     days = (date.today() - last).days
     due = iv is not None and days >= iv
     # ** interval_days 0 MEANS EVERY SESSION, and it is spelled 0 because "per
-    # session" IS NOT A TIME INTERVAL. ** The spec's cadence is "~1% of the vault
+    # session" IS NOT A TIME INTERVAL. ** The spec's cadence is "a fraction of the vault
     # per session"; a session is not a day, and several can happen in one day (or
     # one across two). A positive interval silently converts a per-session
     # obligation into a per-calendar one and the loop then skips sessions --
@@ -645,13 +661,13 @@ def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), tod
 # ---------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(
-        description="Profile-review rotation: allocate and record a ~1% slice.")
+        description="Profile-review rotation: allocate and record a ~1.5% slice.")
     ap.add_argument("--vault", help="Vault directory (else $AUTORESEARCH_VAULT).")
     ap.add_argument("--gen-range", help='Narrow the pool, e.g. "4-6".')
     ap.add_argument("--region", help="Narrow the pool by region substring.")
     ap.add_argument("--confidence", help="Narrow the pool by tier (S/M/Sp/U).")
     ap.add_argument("--cadence", type=int, help="Override the per-session draw size "
-                                                "(still clamped to ~1%% of the pool).")
+                                                "(still clamped to CADENCE_FRACTION of the pool).")
     ap.add_argument("--json", action="store_true", help="Machine-readable draw.")
     ap.add_argument("--heartbeat", action="store_true", help="SessionStart status line.")
     ap.add_argument("--record", metavar="VAULT_ID", help="Record one polled entry.")
@@ -751,8 +767,8 @@ def main():
     if args.cadence:
         cfg = dict(cfg, per_session=args.cadence)
     cadence, want, ceiling = resolve_cadence(cfg, len(candidates))
-    clamp = (f"** cadence CLAMPED {want} -> {cadence}: ~{CADENCE_FRACTION:.0%} of a "
-             f"{len(candidates)}-entry pool is {ceiling}. Not negotiable upward. **"
+    clamp = (f"** cadence CLAMPED {want} -> {cadence}: ~{CADENCE_FRACTION:.1%} of a "
+             f"{len(candidates)}-entry pool is {ceiling}. Raise CADENCE_FRACTION to change it. **"
              if cadence < want else None)
 
     result = allocate(candidates, state, today=today, cadence=cadence)
