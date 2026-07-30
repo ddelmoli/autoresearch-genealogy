@@ -54,6 +54,12 @@ Run `17-familysearch-tree-contribution` to contribute new persons and relationsh
 **Want to pull the sources already on your ancestors' FamilySearch profiles down into the vault?**
 Run `19-fs-source-harvest` to harvest each FS-PID-bearing entry's FS-attached primary-source ARKs (census, vital, immigration, register images, external archive links) into its `**FS-attached sources**` bullet, raising independent-source coverage on entries that cite few or no records. Read-only on FamilySearch (no operator gate); the FS→vault direction of "Recipe-S". Requires a logged-in Claude in Chrome FamilySearch session. This is the standalone coverage pass; prompt 17 folds the same harvest in as its step 8.5 when contributing.
 
+**Want to reconcile your tree's relationships against FamilySearch?**
+Run `18-edge-verification` to walk every unverified (`?`-marked) parent/spouse edge in `Family_Tree*.md` against the FS tree and resolve it — confirm, contradict, or record why it cannot be confirmed. Pairs with `scripts/build_edges.py` (seeds edges) and `scripts/verify_edges.py` (writes the result).
+
+**Want a fresh look at a tree you think you have already worked?**
+Run `20-creative-vault-review` to pass every direct-line ancestor and significant collateral through a rotating battery of interpretive lenses, logging each hit as an enhancement (deepen, correct, source) or an extension (a new person or line to chase).
+
 **Running routine research sessions on a vault with the mechanized session loop?**
 Open every session with `21-session-start` (banner -> `scripts/session_plan.py` -> work the drawn lane) and close it with `22-session-close` (`scripts/session_close.py` checklist -> Handoff close block -> commit). These two are dispatchers, not campaigns: the numbered prompts above are what a lane dispatches TO (e.g. VERIFY -> prompt 18, a harvest target -> prompt 19).
 ## Human Review Cards
@@ -75,6 +81,11 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 11 Immigration Search | [review-cards/11-immigration-search.md](../review-cards/11-immigration-search.md) |
 | 12 DNA Chromosome Analysis | [review-cards/12-dna-chromosome-analysis.md](../review-cards/12-dna-chromosome-analysis.md) |
 | 13 Image Archive Deep Dive | [review-cards/13-image-archive-deep-dive.md](../review-cards/13-image-archive-deep-dive.md) |
+| 16 AAD Military Sweep | [review-cards/16-aad-military-sweep.md](../review-cards/16-aad-military-sweep.md) |
+| 17 FamilySearch Tree Contribution | [review-cards/17-familysearch-tree-contribution.md](../review-cards/17-familysearch-tree-contribution.md) |
+| 18 Edge Verification | [review-cards/18-edge-verification.md](../review-cards/18-edge-verification.md) |
+| 19 FS Source Harvest | [review-cards/19-fs-source-harvest.md](../review-cards/19-fs-source-harvest.md) |
+| 20 Creative Vault Review | [review-cards/20-creative-vault-review.md](../review-cards/20-creative-vault-review.md) |
 | 21 Session Start | [review-cards/21-session-start.md](../review-cards/21-session-start.md) |
 | 22 Session Close | [review-cards/22-session-close.md](../review-cards/22-session-close.md) |
 
@@ -89,6 +100,8 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 16-aad-military-sweep | Populated `Family_Tree*.md` with deceased US-resident persons born ~1888-1985 (entries carry `- meta:` blocks; `life_status: deceased` only) |
 | 17-familysearch-tree-contribution | Populated `Family_Tree*.md` (entries with `fs: TBD` meta = the worklist); logged-in FamilySearch Chrome session (subject [SUBJECT_PID]); ≥1 attachable primary source per candidate |
 | 19-fs-source-harvest | Populated `Family_Tree*.md` (entries carry `- meta:` blocks with `fs:` PIDs = the worklist); logged-in FamilySearch Chrome session; optional coverage-audit helper to rank SOURCE_GAP targets |
+| 18-edge-verification | Populated `Family_Tree*.md` with `- meta:` edges carrying `?` marks (run `scripts/build_edges.py` first); logged-in FamilySearch Chrome session |
+| 20-creative-vault-review | A populated `Family_Tree*.md` that has already had at least one expansion and one source pass — the lenses need material to work on |
 | 21-session-start | A vault on the mechanized session loop (`scripts/session_plan.py` present; `AUTORESEARCH_VAULT` set); SessionStart audit hook installed |
 | 22-session-close | A session opened via 21-session-start (a drawn lane to record); the vault's Operating_Protocol close-block template |
 

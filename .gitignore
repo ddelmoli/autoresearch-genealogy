@@ -105,17 +105,20 @@ workflows/*.md
 
 !prompts/README.md
 !prompts/[0-9][0-9]-*.md
-# ...but these numbered prompts are this vault's own research lane, not
-# framework prompts (and the repo contract pairs each numbered prompt with a
-# human-review card, which these have no public counterpart for).
-prompts/13-mayflower-lines-cascade.md
-prompts/14-split-abington-file.md
-prompts/15-tree-expansion-british-italian.md
-prompts/16-aad-military-sweep.md
-prompts/17-familysearch-tree-contribution.md
-prompts/18-edge-verification.md
-prompts/19-fs-source-harvest.md
-prompts/20-creative-vault-review.md
+# 16-20 were held back on two grounds, both resolved 30 JUL 2026 and both worth
+# recording because the first one was WRONG:
+#   (a) "this vault's own research lane, not framework prompts" — but their tools
+#       (build_edges.py, verify_edges.py, harvest_sources.py) were already public,
+#       and prompts/README.md already instructed readers to RUN 16, 17 and 19.
+#       Six dangling references were live on origin. Withholding them did not keep
+#       the vault private; it shipped instructions pointing at missing files.
+#   (b) "no public review-card counterpart" — a real contract (the README promises
+#       every prompt has one). Cards for 16-19 were written before opting them in.
+# Audited before publishing: three real FS PIDs, one real surname and one real
+# county were redacted to placeholders. See the commit for the full list.
+#
+# _archive/ STAYS IGNORED: those are one-off tasks named for real lines, with no
+# generic value — the (a) reason that failed for 16-20 genuinely holds for them.
 prompts/_archive/
 
 # Generic framework methodology (no vault content, placeholder names only).
@@ -146,5 +149,7 @@ prompts/_archive/
 
 
 # --- 6. Work in progress -----------------------------------------------------
-# Not part of the numbered prompt/review-card set that validate-repo pairs up.
-review-cards/20-creative-vault-review.md
+# (was: review-cards/20-creative-vault-review.md, held back because prompt 20 was
+# itself unpublished. Prompt 20 was opted in 30 JUL 2026, so its card ships too —
+# validate-repo pairs the numbered prompt/review-card set and would flag a prompt
+# with no card.)
