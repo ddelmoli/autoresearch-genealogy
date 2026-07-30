@@ -224,8 +224,10 @@ def test_sample_rate_precedence():
           "a per-session override wins over config AND still reports the standing rate")
 
     # ** The override is honored ABOVE the standing rate — that is the whole point.
-    # The old guard read 'not negotiable upward'; it is now narrowed to 'nothing
-    # exceeds the standing rate SILENTLY', which the source field is what enforces.
+    # The old guard was phrased 'not negotiable upward' and attributed to the
+    # operator; it was neither (see profile_review.py — they said "perhaps 1%").
+    # The rule that survives on its own merit is 'nothing exceeds the standing
+    # rate SILENTLY', which the reported source field is what enforces.
     cad, _w, _c = PR.resolve_cadence({}, 1000, 5.0)
     check(cad == 50, "an override of 5% on a 1,000 pool really draws 50, not the standing size")
 
@@ -243,7 +245,9 @@ def test_sample_rate_precedence():
 
 
 def test_absolute_count_still_clamps_to_the_rate():
-    """The surviving half of the original 'not negotiable upward' guard: an
+    """The half of the old clamp that survives on its own merit (its "not
+    negotiable upward" framing was invented, not operator-set — see
+    profile_review.py): an
     ABSOLUTE count (--cadence / per_session) is clamped DOWN to whatever the
     effective rate allows, even when that rate came from a session override."""
     print("\n-- absolute counts still clamp to the effective rate --")

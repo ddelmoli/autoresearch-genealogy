@@ -91,10 +91,27 @@ CONFIG_KEY = "profile_review"
 #   2. `sample_percent` in .maintenance.json `profile_review`   the standing rate
 #   3. DEFAULT_SAMPLE_PERCENT below                             no-config fallback
 #
-# ** WHAT THE CLAMP NOW MEANS. ** It was "not negotiable upward" (operator,
-# 28 JUL 2026), enforcing a fixed 1%. That guard is kept but narrowed to what it
-# was actually protecting against: nothing may exceed the standing rate SILENTLY
-# or BY ACCIDENT. So an absolute count (`--cadence N`, or `per_session` in config)
+# ** WHAT THE CLAMP MEANS, AND A CORRECTION TO WHY IT EXISTED. **
+#
+# This comment used to read: it was "not negotiable upward" (operator, 28 JUL
+# 2026). ** THE OPERATOR NEVER SAID THAT. ** Traced 30 JUL 2026 to vault commit
+# ab39581, where what they actually wrote was:
+#
+#     "These activities are expensive - I'm ok with a SLOW BURN, PERHAPS 1% of
+#      the vault with each session."
+#
+# A hedged preference — "I'm ok with", "perhaps". In the SAME commit a session
+# wrote "Not negotiable upward" into the spec and "OPERATOR SET THE CADENCE AT
+# 1%" into the Research_Log, and from there it hardened at every hop: quoted as
+# an operator rule in this file, restated in resolve_cadence's docstring and
+# twice in Operating_Protocol, and finally ENFORCED IN CODE as a clamp that
+# refused to let the rate rise. On 30 JUL the operator asked to raise it and hit
+# a machine guard invented on their behalf.
+#
+# The clamp is still worth having, on its own merits and stated in its own voice:
+# nothing should exceed the standing rate SILENTLY or BY ACCIDENT, because the FS
+# half costs a page visit per person. So an absolute count (`--cadence N`, or
+# `per_session` in config)
 # is still clamped DOWN to the effective rate's ceiling and the clamp is reported.
 # An explicit `--sample-percent` is a deliberate act by the operator for one
 # session, so it is HONORED even above the standing rate — and announced, with the
