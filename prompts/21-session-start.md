@@ -36,8 +36,21 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
 1. ESTABLISH THE CURRENT GATE STATE, and do not assume the banner exists.
    - If the SessionStart banner is present, read it: it carries the CURRENT
      gate values, the census, the frontier count and the timed-loop heartbeats.
-   - ! If it says "VAULT AUDIT SUITE: skipped — no AUTORESEARCH_VAULT set", you
-     have NO current numbers. Run the suite yourself before any research:
+   - ! CONFIRM WHICH VAULT IT AUDITED. The banner opens with
+     "VAULT: <name> (source: ...)". The hook resolves the vault in four steps
+     (env -> .claude/last_vault -> the sole vault-looking dir -> ask), and it
+     cannot prompt me itself, so confirming a non-explicit choice is YOUR job:
+       - source: env — I chose it explicitly. Nothing to confirm.
+       - source: last-session / sole-candidate — it INFERRED the vault. Name it
+         in your first reply and confirm before writing anything. Switch with
+         bash scripts/session_audit.sh --set-vault /path/to/other-vault
+       - "skipped — ... N candidate vaults exist" or "no vault-looking
+         directory" — ASK me which vault; do not pick one.
+       - "skipped — AUTORESEARCH_VAULT is set to '<path>', which does not look
+         like a vault" — a typo or stale path in my launch shell. Quote the
+         exact value back to me. Do not substitute a guess.
+   - ! If the banner is skipped for any reason, you have NO current numbers.
+     Once the vault is settled, run the suite yourself before any research:
      AUTORESEARCH_VAULT="[VAULT_PATH]" bash scripts/session_audit.sh
      Tell me the hook was skipped, so I can fix my launch shell.
    - Then COMPARE current values against the vault's .audit_baseline.txt. The
@@ -123,6 +136,13 @@ counts via the owning tool's heartbeat at close
   looks like an ordinary quiet start; there is no error to notice. Confirm you
   have current gate values before touching research, and say so when you had to
   generate them yourself.
+- **A RESOLVED vault is not a CONFIRMED vault.** The hook falls back to the
+  last-session vault or the sole candidate rather than skipping, which trades a
+  silent no-op for a silent assumption. It labels the source for exactly that
+  reason: an inferred vault gets named to the operator and confirmed before any
+  write, and 2+ candidates are never resolved by guessing. Read-only fallback
+  is the hook's alone — `vault_config.resolve_vault()`, which every mutating
+  script goes through, stays strict.
 - **The baseline file is the EXPECTED state.** Comparing it to itself proves
   nothing; it has to be compared against a fresh audit.
 - Gates above baseline are investigated BEFORE new research; never start a lane

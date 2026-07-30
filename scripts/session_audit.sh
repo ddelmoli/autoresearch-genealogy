@@ -2,18 +2,104 @@
 # SessionStart hook: run the vault audit suite and inject a summary into Claude's context.
 # Emits hook JSON on stdout (hookSpecificOutput.additionalContext).
 #
-# Multi-vault: the vault to audit comes from $AUTORESEARCH_VAULT (there is no
-# default vault). Export it before launching, e.g.
-#   export AUTORESEARCH_VAULT="$HOME/.../vault-<name>"
-# If it is unset, this hook SKIPS the audit rather than guessing a vault.
+# ---------------------------------------------------------------------------
+# WHICH VAULT (resolution chain, widened 29 JUL 2026)
+#
+# This used to be one step: read $AUTORESEARCH_VAULT, and SKIP the whole suite
+# if it was unset. That is why the hook did nothing on the sessions where it
+# mattered most — the var has to be exported in the shell that LAUNCHES the
+# agent, and forgetting is invisible: the session opens quiet, with no gate
+# values, no census, no frontier count, and no error to notice. Prefixing
+# commands afterwards cannot retro-fix a hook that already ran.
+#
+# The chain now, first match wins, and the source is ALWAYS named in the banner:
+#   1. env         — $AUTORESEARCH_VAULT (an explicit operator choice)
+#   2. last-session — .claude/last_vault, written by this hook on every success
+#   3. sole-candidate — exactly ONE vault-looking dir in the project
+#   4. ambiguous   — 0 or 2+ candidates: still SKIP, but now LIST the candidates
+#                    and tell the agent to ASK which one
+#
+# Steps 2-3 do NOT reverse the "no implicit default vault" rule in
+# CLAUDE.method.md. That rule guards vault_config.resolve_vault(), which every
+# MUTATING script goes through, and it stays strict. This hook only READS and
+# injects text, so a labelled fallback is safe where a silent one is not:
+# a fallback-resolved banner instructs the agent to confirm the vault with the
+# operator before writing anything.
+#
+# A hook cannot prompt (it runs non-interactively), so "confirm the vault" is
+# necessarily the AGENT's first-turn job; the banner carries the instruction.
+#
+# To point the loop at a different vault without relaunching:
+#   bash scripts/session_audit.sh --set-vault /path/to/vault
+# ---------------------------------------------------------------------------
 cd "${CLAUDE_PROJECT_DIR:-$(dirname "$0")/..}" || exit 0
 
-if [ -z "${AUTORESEARCH_VAULT:-}" ]; then
-    msg="VAULT AUDIT SUITE: skipped — no AUTORESEARCH_VAULT set (there is no default vault). Export AUTORESEARCH_VAULT=/path/to/vault before launching to audit a specific vault."
-    jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$m}}' 2>/dev/null \
-      || printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$msg"
-    exit 0
+PROJECT_DIR="$(pwd)"
+STATE_FILE="$PROJECT_DIR/.claude/last_vault"
+
+# A directory only counts as a vault if it carries a vault signature. This is
+# what stops a typo'd export or a stray sibling dir from being audited as one.
+vault_ok() {
+    [ -n "$1" ] && [ -d "$1" ] && \
+      { [ -f "$1/.autoresearch.json" ] || ls "$1"/Family_Tree*.md >/dev/null 2>&1; }
+}
+
+remember_vault() {
+    mkdir -p "$PROJECT_DIR/.claude" 2>/dev/null && printf '%s\n' "$1" > "$STATE_FILE" 2>/dev/null
+}
+
+# Candidate vaults in the project tree (depth 1). vault-template/ is the empty
+# starter kit, never a working vault.
+find_candidates() {
+    for d in "$PROJECT_DIR"/*/; do
+        d="${d%/}"
+        [ "$(basename "$d")" = "vault-template" ] && continue
+        vault_ok "$d" && printf '%s\n' "$d"
+    done
+}
+
+# Manual affordance: set the remembered vault and exit (plain text, NOT hook JSON).
+if [ "${1:-}" = "--set-vault" ]; then
+    if vault_ok "$2"; then
+        remember_vault "$(cd "$2" && pwd)"
+        echo "remembered vault: $(cd "$2" && pwd)  (written to .claude/last_vault)"
+        exit 0
+    fi
+    echo "not a vault (no .autoresearch.json, no Family_Tree*.md): ${2:-<missing arg>}" >&2
+    exit 1
 fi
+
+emit_skip() {
+    jq -n --arg m "$1" '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$m}}' 2>/dev/null \
+      || printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}\n' "$1"
+    exit 0
+}
+
+VAULT_SOURCE=""
+if [ -n "${AUTORESEARCH_VAULT:-}" ]; then
+    if ! vault_ok "$AUTORESEARCH_VAULT"; then
+        emit_skip "VAULT AUDIT SUITE: skipped — AUTORESEARCH_VAULT is set to '$AUTORESEARCH_VAULT', which does not look like a vault (no .autoresearch.json and no Family_Tree*.md). This is almost certainly a typo or a stale path in the launching shell. Tell the operator the exact value, and do NOT audit or research a guessed substitute."
+    fi
+    VAULT_SOURCE="env"
+elif [ -s "$STATE_FILE" ] && IFS= read -r _remembered < "$STATE_FILE" && vault_ok "$_remembered"; then
+    AUTORESEARCH_VAULT="$_remembered"
+    VAULT_SOURCE="last-session"
+else
+    _cands="$(find_candidates)"
+    _n="$(printf '%s\n' "$_cands" | grep -c . )"
+    if [ "$_n" -eq 1 ]; then
+        AUTORESEARCH_VAULT="$_cands"
+        VAULT_SOURCE="sole-candidate"
+    elif [ "$_n" -eq 0 ]; then
+        emit_skip "VAULT AUDIT SUITE: skipped — no AUTORESEARCH_VAULT set, no remembered vault in .claude/last_vault, and no vault-looking directory found in $PROJECT_DIR (a vault carries .autoresearch.json or Family_Tree*.md). ASK the operator which vault to use before any research, then: bash scripts/session_audit.sh --set-vault /path/to/vault"
+    else
+        emit_skip "VAULT AUDIT SUITE: skipped — no AUTORESEARCH_VAULT set and no remembered vault, and $_n candidate vaults exist, so guessing is unsafe: $(printf '%s\n' "$_cands" | tr '\n' ' '). ASK the operator WHICH vault this session is for (do not pick one), then: bash scripts/session_audit.sh --set-vault /path/to/vault  — and run: bash scripts/session_audit.sh  to get the gate values this session is missing."
+    fi
+fi
+
+AUTORESEARCH_VAULT="$(cd "$AUTORESEARCH_VAULT" && pwd)"
+export AUTORESEARCH_VAULT AUTORESEARCH_VAULT_SOURCE="$VAULT_SOURCE"
+remember_vault "$AUTORESEARCH_VAULT"
 
 python3 - <<'PY'
 import json, re, subprocess, os
@@ -238,7 +324,23 @@ else:
                 "before new vault work. The pre-commit hook enforces gen_person_index --integrity "
                 "(HARD: unique id + complete meta) on every vault commit; prose_audit + header_xref "
                 "are advisory.")
-ctx = (f"VAULT AUDIT SUITE (SessionStart hook, scripts/session_audit.sh; vault={VAULT.name}): "
+# WHICH VAULT, AND HOW IT WAS CHOSEN. The bash chain above always names its
+# source; an `env` resolution is an explicit operator choice and needs no
+# confirmation, while a fallback one does. A hook cannot ask, so the agent is
+# told to — and is given the exact command prefix, since env vars do not
+# survive between the agent's shell calls.
+_src = os.environ.get("AUTORESEARCH_VAULT_SOURCE", "env")
+_prefix = f'AUTORESEARCH_VAULT="{VAULT}"'
+if _src == "env":
+    _vline = f"VAULT: {VAULT.name} (source: explicit AUTORESEARCH_VAULT). Prefix your own commands: {_prefix}"
+else:
+    _how = {"last-session": "the vault this project audited LAST session (.claude/last_vault)",
+            "sole-candidate": "the only vault-looking directory in the project"}.get(_src, _src)
+    _vline = (f"VAULT: {VAULT.name} (source: {_src} — NOT an explicit choice this session; resolved as {_how}). "
+              f"CONFIRM this is the intended vault with the operator in your first reply, before any write; "
+              f"to switch: bash scripts/session_audit.sh --set-vault /path/to/other-vault. "
+              f"Prefix your own commands: {_prefix}")
+ctx = (f"VAULT AUDIT SUITE (SessionStart hook, scripts/session_audit.sh): {_vline} || "
        + " || ".join(parts) + ". " + baseline)
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
                                           "additionalContext": ctx}}))
