@@ -44,9 +44,18 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
      baseline file is the EXPECTED state, not the current one; reading it alone
      tells you nothing about today. Investigate anything above baseline BEFORE
      new research work, and never start a lane on a red HARD gate.
-   - If the audit reports HOUSEKEEPING actions DUE, check deferred_decisions.md
-     first: if the item is already queued there, say so and move on; if not,
-     present the choices to me before other work.
+   - If the audit reports HOUSEKEEPING actions DUE, `size_heartbeat.py` will
+     tell you to "present these as a Vault Housekeeping checklist via
+     AskUserQuestion (multiSelect) BEFORE other work". Two qualifications, in
+     order:
+       a. Check deferred_decisions.md FIRST. If the item is already queued
+          there, say so in one line and move on — re-presenting a decision I
+          have already parked is noise, and the script cannot see that file.
+       b. "BEFORE other work" is NOT a licence to block. If I am present, ask.
+          If I am away or this is an autonomous run, Operating_Protocol wins
+          ("keep working, do not stop to ask"): queue the item in
+          deferred_decisions.md with what it is and why it needs me, and carry
+          on with the lane.
 
 2. GET THE LANE. Run scripts/session_plan.py and show me the ranked worklist and
    the drawn lane before starting work.
@@ -67,10 +76,16 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
 4. Commit continuously — one logical unit per commit, gates green each time.
    Anything needing my decision goes in deferred_decisions.md; keep working.
 
-5. End your first reply with the rename line, filling in the drawn lane and top
-   target: Use "/rename <Day Mon DD HHh> <lane>: <top target>"
-   (If the hook injected its own rename reminder, this is the same slot: use
-   the lane-and-target form.)
+5. SUGGEST THE SESSION RENAME COMMAND at the end of your first reply, in the
+   form: Use "/rename <Day Mon DD HHh> <lane>: <top target>"
+   - ! DO NOT COMPOSE IT FROM SCRATCH FIRST. The previous close already wrote
+     one for you, near the top of Handoff.md as
+     "**Suggested rename for the next session:** `/rename ...`". READ IT and
+     use it. It was authored before this session's work began, so reconcile it
+     against the lane and target you actually drew and sharpen the topic if the
+     draw moved; say so if you changed it.
+   - If the hook injected its own rename reminder with a generated name, this is
+     the same slot: prefer the lane-and-target form.
 ```
 
 ## Inputs To Replace
@@ -115,6 +130,13 @@ counts via the owning tool's heartbeat at close
 - **A pending draw belongs to the session that consumes it.** If the previous
   close left one, that is your lane; do not read it as an unrecorded outcome and
   do not record it on the previous session's behalf.
+- **The close prompt writes a rename suggestion; this prompt must READ it.** The
+  two halves of the loop hand off through `Handoff.md`, and a suggestion nobody
+  opens is wasted work. Reconcile rather than re-invent.
+- **`size_heartbeat.py`'s "BEFORE other work" does not outrank the away-policy.**
+  The script is a heartbeat with no view of `deferred_decisions.md` and no idea
+  whether the operator is at the keyboard; Operating_Protocol decides whether to
+  ask or to queue.
 - **The profile-review slice is due every session, independent of the lane.**
   Partial is fine and must be stated; silent omission is not.
 - The draw is a recommendation: overriding it is allowed, but the lane actually
@@ -141,7 +163,10 @@ bandit's).
 1. Establish current gate state: read the banner, or run `session_audit.sh` if
    the hook was skipped, and report the skip. Compare against the vault's
    baseline file; triage anything above it first. Check housekeeping DUE items
-   against `deferred_decisions.md` before presenting them.
+   against `deferred_decisions.md` before presenting them, and queue rather than
+   ask if the operator is away.
+   ⚠ When listing `scripts/`, do not pipe through `head` — a truncated listing
+   silently hides tools and reads as an absent one.
 2. Check for a pending draw; otherwise run `session_plan.py`. Present the
    counts, the drawn lane, and the top candidates to the operator before
    starting.
@@ -151,6 +176,7 @@ bandit's).
    pattern for EXPAND rows that terminate). Run the profile-review slice this
    session whatever the lane.
 4. Checkpoint: commit each logical unit; update the session log as findings
-   land (narrative lives in `logs/`, not the Handoff).
+   land (narrative lives in `logs/`, not the Handoff). Suggest the rename from
+   the Handoff's stored suggestion, reconciled against the actual draw.
 5. When the lane is exhausted or the session nears its end, switch to the
    close prompt (`22-session-close.md`).

@@ -75,8 +75,11 @@ Every command below runs with AUTORESEARCH_VAULT="[VAULT_PATH]".
    may not be omitted). `OPEN / NEXT` comes from step 2. No hand-copied
    derivable metrics; mark a genuinely load-bearing number [finding].
    ! The <=120-line cap is checked by scripts/handoff_lint.py. Run it and trim
-   BEFORE committing rather than ping-ponging at 121. Update the suggested
-   /rename line to match the lane drawn in step 2.
+   BEFORE committing rather than ping-ponging at 121.
+   Update the "Suggested rename for the next session" line near the top of
+   Handoff.md to match the lane drawn in step 2 and its top target. This is not
+   decoration: 21-session-start READS that line and reconciles it against its
+   own draw, so a stale one propagates into the next session's name.
 
 7. VERIFY GATES AGAINST THE BASELINE, NOT AGAINST THE HOOK'S EXIT CODE. A
    "[pre-commit] PASS" can coexist with a FLAGGED advisory gate, so passing is
