@@ -72,22 +72,30 @@ run 19-fs-source-harvest with Iterations=12
 run 01-tree-expansion with Iterations=5, Scope=Family_Tree_<Region>.md
 ```
 
-`Field=value` is unambiguous. A bare count ("run 19 with 12 iterations") usually
-reads the same way, with one exception worth knowing.
+`Field=value` is unambiguous, and a bare count ("run 19 with 12 iterations")
+reads the same way. **`Iterations` always means the same thing: how many times to
+run the prompt's main loop.** What one loop *is* differs by prompt:
 
-**`Iterations` is a work-volume dial in 01-20, and a structural fact in 21-22.**
-For 01-20 it means "how many autonomous loops of the Protocol to run", so raising
-it asks for more work. For **21-session-start** it means *one lane draw per
-session* and **cannot be raised** — a second draw inside one session would record
-a second bandit observation for a single session. The dial that scales work there
-is **`Lane targets`**:
+| Prompt | One iteration = |
+|---|---|
+| 01-20 | one pass of the Protocol over the worklist |
+| **21-session-start** | one **lane draw**: draw a lane -> work it -> record the outcome |
+| 22-session-close | one close (raising it is meaningless) |
+
+**21 takes a second, independent dial.** `Iterations` says how many lanes you
+draw; **`Lane targets`** says how far down each drawn lane's ranked worklist to
+work. They compose:
 
 ```
-run 21-session-start with Lane targets=10
+run 21-session-start with Iterations=10                 # 10 draw/work/record cycles
+run 21-session-start with Iterations=3, Lane targets=8  # 3 lanes, 8 rows deep each
 ```
 
-So: if a prompt's `Iterations` is a plain number, "with Iterations=N" is the
-override. If you want *more work* out of 21, say `Lane targets`.
+⚠ **Some things are per-SITTING, not per-iteration**, however large `Iterations`
+is: the profile-review slice runs **once** (sized by `sample_percent`), and you
+write **one** Research_Log row and **one** Handoff close block. And if you record
+each cycle with `session_plan.py --record`, run `session_close.py` *without*
+`--lane/--outcome` at the end or the final cycle is counted twice.
 
 ## Human Review Cards
 

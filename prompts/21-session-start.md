@@ -79,7 +79,10 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
 
 3. WORK THE DRAWN LANE, for [LANE_TARGETS] rows off its ranked worklist
    (default: as many as the session has room for), per the vault's
-   Operating_Protocol: check-before-
+   Operating_Protocol. If [ITERATIONS] > 1, RECORD this lane's outcome
+   (`session_plan.py --record --lane <L> --outcome hit|miss`) and go back to
+   step 2 for the next draw; the profile-review slice still runs ONCE for the
+   whole sitting, not once per iteration: check-before-
    searching per source (grep logs/ and Open_Questions first), log negatives,
    wire only source-backed relationships (new edges carry ?), never web-search
    living/unknown people.
@@ -107,9 +110,12 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
 
 - **[VAULT_PATH]** — absolute path to the vault working tree (the private
   repo/directory holding `Family_Tree*.md`; e.g. `$(git rev-parse --show-toplevel)/vault-yourname`).
-- **[LANE_TARGETS]** (optional) — how many rows to work off the drawn lane's
-  ranked worklist. Omit for "as many as the session has room for". ⚠ This is the
-  volume dial for this prompt; **`Iterations` is not** (see the field below).
+- **[ITERATIONS]** (optional, default 1) — how many **lane draws** to run in this
+  sitting. Each is a full draw -> work -> record cycle, and the bandit updates
+  between them.
+- **[LANE_TARGETS]** (optional) — how many rows to work off each drawn lane's
+  ranked worklist. Omit for "as many as the session has room for". The two are
+  independent: `Iterations` = how many lanes; `Lane targets` = how deep in each.
 
 ## Autoresearch Configuration
 
@@ -180,17 +186,32 @@ counts via the owning tool's heartbeat at close
 - One logical unit per commit; the pre-commit gates pass every time; no
   `--no-verify`.
 
-**Iterations**: 1 — and this is a STRUCTURAL FACT, not a volume dial. One draw
-per session; the loop across sessions is the bandit's. **This is the one prompt
-whose `Iterations` cannot be raised**, because a second draw inside one session
-would mint a second bandit observation for a single session and corrupt the
-signal the bandit exists to carry. To ask for MORE WORK, raise **Lane targets**
-below — that is the dial you want, and it is the one that scales.
+**Iterations**: 1 — **the number of LANE DRAWS**, and it IS raiseable.
 
-**Lane targets**: as many as the session has room for (default). The number of
-rows to work off the DRAWN lane's ranked worklist — the plan prints them in
-priority order, and this says how far down to go. Override it per run
-(`with Lane targets=10`); partial is fine and must be stated at close.
+One iteration = one full cycle: **draw a lane -> work it -> record its outcome**.
+`Iterations: N` runs that cycle N times in one sitting, and the tooling supports
+it natively — `session_plan.py --record --lane X --outcome Y` writes the arm and
+clears `pending`, and the next `session_plan.py` draws again. **The bandit updates
+BETWEEN cycles**, so draw 2 is informed by outcome 1; N honest cycles are N honest
+observations, and it learns faster than one draw per calendar day.
+
+⚠ **An earlier version of this line said `Iterations` "cannot be raised" here,
+because a second draw would double-count the bandit. That was wrong and is
+retracted.** What corrupts the bandit is recording ONE session's work TWICE (the
+re-close trap that `22-session-close` step 0 guards). That is a different thing
+from N genuine draws, each drawn fresh and each actually worked.
+
+**What stays ONCE PER SITTING no matter how large N is** — these are per-sitting
+obligations, not per-draw: the **profile-review slice** (one slice, sized by
+`sample_percent`), **one Research_Log row**, **one Handoff close block**, and one
+final `session_close.py` run for the checklist. ⚠ If you record cycles 1..N with
+`session_plan.py --record`, run `session_close.py` **without** `--lane/--outcome`
+at the end, or the last cycle is recorded twice.
+
+**Lane targets**: as many as the session has room for (default). A second,
+independent dial: how far down the DRAWN lane's ranked worklist to work *within
+one iteration*. `Iterations` is how many lanes you draw; `Lane targets` is how
+deep you go in each. Partial is fine and must be stated at close.
 
 **Protocol**:
 
