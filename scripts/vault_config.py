@@ -42,6 +42,18 @@ DEFAULTS = {
     "known_dup_fs_pids": {"count": 0, "note": ""},  # advisory baseline for the DUP_FS_PID display
     "dup_fs_pid_overrides": {},     # FS PID -> canonical vault id, for the ambiguous DUP_FS_PID pairs
 
+    # Declared PEDIGREE COLLAPSE (deferred_decisions 16, settled 31 JUL 2026).
+    # When a vault descends from one couple by two paths of different length, the
+    # shorter path fixes the descendant's generation and the longer one fixes the
+    # ancestor's, so `parent != child gen + 1` on the edge between them. Every edge
+    # is correct; `generation` is a PATH label, not a global depth. Without this
+    # list the PARENT-GEN MISMATCH advisory mixes declared collapse with real
+    # generation bugs and neither can be read. Each entry is
+    #   {child: "P-XXXXXX", parent: "P-YYYYYY", note: "why"}
+    # and `build_edges --validate` reports those rows as GEN_COLLAPSE (declared)
+    # separately from GEN mismatches it has never been told about.
+    "known_gen_collapse": [],
+
     # --- multi-anchor / multi-repository model (spec/multi-anchor-multi-repo) ---
     # A vault is anchored on an individual OR a married couple. Generation 1 is the
     # whole `people` set (one person, or two for a couple). Empty `people` => the
@@ -237,6 +249,27 @@ def get_hosts(vault_dir):
     """Return the source-host registry: id -> {label, ark_naan?, url_pattern?,
     locator_kind}. Defaults to the hosts harvest_sources.py recognizes today."""
     return load_config(vault_dir).get("hosts", {})
+
+
+def get_known_gen_collapse(vault_dir):
+    """Return the declared pedigree-collapse edges as a set of (child_id, parent_id)
+    pairs, plus the id->note map for display.
+
+    Pedigree collapse is not a defect: it is what happens when a vault reaches one
+    couple by two paths of different length. Declaring the affected edges here is
+    the operator saying "this mismatch is understood", which is what lets the
+    PARENT-GEN MISMATCH advisory mean "unexplained" again. An undeclared vault gets
+    an empty set and the historical behavior exactly."""
+    rows = load_config(vault_dir).get("known_gen_collapse", []) or []
+    pairs, notes = set(), {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        child, parent = r.get("child"), r.get("parent")
+        if child and parent:
+            pairs.add((child, parent))
+            notes[(child, parent)] = r.get("note", "")
+    return pairs, notes
 
 
 PERSON_MODELS = ("file", "narrative")

@@ -38,6 +38,26 @@ GED = vault_config.gedcom_path(VAULT) if VAULT else None
 PID_RE = re.compile(r"\b([A-Z0-9]{4}-[A-Z0-9]{3})\b")
 VAULT_ID_RE = re.compile(r"P-[0-9A-TV-Z?]+")   # P- + Crockford base32 (no I/L/O/U), optional ? suffix
 
+# The STRICT id grammar, per CLAUDE.method: `P-` + exactly 6 Crockford base32 chars
+# (I, L, O and U excluded). VAULT_ID_RE above is deliberately looser -- it is the
+# EXTRACTOR, and loosening it is what lets `edge_value` preserve a legacy id it did
+# not mint. This one is the JUDGE, used only by validate_edges.
+STRICT_ID_RE = re.compile(r"^P-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{6}$")
+
+# A token inside a parents:/spouse: flow-list, however malformed. Splitting the raw
+# value on list punctuation is what makes a non-id-shaped token VISIBLE: the
+# extractor regex simply does not match `NOT_AN_ID`, so before this the token was
+# not dangling, not malformed, not anything -- it vanished, and every gate stayed
+# green. See deferred_decisions 8.
+def edge_tokens(val):
+    """Split a raw parents/spouse edge value into its literal tokens, id-shaped or
+    not. Returns [] for an absent value. The `?` verification suffix is stripped."""
+    if not val:
+        return []
+    body = str(val).strip().strip("'\"").strip()
+    body = body.lstrip("[").rstrip("]")
+    return [t.strip().rstrip("?").strip() for t in body.split(",") if t.strip()]
+
 
 def edge_value(existing, new_ids):
     """Build the single-quoted id flow-list value for a parents:/spouse: edge.
@@ -91,22 +111,42 @@ def edge_ids(val):
 def validate_edges(limit=20):
     """Read-only edge-graph integrity checks over the written meta blocks.
     Advisory (NOT the HARD gate — gen mismatches may be the known gen backlog,
-    not edge bugs). Surfaces: dangling id refs, broken spouse reciprocity,
-    parent-generation inconsistency (a parent must be generation+1), self-edges."""
+    not edge bugs). Surfaces: malformed edge tokens, dangling id refs, broken
+    spouse reciprocity, parent-generation inconsistency (a parent must be
+    generation+1), self-edges.
+
+    Two checks were added 31 JUL 2026, both closing a case where the reader could
+    not see what it was policing:
+
+    MALFORMED_EDGE_REF (deferred_decisions 8) — a token that is not id-shaped at
+    all was previously invisible: the extractor regex did not match it, so it was
+    neither dangling nor anything else, and `parents: '[NOT_AN_ID]'` reported a
+    fully green tree. It nearly shipped twice, caught both times only by a hand
+    grep for a placeholder string, and the write-then-mint-then-wire order that
+    produces it is unavoidable for a multi-person batch. Counted as STRUCTURAL.
+
+    GEN_COLLAPSE (deferred_decisions 16) — a mismatch on an edge the operator has
+    DECLARED as pedigree collapse in `.autoresearch.json` `known_gen_collapse` is
+    reported separately, so PARENT-GEN MISMATCH means "unexplained" again instead
+    of silently mixing known collapse with real generation bugs."""
     rows = G.parse_narrative()
     id2row = {r["id"]: r for r in rows if r["id"]}
     parents = defaultdict(set)        # id -> {parent_id}
     spouses = defaultdict(set)        # id -> {spouse_id}
+    malformed = []                    # (id, key, raw_token)
     for r in rows:
         if not r["id"]:
             continue
         meta = G.parse_meta(r["block"])
-        for pid, _ in edge_ids(meta.get("parents")):
-            parents[r["id"]].add(pid)
-        for sid, _ in edge_ids(meta.get("spouse")):
-            spouses[r["id"]].add(sid)
+        for key, sink in (("parents", parents), ("spouse", spouses)):
+            good = {pid for pid, _ in edge_ids(meta.get(key))}
+            sink[r["id"]] |= good
+            for tok in edge_tokens(meta.get(key)):
+                if not STRICT_ID_RE.match(tok):
+                    malformed.append((r["id"], key, tok))
 
-    dangling, selfedge, recip, gen_bad = [], [], [], []
+    collapse_pairs, collapse_notes = vault_config.get_known_gen_collapse(VAULT) if VAULT else (set(), {})
+    dangling, selfedge, recip, gen_bad, gen_declared = [], [], [], [], []
     nm = lambda i: id2row.get(i, {}).get("name", "?")
     for cid, pset in parents.items():
         for p in pset:
@@ -117,7 +157,7 @@ def validate_edges(limit=20):
             else:
                 cg, pg = id2row[cid]["gen"], id2row[p]["gen"]
                 if cg is not None and pg is not None and pg != cg + 1:
-                    gen_bad.append((cid, p, cg, pg))
+                    (gen_declared if (cid, p) in collapse_pairs else gen_bad).append((cid, p, cg, pg))
     for sid, sset in spouses.items():
         for s in sset:
             if s == sid:
@@ -131,10 +171,14 @@ def validate_edges(limit=20):
     print("EDGE-GRAPH INTEGRITY (advisory; read-only)")
     print("=" * 70)
     print(f"  entries with parent edges: {len(parents)}   spouse edges: {len(spouses)}")
-    print(f"\n  DANGLING id refs (edge -> nonexistent id):   {len(dangling)}   [should be 0]")
+    print(f"\n  MALFORMED_EDGE_REF (token is not P- + 6 Crockford): {len(malformed)}   [should be 0]")
+    print(f"  DANGLING id refs (edge -> nonexistent id):   {len(dangling)}   [should be 0]")
     print(f"  SELF-EDGES (id points to itself):            {len(selfedge)}   [should be 0]")
     print(f"  BROKEN SPOUSE RECIPROCITY (A->B, no B->A):   {len(recip)}   [should be 0]")
-    print(f"  PARENT-GEN MISMATCH (parent != child gen+1): {len(gen_bad)}   [gen-backlog signal, not necessarily an edge bug]")
+    print(f"  PARENT-GEN MISMATCH (parent != child gen+1): {len(gen_bad)}   [unexplained; gen-backlog signal, not necessarily an edge bug]")
+    print(f"  GEN_COLLAPSE (declared in .autoresearch.json): {len(gen_declared)}   [expected; pedigree collapse, every edge correct]")
+    for c, k, t in malformed[:limit]:
+        print(f"    MALFORMED {nm(c)} ({c}) {k} -> {t!r} (not an id)")
     for c, k, p in dangling[:limit]:
         print(f"    DANGLING  {nm(c)} ({c}) {k} -> {p} (no such id)")
     for c, k, p in selfedge[:limit]:
@@ -145,8 +189,11 @@ def validate_edges(limit=20):
         print(f"    GEN       {nm(c)} (gen {cg}) <- parent {nm(p)} (gen {pg}; expected {cg+1})")
     if len(gen_bad) > limit:
         print(f"    ... and {len(gen_bad)-limit} more gen mismatches")
-    hard = len(dangling) + len(selfedge) + len(recip)
-    print(f"\n  structural violations (dangling+self+recip): {hard}  [target 0]")
+    for c, p, cg, pg in gen_declared[:limit]:
+        note = collapse_notes.get((c, p), "")
+        print(f"    COLLAPSE  {nm(c)} (gen {cg}) <- parent {nm(p)} (gen {pg}){'; ' + note if note else ''}")
+    hard = len(malformed) + len(dangling) + len(selfedge) + len(recip)
+    print(f"\n  structural violations (malformed+dangling+self+recip): {hard}  [target 0]")
     return 1 if hard else 0
 
 

@@ -417,6 +417,10 @@ def _render_new_person(record):
 _BOLD = re.compile(r"^\s*[-*]*\s*\*\*(.+?)\*\*(.*)$")
 _META = re.compile(r"^\s*-\s*meta:\s*(.+)$", re.I)
 _GEN_HDR = re.compile(r"^#{1,4}\s+Generation\s+(\d+)", re.I)
+# A `#`/`##`-level heading. Used ONLY as a barrier for the generation fallback:
+# a Generation heading below one of these does not govern entries above it, and
+# an entry below one does not inherit a Generation heading from above it.
+_SECTION_HDR = re.compile(r"^#{1,2}\s+\S")
 
 
 def _parse_meta_block(line):
@@ -560,7 +564,8 @@ def _listify(v):
     return [x.strip() for x in s.split(",") if x.strip()]
 
 
-def _record_from_meta(meta, name, rest, gens, header_line, path, vault, meta_line):
+def _record_from_meta(meta, name, rest, gens, header_line, path, vault, meta_line,
+                      barriers=()):
     # Spec 03 + Spec 06 decision (a): the META FIELD is authoritative when present;
     # the header parenthetical is the human display and the fallback. Both are kept
     # — the header pair goes into raw['header_vitals'] so the DATE_DRIFT gate can
@@ -573,11 +578,23 @@ def _record_from_meta(meta, name, rest, gens, header_line, path, vault, meta_lin
     gv = meta.get("generation", meta.get("gen"))
     gen = int(str(gv)) if gv is not None and str(gv).lstrip("-").isdigit() else None
     if gen is None:
+        # Fall back to the nearest preceding `### Generation N` heading -- but NEVER
+        # across a `##`-level section boundary (deferred_decisions 10, fixed 31 JUL
+        # 2026). A `## Collateral stub entries` section carries no Generation
+        # headings of its own, so the nearest preceding one could sit ~180 lines and
+        # three unrelated sections above: an entry that deliberately omitted
+        # `generation` was silently relabelled 28 -> 30 and duly reported as a Gen-30
+        # frontier row. No gate objected, because NEEDS_META is satisfied by a
+        # generation being FOUND, not by its being right -- and the vault's own "the
+        # meta block is the source of truth, not the heading" rule was quietly
+        # inverted. Stopping at the boundary yields generation None instead, which is
+        # honest: it says "undetermined", and NEEDS_META reports it.
         for go, gn in gens:
-            if go <= header_line:
-                gen = gn
-            else:
+            if go > header_line:
                 break
+            if any(go < b <= header_line for b in (barriers or ())):
+                continue        # a section boundary sits between that heading and us
+            gen = gn
     ext = {k: meta[k] for k in _EXTERNAL_ID_KEYS if meta.get(k) not in (None, "")}
     return PersonRecord(
         id=meta.get("id"),
@@ -671,6 +688,11 @@ class NarrativeBackend:
             lines = _read(path).splitlines()
             gens = [(i, int(mm.group(1))) for i, ln in enumerate(lines)
                     for mm in [_GEN_HDR.match(ln)] if mm]
+            # Section boundaries the generation fallback must not reach across: any
+            # heading at `#`/`##` level that is not itself a Generation heading.
+            # See _record_from_meta and deferred_decisions 10.
+            barriers = [i for i, ln in enumerate(lines)
+                        if _SECTION_HDR.match(ln) and not _GEN_HDR.match(ln)]
             # Pass 1: locate each entry (its bold header line + its `- meta:` line).
             # Detection is META-ANCHORED: a bold line is a header only when a
             # `- meta:` line follows it, which is why no shape heuristic is needed
@@ -688,7 +710,8 @@ class NarrativeBackend:
             # header; capture that entry's `**Sources**` records from the body.
             for idx, (hline, name, rest, mline, meta) in enumerate(entries):
                 body_end = entries[idx + 1][0] if idx + 1 < len(entries) else len(lines)
-                rec = _record_from_meta(meta, name, rest, gens, hline, path, vault, mline)
+                rec = _record_from_meta(meta, name, rest, gens, hline, path, vault, mline,
+                                        barriers=barriers)
                 rec.sources = _extract_sources(lines[mline + 1:body_end])
                 rec.raw["line"] = lines[mline]   # raw meta line (consumers re-parse it as `block`)
                 yield rec, path, hline, lines[hline:body_end]

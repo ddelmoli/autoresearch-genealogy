@@ -579,6 +579,43 @@ def main():
     for dd in (vd, vdf, d_f, d_n):
         shutil.rmtree(dd)
 
+    # ---- 12. the generation fallback stops at a `##` boundary (deferred 10) ---- #
+    # An entry with no `generation` used to inherit the nearest preceding
+    # `### Generation N` heading NO MATTER HOW FAR ABOVE, even across unrelated
+    # `##` sections. Emma de Harcourt was silently relabelled 28 -> 30 that way and
+    # reported as a Gen-30 frontier row, with no gate objecting: NEEDS_META is
+    # satisfied by a generation being FOUND, not by its being right.
+    #
+    # Both directions are asserted. Without the control (the WITHIN-section case)
+    # this would pass on an implementation that simply never falls back.
+    vgen = tempfile.mkdtemp()
+    with open(os.path.join(vgen, ".autoresearch.json"), "w", encoding="utf-8") as fh:
+        json.dump({"person_model": "narrative"}, fh)
+    with open(os.path.join(vgen, "Family_Tree_Gen.md"), "w", encoding="utf-8") as fh:
+        fh.write(
+            "---\ntype: lineage\ncreated: 2026-07-31\ntags: [t]\n---\n\n"
+            "# Lineage\n\n"
+            "### Generation 30\n\n"
+            "**Within Section** (b. 1200)\n"
+            "- meta: {id: P-WWWWWW}\n"
+            "- Body.\n\n"
+            "## Collateral stub entries\n\n"
+            "**Across Boundary** (b. 1250)\n"
+            "- meta: {id: P-XXXXXX}\n"
+            "- Body.\n\n"
+            "**Explicit Wins** (b. 1250)\n"
+            "- meta: {id: P-YYYYYY, generation: 28}\n"
+            "- Body.\n")
+    vault_config.load_config.cache_clear()
+    by_id = {r.id: r for r in ps.iter_people(vgen)}
+    check(by_id["P-WWWWWW"].generation == 30,
+          "gen fallback: still inherits WITHIN its own section (the control)")
+    check(by_id["P-XXXXXX"].generation is None,
+          "gen fallback: does NOT reach across a `##` boundary (deferred 10)")
+    check(by_id["P-YYYYYY"].generation == 28,
+          "gen fallback: an explicit `generation` always wins")
+    shutil.rmtree(vgen)
+
     for dd in (vn2, v2, d1, d2, vp, clean, vs):
         shutil.rmtree(dd)
     shutil.rmtree(v); shutil.rmtree(vn)

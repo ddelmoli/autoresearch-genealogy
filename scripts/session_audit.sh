@@ -295,9 +295,12 @@ parts = [
                               r"META_PRESENCE violations:|ORPHANED_META violations:",
                               max_lines=2),
     # Phase-2 edge-graph integrity (build_edges.py --validate): structural violations
-    # (dangling id refs / self-edges / broken spouse reciprocity) must stay 0; the
-    # parent-gen mismatch count is the known gen-numbering backlog signal, not edge bugs.
-    "edges -> " + run("build_edges.py", r"structural violations|PARENT-GEN MISMATCH \(",
+    # (MALFORMED_EDGE_REF / dangling id refs / self-edges / broken spouse reciprocity)
+    # must stay 0. PARENT-GEN MISMATCH is the UNEXPLAINED gen-numbering backlog signal,
+    # not edge bugs; GEN_COLLAPSE is the subset the operator has declared as pedigree
+    # collapse in .autoresearch.json and is expected to be non-zero (deferred 16).
+    "edges -> " + run("build_edges.py",
+                      r"structural violations|PARENT-GEN MISMATCH \(|GEN_COLLAPSE \(|MALFORMED_EDGE_REF \(",
                       args=["--validate"]),
     # Entry-boundary attribution (spec/entry-boundary). ENTRY_MISATTRIBUTION is the
     # HARD one, baseline 0: any narrative line credited to an entry other than the
