@@ -8,9 +8,21 @@ template, and the next session inherited the confusion. This wraps the close ste
 in order, reports each as PASS / DUE / SKIP / FAIL, and never silently omits one.
 
 STEPS, IN ORDER
+  0. close#     with --session N, report whether this is a FIRST CLOSE or a RE-CLOSE,
+                and FAIL if a re-close passes --lane/--outcome or --log. ** Derived,
+                not remembered (31 JUL 2026): ** the close prompt used to ask the agent
+                whether it had already closed this sitting, which a resumed or cold
+                agent cannot answer -- `history` carries a date and a lane, and two
+                sittings in one day is normal here. The close now stamps `last_close`
+                with the session number, so the next run can simply look.
   1. plan       record the worked lane's outcome into the session-plan bandit
                 (--lane/--outcome[/--note] -> session_plan.py --record). If a lane
                 is pending and you give none, that is reported, not hidden.
+                ** Under the four-phase loop (21/22/23/24) this is normally SKIPPED
+                on purpose: `22-research-iterations` records each iteration as it
+                finishes, and recording again here would be a second observation
+                for the same work. Pass --lane/--outcome only for an iteration that
+                was worked and never recorded. **
   2. rotation   with --rotation-done, run profile_review.py --complete (resets the
                 cadence clock). Only pass it when the drawn slice was actually
                 polled and recorded — resetting the clock on unpolled work lies to
@@ -21,10 +33,19 @@ STEPS, IN ORDER
   5. ascii      ascii_handoff.py count (fix with: python3 scripts/ascii_handoff.py --fix).
   6. archive    archive_sections.py --target handoff dry-run status; add
                 --apply-archive to actually archive when due.
+  7. next       with --next-plan, run session_plan.py to register the NEXT session's
+                draw. ** ORDER MATTERS AND IT USED TO BE WRONG. ** session_plan.py
+                --record sets `pending: null`, so a plan run BEFORE the close (which
+                the close prompt used to instruct) has its pending draw wiped by step
+                1. That is not hypothetical: a Handoff announced "a pending draw is
+                waiting: EXPAND" over a state file holding no pending draw, and the
+                next session drew a different lane. Running it here, last, cannot be
+                got wrong. Without the flag the step reports DUE with the ordering
+                rule rather than staying silent.
 
 Then it prints the reminder that the Handoff's OPEN / NEXT for the next session
-should be written FROM the plan (`session_plan.py` re-run or its printed table), so
-the next session starts from a ranked list, not from memory.
+should be written FROM the plan, so the next session starts from a ranked list, not
+from memory.
 
 Exit code: 1 if any step FAILED (subprocess error), else 0. DUE/SKIP are honest
 states, not failures.
@@ -40,6 +61,7 @@ import argparse
 import os
 import subprocess
 import sys
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vault_config  # noqa: E402
@@ -66,30 +88,69 @@ def main(argv=None):
     ap.add_argument("--lane", help="lane actually worked this session (EXPAND/IMPROVE/VERIFY/ROTATE)")
     ap.add_argument("--outcome", choices=["hit", "miss"])
     ap.add_argument("--note", default="")
+    ap.add_argument("--session", type=int, metavar="N",
+                    help="the session number 21-session-start established. Stamps the "
+                         "sitting on any observation recorded here, and lets this "
+                         "command DETECT a re-close instead of asking you to remember "
+                         "one (history rows carry only a date, and two sittings in a "
+                         "day is normal).")
     ap.add_argument("--rotation-done", action="store_true",
                     help="the profile-review slice was polled AND recorded; reset its clock")
     ap.add_argument("--log", help="logs/YYYY-MM-DD-slug for the Research_Log index row")
     ap.add_argument("--summary", help="one-line summary for the Research_Log index row")
     ap.add_argument("--apply-archive", action="store_true",
                     help="actually archive Handoff sections when due (default: report only)")
+    ap.add_argument("--next-plan", action="store_true", dest="next_plan",
+                    help="after the outcome is recorded, run session_plan.py to register "
+                         "the NEXT session's draw (order matters: --record clears `pending`, "
+                         "so a plan run before this command is wiped by it)")
     a = ap.parse_args(argv)
 
     vault = vault_config.resolve_vault(a.vault)
     failed = False
     report = []
 
+    # 0. First close, or re-close? DERIVED, not remembered (31 JUL 2026). The close
+    # prompt's step 0 used to ask the agent whether it had already closed this sitting,
+    # which a resumed or cold agent cannot answer, and `history` carries only date+lane.
+    import session_plan as sp  # noqa: E402
+    state = sp.load_state(vault)
+    prior = (state.get("last_close") or {}).get("session")
+    reclose = a.session is not None and prior == a.session
+    if a.session is not None:
+        report.append(("close#", "INFO",
+                       f"session #{a.session}" + (
+                           f" — RE-CLOSE (already closed {(state.get('last_close') or {}).get('date')}): "
+                           "record no new observation, add no second Research_Log row, "
+                           "rewrite the close block to cover the whole sitting"
+                           if reclose else " — first close")))
+        if reclose and (a.lane or a.log):
+            report.append(("guard", "FAIL",
+                           "this sitting is already closed: --lane/--outcome and --log "
+                           "are REFUSED below (they would double-count the bandit and "
+                           "add a second Research_Log row). Correct the existing note "
+                           "and row in place instead."))
+            failed = True
+
     # 1. Plan outcome.
-    if a.lane and a.outcome:
-        ok, out = run("session_plan.py", "--record", "--lane", a.lane,
-                      "--outcome", a.outcome, "--note", a.note, vault=vault)
+    if reclose and a.lane and a.outcome:
+        report.append(("plan", "BLOCK",
+                       "refused: session already closed, so this would be a SECOND "
+                       "observation for one sitting"))
+    elif a.lane and a.outcome:
+        rec_args = ["--record", "--lane", a.lane, "--outcome", a.outcome, "--note", a.note]
+        if a.session is not None:
+            rec_args += ["--session", str(a.session)]
+        ok, out = run("session_plan.py", *rec_args, vault=vault)
         report.append(("plan", "PASS" if ok else "FAIL", out))
         failed |= not ok
     else:
         ok, out = run("session_plan.py", "--heartbeat", vault=vault)
-        state = "DUE" if "NOT yet recorded" in out else "SKIP"
-        report.append(("plan", state,
-                       out if state == "DUE" else
-                       "no --lane/--outcome given; lane outcome not recorded"))
+        plan_state = "DUE" if "NOT yet recorded" in out else "SKIP"
+        report.append(("plan", plan_state,
+                       out if plan_state == "DUE" else
+                       "no --lane/--outcome given; nothing recorded here (correct when "
+                       "each iteration recorded itself via session_plan.py --record)"))
 
     # 2. Rotation clock.
     if a.rotation_done:
@@ -102,7 +163,12 @@ def main(argv=None):
                        "(correct if the slice was not polled this session)"))
 
     # 3. Research_Log index row.
-    if a.log and a.summary:
+    if reclose and (a.log or a.summary):
+        report.append(("log", "BLOCK",
+                       "refused: session already closed, so this would be a SECOND "
+                       "Research_Log row for one sitting; correct the existing row in "
+                       "place with a targeted replacement"))
+    elif a.log and a.summary:
         ok, out = run("log_session.py", "--log", a.log, "--summary", a.summary, vault=vault)
         report.append(("log", "PASS" if ok else "FAIL", out))
         failed |= not ok
@@ -128,14 +194,33 @@ def main(argv=None):
     report.append(("archive", label, out))
     failed |= (not ok)
 
+    # 7. The NEXT session's draw — LAST, after the outcome above is recorded.
+    # session_plan.py --record clears `pending`, so a plan run before this command
+    # loses the draw it just registered (see the module docstring).
+    if a.next_plan:
+        ok, out = run("session_plan.py", vault=vault, timeout=900)
+        report.append(("next", "PASS" if ok else "FAIL", out))
+        failed |= not ok
+    else:
+        report.append(("next", "DUE",
+                       "no --next-plan; run scripts/session_plan.py NOW — AFTER this "
+                       "command, never before (--record clears `pending`) — and write "
+                       "its lane into the Handoff's OPEN / NEXT"))
+
+    if a.session is not None and not failed:
+        st = sp.load_state(vault)
+        st["last_close"] = {"session": a.session, "date": date.today().isoformat()}
+        sp.save_state(vault, st)
+
     width = max(len(n) for n, _, _ in report)
     print("=== SESSION CLOSE ===")
     for name, state, out in report:
         print(f"  {name:<{width}}  {state:<5}  {out[:180]}")
     print()
     print("  Now write the Handoff close block (template in Operating_Protocol.md),")
-    print("  set OPEN / NEXT from the session plan (scripts/session_plan.py), and")
-    print("  commit the vault. handoff_lint runs again in the pre-commit hook.")
+    print("  set OPEN / NEXT from the `next` step's drawn lane, update the suggested")
+    print("  /rename line and the next session's starting command, and commit the")
+    print("  vault. handoff_lint runs again in the pre-commit hook.")
     return 1 if failed else 0
 
 

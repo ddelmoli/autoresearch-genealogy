@@ -210,12 +210,53 @@ def privacy_repo():
     tail = " / ".join(l.strip() for l in out.splitlines()[-3:] if l.strip())
     return f"** FINDINGS ** (exit {pr.returncode}) {tail[:200]}"
 
+def writeback():
+    """FS write-back queue depth, counted straight off the person entries.
+
+    THE POINT IS THAT THERE IS NO QUEUE FILE. `FS_Writeback_Queue.md` was retired
+    31 JUL 2026 after drifting in both directions across eight sessions (two
+    executed write-backs still reading "queued" on their entries; seven of nine
+    "no fs: key" rows silently resolved). The flag now lives on the person, whose
+    entry already holds the evidence, and the count is derived here every session
+    so nothing has to remember to look. Nothing else surfaces it: no lane draws
+    this work and no gate fails when it grows.
+
+    ** THE MATCH IS DELIBERATELY TOLERANT. ** The corpus held FIVE spellings when
+    the grammar was written (`FS WRITE-BACK DONE`, `FS write-back DONE`, either
+    with or without a leading check mark, plus the QUEUED forms), and the first
+    version of this counter matched case-sensitively and undercounted DONE by
+    four. Canonical is `**FS write-back QUEUED|DONE|DROPPED <date>**` per
+    CLAUDE.method.md rule 8; this reads all of them."""
+    import glob
+    import re as _re
+    pat = _re.compile(r"FS\s+write-?back\s+(QUEUED|DONE|DROPPED)", _re.IGNORECASE)
+    n = {"QUEUED": 0, "DONE": 0, "DROPPED": 0}
+    files = set()
+    for f in glob.glob(os.path.join(VAULT, "Family_Tree*.md")):
+        try:
+            t = open(f, encoding="utf-8").read()
+        except OSError:
+            continue
+        for m in pat.finditer(t):
+            state = m.group(1).upper()
+            n[state] += 1
+            if state == "QUEUED":
+                files.add(os.path.basename(f))
+    closed = n["DONE"] + n["DROPPED"]
+    if not n["QUEUED"]:
+        return f"WRITEBACK: 0 queued ({closed} closed to date)  [operator-gated; nothing pending]"
+    return (f"WRITEBACK: {n['QUEUED']} FS write-back(s) QUEUED across {len(files)} file(s), "
+            f"{closed} closed to date ({n['DONE']} done / {n['DROPPED']} dropped) - "
+            f"operator-gated, drained by prompt 17; "
+            f"grep -ric 'FS write-back QUEUED' Family_Tree*.md")
+
 parts = [
     # THE PLAN COMES FIRST (29 JUL 2026): the banner used to lead with 10 integrity
     # gates and bury the work signals, which pointed sessions at INTEGRITY when the
     # stated priority is EXTENSION-first. The plan heartbeat is state-only (cheap);
-    # the session's first COMMAND is `python3 scripts/session_plan.py`, which prints
-    # the ranked worklist and draws the lane. Close with scripts/session_close.py.
+    # the session's first COMMAND is phase 1 (`21-session-start`); the plan itself is
+    # phase 2's first command (`python3 scripts/session_plan.py`), which prints the
+    # ranked worklist and draws the lane. Close with scripts/session_close.py.
     "plan -> " + run("session_plan.py", r"PLAN:", args=["--heartbeat"], max_lines=1),
     "integrity -> " + run("gen_person_index.py",
                           r"DUP_ID \(|MISSING_ID \(|DUP_FS_PID \(|HARD violations",
@@ -295,6 +336,10 @@ parts = [
     # standing rather than remembered; the trailing "[review]" counts DECLARED rows
     # that cite no source or route, which is the cheap-win failure mode.
     "frontier -> " + run("extension_frontier.py", r"FRONTIER:", args=["--heartbeat"], max_lines=1),
+    # FS write-back queue, counted off the ENTRIES (no queue file exists -- see the
+    # writeback() docstring). Operator-gated work that no lane draws and no gate
+    # counts, so the banner is the only thing that keeps it visible.
+    "writeback -> " + writeback(),
 ]
 # The project-specific "known baseline" (which advisory findings are expected and
 # at what counts) lives in an OPTIONAL vault-local file so this hook stays generic.
