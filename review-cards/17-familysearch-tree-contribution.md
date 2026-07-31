@@ -36,6 +36,14 @@ the read-only ones: a bad edit here is visible to strangers and inherited by the
 - A living person reached the shared tree.
 - The log does not let you reconstruct, and undo, what was changed.
 
+## The FS Write-Back Queue (added 31 JUL 2026)
+
+- Queue items (`- **FS write-back QUEUED …**` bullets, written by `23-session-review`) are worked FIRST: they arrive pre-researched, and this prompt is the only one allowed to perform them.
+- Every drained item's bullet is REWRITTEN to `- **FS write-back DONE <date>**` with what was actually written, or to `- **FS write-back DROPPED <date>**` with why it no longer applies (the canonical three states, `CLAUDE.method.md` rule 8). A performed action whose QUEUED bullet survives is re-presented at every session start; the ledger is the grep, so the rewrite IS the drain.
+- An item that turns out not to apply is rewritten to say so, with the date and the reason. It is never deleted silently.
+- The queuing session's evidence is re-checked against the live profile before acting, and a prior not-a-match decision is honoured. The bullet's `life_status` mark is a convenience, not the authority: `scripts/privacy_gate.py` is.
+- Reject the run if the `FS write-back QUEUED` count fell without a matching rise in `FS WRITE-BACK DONE` (or a recorded not-applicable outcome).
+
 ## Next Prompt
 
 Run [18 Edge Verification](../prompts/18-edge-verification.md).
