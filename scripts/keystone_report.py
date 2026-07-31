@@ -95,6 +95,24 @@ ID_RE = re.compile(r"(P-[0-9A-Za-z]{4,10})")
 LIVING_RE = re.compile(r"life_status:\s*(living|unknown)")
 SOURCES_RE = re.compile(r"^\s*-\s*\*\*(?:Sources|FS-attached sources)", re.M)
 PLACEHOLDER_RE = re.compile(r"^\s*unknown\s*;\s*unknown\s*(;|$)", re.I)
+
+# The two THIN components a person can never clear when no authority records their
+# dates. For a medieval woman whose vitals are simply not attested, `no-vitals` and
+# `placeholder-header` are permanent — so she sits at THIN 3 forever, keeps matching
+# `--min-thin 3`, and keeps re-drawing the IMPROVE lane no matter how thoroughly she
+# has been researched. That is a count mixing "not done" with "cannot be done", the
+# same defect class as PARENT-GEN MISMATCH mixing declared pedigree collapse with
+# real bugs, and a count like that cannot be read.
+VITALS_BLOCKING = ("no-vitals", "placeholder-header")
+
+# The escape hatch, and it is the SAME shape as extension_frontier's DECLARED split:
+# the operator declares that a gap is understood, and the tool stops counting it.
+# Deliberately a literal marker rather than a prose sniff — the frontier learned that
+# giving the writer a vocabulary the reader matches exactly beats guessing at wording.
+# Write it as a body bullet naming the authorities checked, e.g.
+#   - **VITALS UNRECOVERABLE 31 JUL 2026**: Cawley gives her no dates and the Complete
+#     Peerage, read directly, gives her none either.
+VITALS_DECLARED_RE = re.compile(r"VITALS UNRECOVERABLE", re.I)
 LOCATOR_RE = re.compile(r"ark:/\d+/|\b(?:fs|antenati|metryki|anc|wt):[0-9a-zA-Z:./_-]{4,}|\b\d:\d:[0-9A-Z-]{4,}")
 APPARATUS_RE = re.compile(r"Cawley|Medlands|Richardson|Complete Peerage|ODNB|Copinger|Coppinger|"
                           r"Visitation|History of Parliament|VCH|Great Migration|NEHGR|Macnamara|"
@@ -148,6 +166,12 @@ def thinness(row, body, records):
     v2 measures the BODY and the RECORD COUNT instead, with the census as a veto.
     Metadata staleness is still worth fixing, but it is a different and much cheaper
     problem — see `stale_meta()` and `--stale-meta`.
+
+    Returns (score, why, blocked). `blocked` marks a row whose thinness is composed
+    ENTIRELY of the two components a declaration can settle (see VITALS_BLOCKING) and
+    which has not been declared: it has a write-up and a source, and the only thing
+    keeping it in the lane is that nobody records its dates. Such a row is a candidate
+    for a `VITALS UNRECOVERABLE` declaration, not for research.
     """
     score, why = 0, []
     bullets = len([ln for ln in (body or "").splitlines()
@@ -165,13 +189,31 @@ def thinness(row, body, records):
     paren = (row.get("header_paren") or "").strip()
     if PLACEHOLDER_RE.match(paren):
         score += 1; why.append("placeholder-header")
+
+    # A row held in the lane ONLY by components a declaration can settle. Computed
+    # before the declaration is applied, so the flag identifies candidates for one.
+    blocked = bool(why) and all(w in VITALS_BLOCKING for w in why)
+
+    # THE DECLARATION: the operator has recorded that these dates are unrecoverable,
+    # so the components stop scoring for this entry. Mirrors the frontier's
+    # SILENT/DECLARED split and `known_gen_collapse`: declared is not the same as
+    # fixed, and a tool that cannot tell them apart teaches the bandit a lane is
+    # losing for a reason that has nothing to do with the lane.
+    if VITALS_DECLARED_RE.search(body or ""):
+        for w in VITALS_BLOCKING:
+            if w in why:
+                score -= 2 if w == "no-vitals" else 1
+                why.remove(w)
+        why.append("[declared: vitals unrecoverable]")
+        blocked = False
+
     # THE VETO: a person the census credits with records has demonstrably been
     # researched, whatever their meta block claims.
     if records >= 4:
         score = min(score, 1); why.append("[capped: WELL_SOURCED]")
     elif records >= 1:
         score = min(score, 3); why.append(f"[capped: {records} ARKs]")
-    return min(score, 6), why
+    return max(min(score, 6), 0), why, blocked
 
 
 def stale_meta(row, body, records):
@@ -282,11 +324,11 @@ def build_rows(vault, warn=None):
             continue  # never a research target
         body = bodies.get(pid, "")
         n = recs.get((r.get("pid") or "").strip(), 0)
-        thin, why = thinness(r, body, n)
+        thin, why, blocked = thinness(r, body, n)
         out.append({
             "id": pid, "name": r.get("name") or "?", "gen": r.get("gen") or "",
             "file": r.get("file") or "?", "load": load.get(pid, 0),
-            "thin": thin, "why": ",".join(why), "recs": n,
+            "thin": thin, "why": ",".join(why), "recs": n, "blocked": blocked,
             "stale": stale_meta(r, body, n) or "",
             "score": load.get(pid, 0) * thin,
         })
@@ -334,9 +376,11 @@ def main(argv=None):
         return 0
 
     if a.summary:
+        nb = sum(1 for o in out if o["blocked"])
         print(f"KEYSTONES: {len(out)} thin entries carrying dependants "
               f"(load>={a.min_load}, thin>={a.min_thin}); "
-              f"top score {out[0]['score'] if out else 0}")
+              f"top score {out[0]['score'] if out else 0}"
+              + (f"; {nb} vitals-blocked [declare, do not research]" if nb else ""))
         return 0
 
     if a.csv:
@@ -361,6 +405,13 @@ def main(argv=None):
     print(f"  {len(out)} rows match; showing {min(a.limit, len(out))}.")
     print("  A keystone is high LOAD + high THIN: the tree leans on it and nobody")
     print("  has written it up. High LOAD with THIN 0 is the desired end state.")
+    nb = sum(1 for o in out if o["blocked"])
+    if nb:
+        print()
+        print(f"  ⚠ {nb} of these are VITALS-BLOCKED: thin only because no authority")
+        print("    records their dates. Researching them cannot clear the lane. Verify")
+        print("    the authorities were checked, then declare it on the entry with a")
+        print("    `- **VITALS UNRECOVERABLE <date>**: <authorities checked>` bullet.")
     return 0
 
 

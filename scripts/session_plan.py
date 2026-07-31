@@ -132,7 +132,9 @@ def lane_improve(vault):
     rows = [r for r in kr.build_rows(vault) if r["load"] >= 1 and r["thin"] >= 3]
     rows.sort(key=lambda o: (-o["score"], -o["load"], -o["thin"], o["name"]))
     return [{"id": r["id"], "name": r["name"], "gen": r["gen"], "file": r["file"],
-             "why": f"keystone: {r['load']} people lean on it, thin {r['thin']}/6 ({r['why']})"}
+             "blocked": r["blocked"],
+             "why": ("VITALS-BLOCKED — declare, do not research: " if r["blocked"] else "")
+                    + f"keystone: {r['load']} people lean on it, thin {r['thin']}/6 ({r['why']})"}
             for r in rows]
 
 
@@ -453,6 +455,12 @@ def main(argv=None):
         print(f"** ROTATE sample rate overridden for this session: {a.sample_percent:g}% "
               f"(standing rate is `sample_percent` in .maintenance.json). **")
     sizes = {ln: len(rows) for ln, rows in lanes.items()}
+    # A lane count that mixes "not done" with "cannot be done" cannot be read, and the
+    # bandit is fed these sizes: an IMPROVE draw whose candidates are unworkable by
+    # construction is guaranteed to miss its target before it starts, which then teaches
+    # the bandit that IMPROVE is a losing arm for a reason unrelated to the lane
+    # (deferred_decisions 21). Report the floor rather than hiding it in the total.
+    blocked = {ln: sum(1 for r in rows if r.get("blocked")) for ln, rows in lanes.items()}
     pick, reason = draw_lane(state, sizes, min_sample, stale_after)
     lane_target, lt_pct, lt_src = resolve_lane_target(vault, cfg, a.lane_pct)
     try:
@@ -467,14 +475,16 @@ def main(argv=None):
 
     if a.json:
         print(json.dumps({"date": date.today().isoformat(), "lane": pick,
-                          "reason": reason, "sizes": sizes,
+                          "reason": reason, "sizes": sizes, "blocked": blocked,
                           "lane_target": lane_target, "lane_target_percent": lt_pct,
                           "lane_target_source": lt_src, "pool": pool_n,
                           "lanes": {ln: rows[:per_lane] for ln, rows in lanes.items()}},
                          indent=1, default=str))
         return 0
 
-    counts = " / ".join(f"{ln} {sizes[ln]}" for ln in LANES)
+    counts = " / ".join(f"{ln} {sizes[ln]}"
+                        + (f" ({blocked[ln]} blocked)" if blocked[ln] else "")
+                        for ln in LANES)
     print("=== SESSION PLAN — one ranked worklist, one drawn lane ===")
     print(f"  {counts}")
     print(f"  RECOMMENDED LANE: {pick}  ({reason})")
@@ -493,7 +503,9 @@ def main(argv=None):
     for ln in ordered:
         rows = lanes[ln]
         mark = " <-- THIS SESSION" if ln == pick else ""
-        print(f"\n  [{ln}] {sizes[ln]} candidates{mark}")
+        floor = (f"  [{blocked[ln]} vitals-blocked: declare, do not research — "
+                 f"workable {sizes[ln] - blocked[ln]}]" if blocked[ln] else "")
+        print(f"\n  [{ln}] {sizes[ln]} candidates{mark}{floor}")
         for r in rows[:per_lane]:
             gen = f"Gen {r['gen']:>2}" if r.get("gen") not in (None, "") else "Gen  ?"
             print(f"    {gen}  {str(r.get('name'))[:42]:44} {r.get('why')}")
