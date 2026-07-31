@@ -2,38 +2,42 @@
 
 Prompt: [21 Session Start](../prompts/21-session-start.md)
 
+Phase 1 of 4. Initializes the session and does no research.
+
 ## Good Output
 
-- The session's first substantive act is the banner read + `session_plan.py` run; the ranked worklist and drawn lane are shown BEFORE any research happens.
-- A gate above baseline is triaged before new work, not worked around.
-- The session works the plan's ranking top-down within one lane, using the owning prompt/workflow per work type.
-- If the drawn lane was overridden, the override is stated up front and the actually-worked lane is what gets recorded at close.
-- Commits land one logical unit at a time, gates green each time; the session log accrues as findings land.
-- The rename line reflects the drawn lane and top target.
+- The vault is named with its resolution source, and an INFERRED vault is confirmed with the operator before anything is written.
+- Current gate values are in hand (from the banner, or from `session_audit.sh` when the hook was skipped) and compared against `.audit_baseline.txt`, not against themselves.
+- The session-start values of the four lane metrics are written down, so phase 3 has a "before".
+- The session number is derived from the Handoff plus the Research_Log, and stated.
+- Any announced pending draw is checked against `session_plan_snapshots.json` rather than believed from prose.
+- Housekeeping DUE items, open deferred decisions and the FS write-back queue depth are surfaced ONCE, checked against `deferred_decisions.md` first, and either asked or queued per the away-policy.
+- The reply ends with a rename command reconciled from the Handoff's stored suggestion, and hands off to `22-research-iterations`.
 
 ## Red Flags
 
-- Research begins before the plan is run, or the plan's output is summarized without being shown.
-- Multiple lanes worked shallowly in one session (the design is one lane, worked properly).
-- A red hard gate "noted" and bypassed.
-- The lane bandit's early draws second-guessed or tuned on tiny n ("EXPAND keeps winning, skip the floor").
-- Living/unknown people touched by any web-facing step.
-- Priorities re-argued from prose instead of taken from the plan (the exact failure the loop exists to end).
+- Research happens in this phase: a lane drawn, an entry edited, a search run.
+- The banner is absent and the session proceeds anyway, or the baseline file is read as if it were current state.
+- The session number is assumed to follow the last one the session personally saw (two sittings in one day is normal).
+- A housekeeping item already parked in `deferred_decisions.md` is re-presented as new.
+- The FS write-back queue goes unreported because it was unchanged — nothing else surfaces it, so an unreported queue is an invisible one.
+- The operator is blocked on a checklist during an autonomous run instead of the item being queued.
+- A rename composed from scratch while the Handoff already carried one.
 
 ## Verify Manually
 
-- Re-run `python3 scripts/session_plan.py` yourself: the counts shown at session start should match (allowing for work done since).
-- Spot-check 2-3 rows the session worked against the plan's ranking — were they actually the top of the drawn lane?
-- Check the banner section of the transcript: was anything above baseline, and if so, was it triaged before research?
-- `git -C <vault> log --oneline` — one logical unit per commit, no gate bypasses.
+- Compare the banner's vault name and source line against the vault you meant to work.
+- Spot-check two gate numbers against `.audit_baseline.txt` yourself.
+- `python3 scripts/session_plan.py --heartbeat` and the `pending` field of `session_plan_snapshots.json` — do they agree with what the session reported?
+- Grep `Handoff.md` and `Research_Log.md` for the highest `#N`: is the stated session number one past it?
 
 ## Reject The Result When
 
-- Research started before the plan was run or shown.
-- A hard gate was red at session start and work proceeded anyway.
-- The session drifted across lanes or into unranked targets without saying so.
-- A living/unknown person was touched by any web-facing step.
+- Any research or vault write happened in this phase.
+- Gate state was never established, or a red HARD gate was noted and phase 2 started anyway.
+- The vault was inferred by the hook and never confirmed, or 2+ candidates were resolved by guessing.
+- Session-start metric values were not captured, leaving phase 3 with nothing to compare against.
 
 ## Next Prompt
 
-`22-session-close` — always. The close records the lane outcome; skipping it starves the lane bandit of its signal.
+`22-research-iterations` — with the Iterations and Lane target this prompt passed through.

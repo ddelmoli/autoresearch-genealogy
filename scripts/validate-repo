@@ -177,7 +177,7 @@ end
 
 def check_prompts
   # The COUNT is a repo contract, so it counts tracked prompts…
-  error("expected 20 numbered prompts, found #{tracked("prompts/[0-9]*.md").length}") unless tracked("prompts/[0-9]*.md").length == 20
+  error("expected 22 numbered prompts, found #{tracked("prompts/[0-9]*.md").length}") unless tracked("prompts/[0-9]*.md").length == 22
 
   # …while the field lint runs over every numbered prompt on disk, including
   # local-only drafts: these rules are about how a prompt is written.

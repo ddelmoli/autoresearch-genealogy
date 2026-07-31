@@ -61,7 +61,17 @@ Run `18-edge-verification` to walk every unverified (`?`-marked) parent/spouse e
 Run `20-creative-vault-review` to pass every direct-line ancestor and significant collateral through a rotating battery of interpretive lenses, logging each hit as an enhancement (deepen, correct, source) or an extension (a new person or line to chase).
 
 **Running routine research sessions on a vault with the mechanized session loop?**
-Open every session with `21-session-start` (banner -> `scripts/session_plan.py` -> work the drawn lane) and close it with `22-session-close` (`scripts/session_close.py` checklist -> Handoff close block -> commit). These two are dispatchers, not campaigns: the numbered prompts above are what a lane dispatches TO (e.g. VERIFY -> prompt 18, a harvest target -> prompt 19).
+A session is FOUR phase prompts, run in order, and only phase 2 is a loop:
+
+| Phase | Prompt | What it does | Loop? |
+|---|---|---|---|
+| 1. Initialize | `21-session-start` | banner + gate state vs baseline, vault confirmed, session number, Handoff read, housekeeping and deferred decisions surfaced, rename suggested | no |
+| 2. Research | `22-research-iterations` | **`Iterations: N`** lane draws; each draws a lane, works it to the Lane target, and records its own outcome | **yes** |
+| 3. Review | `23-session-review` | reconcile the sitting against the tools, re-measure every lane metric, gates vs baseline, assemble the FS write-back queue | no |
+| 4. Close | `24-session-close` | `scripts/session_close.py` checklist -> Handoff close block -> next session's draw and starting command -> commit | no |
+
+These are dispatchers, not campaigns: the numbered prompts above are what a lane dispatches TO (e.g. VERIFY -> prompt 18, a harvest target -> prompt 19).
+
 ## Overriding A Field For One Run
 
 Every field in `## Autoresearch Configuration` is a default, not a fixed value.
@@ -79,29 +89,30 @@ run the prompt's main loop.** What one loop *is* differs by prompt:
 | Prompt | One iteration = |
 |---|---|
 | 01-20 | one pass of the Protocol over the worklist |
-| **21-session-start** | one **lane draw**: draw a lane -> work it -> record the outcome |
-| 22-session-close | one close (raising it is meaningless) |
+| **22-research-iterations** | one **lane draw**: draw a lane -> work it -> record the outcome |
+| 21, 23, 24 | nothing — these are session PHASES, not loops. Raising `Iterations` on one of them is meaningless (a session is initialized, reviewed and closed once); the dial you want is 22 |
 
-**21 takes a second, independent dial, and it is a PERCENT OF THE VAULT** — the
-same metric as the profile-review sample rate, so one number describes a session's
-workload whatever lane is drawn. `Iterations` says how many lanes you draw; the
-**Lane target** says how deep to go in each. They compose:
+**22 takes a second, independent dial, and it is a PERCENT OF THE VAULT, counted
+in PEOPLE** — the same metric as the profile-review sample rate, so one number
+describes a session's workload whatever lane is drawn. `Iterations` says how many
+lanes you draw; the **Lane target** says how deep to go in each. They compose:
 
 ```
-run 21-session-start with Iterations=10              # 10 draw/work/record cycles
-run 21-session-start with Iterations=3, Lane pct=3   # 3 lanes, 3% of the vault deep each
+run 22-research-iterations with Iterations=10              # 10 draw/work/record cycles
+run 22-research-iterations with Iterations=3, Lane pct=3   # 3 lanes, 3% of the vault deep each
 ```
 
 `session_plan.py` prints the resolved number so you never do the arithmetic:
-`LANE TARGET: work 20 rows this session — 1.5% of 1,352 (sample_percent)`. It
-defaults to `profile_review.sample_percent`; pin it separately as
+`LANE TARGET: 20 people this ITERATION — 1.5% of 1,352 (sample_percent)`, followed
+by what one unit means in the drawn lane. It defaults to
+`profile_review.sample_percent`; pin it separately as
 `session_plan.lane_target_percent` once the two diverge in cost.
 
 ⚠ **Some things are per-SITTING, not per-iteration**, however large `Iterations`
 is: the profile-review slice runs **once** (sized by `sample_percent`), and you
-write **one** Research_Log row and **one** Handoff close block. And if you record
-each cycle with `session_plan.py --record`, run `session_close.py` *without*
-`--lane/--outcome` at the end or the final cycle is counted twice.
+write **one** Research_Log row and **one** Handoff close block. Phase 2 records
+each cycle with `session_plan.py --record`, so phase 4 runs `session_close.py`
+*without* `--lane/--outcome`; passing them there would count one cycle twice.
 
 ## Human Review Cards
 
@@ -128,7 +139,9 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 19 FS Source Harvest | [review-cards/19-fs-source-harvest.md](../review-cards/19-fs-source-harvest.md) |
 | 20 Creative Vault Review | [review-cards/20-creative-vault-review.md](../review-cards/20-creative-vault-review.md) |
 | 21 Session Start | [review-cards/21-session-start.md](../review-cards/21-session-start.md) |
-| 22 Session Close | [review-cards/22-session-close.md](../review-cards/22-session-close.md) |
+| 22 Research Iterations | [review-cards/22-research-iterations.md](../review-cards/22-research-iterations.md) |
+| 23 Session Review | [review-cards/23-session-review.md](../review-cards/23-session-review.md) |
+| 24 Session Close | [review-cards/24-session-close.md](../review-cards/24-session-close.md) |
 
 ## Prerequisites
 
@@ -144,7 +157,9 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 18-edge-verification | Populated `Family_Tree*.md` with `- meta:` edges carrying `?` marks (run `scripts/build_edges.py` first); logged-in FamilySearch Chrome session |
 | 20-creative-vault-review | A populated `Family_Tree*.md` that has already had at least one expansion and one source pass — the lenses need material to work on |
 | 21-session-start | A vault on the mechanized session loop (`scripts/session_plan.py` present; `AUTORESEARCH_VAULT` set); SessionStart audit hook installed |
-| 22-session-close | A session opened via 21-session-start (a drawn lane to record); the vault's Operating_Protocol close-block template |
+| 22-research-iterations | A session initialized via 21-session-start (current gate values, session number, session-start metric values in hand) |
+| 23-session-review | Iterations run and recorded via 22-research-iterations; the sitting's `logs/<date>-<slug>.md` |
+| 24-session-close | A reviewed sitting (23-session-review's material); the vault's Operating_Protocol close-block template |
 
 ## Placeholders
 
