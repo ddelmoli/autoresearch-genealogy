@@ -218,26 +218,66 @@ def lane_improve(vault):
             for r in rows]
 
 
-def lane_verify(vault):
+def lane_verify(vault, include_adjudicated=False):
+    """`?`-marked edges that have NOT already been walked and judged.
+
+    ** ADJUDICATED EDGES ARE SUBTRACTED (deferred 32, operator-directed 01 AUG 2026). **
+    A `?` means two different things: "nobody has checked this" and "somebody
+    checked this and the `?` is CORRECT" (FS-GAP, scholarly hedge, privacy). This
+    builder keyed on the mark alone, so a settled edge looked identical to an
+    untouched one and was re-offered every session. Measured on the reference
+    vault: of 135 `?` edges only 35 were FS-checkable at all, and 5 of those had
+    already been judged; two more carried hedges written in prose that no pattern
+    matches, which is why the marker has to live in the DATA.
+
+    That also made settled work UNCOUNTABLE. The lane floor is a count of PEOPLE
+    (operator: at least 1.5% of the vault per draw, same in every lane), and
+    `22-research-iterations` requires a disposition to REMOVE the person from the
+    pool -- "prose alone is not a disposition". Classifying an edge and retaining
+    its `?` left the row in the pool forever, so the work could never count toward
+    the floor no matter how much of it was done. The `adjudicated` key is what
+    makes it count.
+
+    `--include-adjudicated` brings them back for an audit pass.
+    """
     import re
     import gen_person_index as g
     edge_re = re.compile(r"(parents|spouse):\s*'\[([^\]]*)\]'")
+    adj_re = re.compile(r"adjudicated:\s*'\[([^\]]*)\]'")
+    id_re = re.compile(r"P-[0-9A-Za-z]{5,7}")
     living_re = re.compile(r"life_status:\s*(living|unknown)")
     rows = []
     for p in g.parse_narrative():
         meta = p.get("block") or ""
         if living_re.search(meta):
             continue  # privacy: a `?` here is unclearable by web research
-        marked = []
+        adj = set()
+        if not include_adjudicated:
+            m = adj_re.search(meta)
+            if m:
+                adj = set(id_re.findall(m.group(1)))
+        marked, settled = [], 0
         for kind, ids in edge_re.findall(meta):
-            n = ids.count("?")
-            if n:
-                marked.append(f"{n} {kind}")
+            # Count only `?` tokens whose TARGET id is not already adjudicated.
+            open_n = 0
+            for tok in (t.strip() for t in ids.split(",")):
+                if not tok.endswith("?"):
+                    continue
+                tid = id_re.search(tok)
+                if tid and tid.group(0) in adj:
+                    settled += 1
+                else:
+                    open_n += 1
+            if open_n:
+                marked.append(f"{open_n} {kind}")
         if marked:
+            why = "unconfirmed edges: " + ", ".join(marked) \
+                  + " — read entry before stripping ? (FS-gap/hedge)"
+            if settled:
+                why += f" [{settled} already adjudicated, not offered]"
             rows.append({"id": p.get("id"), "name": p.get("name") or "?",
                          "gen": p.get("gen"), "file": p.get("file") or "?",
-                         "why": "unconfirmed edges: " + ", ".join(marked)
-                                + " — read entry before stripping ? (FS-gap/hedge)"})
+                         "why": why})
     rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0))
     return rows
 
@@ -529,6 +569,10 @@ def main(argv=None):
                          "`sample_percent` in .maintenance.json.")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--heartbeat", action="store_true")
+    ap.add_argument("--include-adjudicated", action="store_true",
+                    help="VERIFY: also offer `?` edges already walked and judged "
+                         "(listed in the entry's `adjudicated:` meta key). Audit "
+                         "pass only -- they are excluded from a normal draw.")
     ap.add_argument("--record", action="store_true",
                     help="record a lane outcome (with --lane/--outcome[/--note])")
     ap.add_argument("--lane")
@@ -570,7 +614,7 @@ def main(argv=None):
     lanes = {
         "EXPAND": lane_expand(vault),
         "IMPROVE": lane_improve(vault),
-        "VERIFY": lane_verify(vault),
+        "VERIFY": lane_verify(vault, include_adjudicated=a.include_adjudicated),
         "ROTATE": lane_rotate(vault, a.sample_percent),
     }
     if a.sample_percent:

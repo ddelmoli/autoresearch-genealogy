@@ -107,6 +107,19 @@ class PersonRecord:
     parents: list = field(default_factory=list)        # ids; a trailing '?' = unverified
     spouse: list = field(default_factory=list)         # ids; a trailing '?' = unverified
     flags: list = field(default_factory=list)
+    # Far-end ids of `?`-marked edges on THIS record that have been WALKED AND
+    # JUDGED, with the `?` retained deliberately (FS-GAP, scholarly hedge, or
+    # privacy). See the `adjudicated` note in CLAUDE.method.md.
+    #
+    # ** WHY A SEPARATE KEY AND NOT A MARK ON THE TOKEN (deferred 32, 01 AUG 2026). **
+    # The obvious design is a third token state, `P-XXXXXX?!`. It cannot work:
+    # `build_edges.edge_value` REGENERATES every edge token as
+    # `pid + ("" if verified else "?")`, so any suffix beyond the bare `?` is
+    # silently destroyed by the next `build_edges --apply` — a data-loss path with
+    # no error. `upsert_edges` splices parents:/spouse: "WITHOUT disturbing any
+    # other field", so a sibling key survives by construction. Absent key = nothing
+    # adjudicated, which is exactly the pre-existing behaviour.
+    adjudicated: list = field(default_factory=list)
     sources: list = field(default_factory=list)
     source_file: str | None = None   # backend artifact (which file holds the record)
     raw: object = None               # backend handle for in-place write
@@ -123,6 +136,7 @@ class PersonRecord:
             frozenset(str(p) for p in (self.parents or ())),
             frozenset(str(s) for s in (self.spouse or ())),
             frozenset(str(f) for f in (self.flags or ())),
+            frozenset(str(a) for a in (self.adjudicated or ())),
             frozenset(_norm_source(s) for s in (self.sources or ())),
         )
 
@@ -255,6 +269,7 @@ def _record_from_frontmatter(fm, path, text, vault):
         parents=list(fm.get("parents") or []),
         spouse=list(fm.get("spouse") or []),
         flags=list(fm.get("flags") or []),
+        adjudicated=list(fm.get("adjudicated") or []),
         sources=list(fm.get("sources") or []),
         source_file=(os.path.relpath(path, vault) if path else None),
         raw={"path": path, "text": text},
@@ -303,7 +318,7 @@ class FileBackend:
 _WRITE_KEYS = (
     "id", "name", "born", "born_phrase", "died", "died_phrase", "generation",
     "evidence_tier", "profile_status", "life_status",
-    "parents", "spouse", "flags",
+    "parents", "spouse", "flags", "adjudicated",
 )
 
 
@@ -344,6 +359,7 @@ def _apply_frontmatter_changes(text, record):
         "evidence_tier": record.evidence_tier, "profile_status": record.profile_status,
         "life_status": record.life_status, "parents": record.parents,
         "spouse": record.spouse, "flags": record.flags,
+        "adjudicated": record.adjudicated,
     }
     old_vals = {
         "id": old_record.id, "name": old_record.name, "born": old_record.born,
@@ -353,6 +369,7 @@ def _apply_frontmatter_changes(text, record):
         "profile_status": old_record.profile_status,
         "life_status": old_record.life_status, "parents": old_record.parents,
         "spouse": old_record.spouse, "flags": old_record.flags,
+        "adjudicated": old_record.adjudicated,
     }
 
     lines = fm_block.split("\n")
@@ -392,7 +409,7 @@ def _render_new_person(record):
     for k in _EXTERNAL_ID_KEYS:               # fs/wt/anc — needed for lossless conversion
         if (record.external_ids or {}).get(k):
             fm.append(f"{k}: {record.external_ids[k]}")
-    for key in ("parents", "spouse", "flags"):
+    for key in ("parents", "spouse", "flags", "adjudicated"):
         val = getattr(record, key)
         if val:
             fm.append(f"{key}: {_serialize_value(key, val)}")
@@ -611,6 +628,7 @@ def _record_from_meta(meta, name, rest, gens, header_line, path, vault, meta_lin
         parents=_listify(meta.get("parents")),
         spouse=_listify(meta.get("spouse")),
         flags=_listify(meta.get("flags")),
+        adjudicated=_listify(meta.get("adjudicated")),
         sources=[],  # narrative sources live in a body bullet; populated in Spec 04c
         source_file=(os.path.relpath(path, vault) if path else None),
         raw={"path": path, "meta_line": meta_line, "header_line": header_line,
@@ -766,8 +784,8 @@ class NarrativeBackend:
 _META_FIELD_ORDER = ("id", "evidence_tier", "profile_status", "life_status",
                      "generation", "fs", "wt", "anc",
                      "born", "born_phrase", "died", "died_phrase",
-                     "parents", "spouse", "flags")
-_META_LIST_KEYS = ("parents", "spouse", "flags")
+                     "parents", "spouse", "flags", "adjudicated")
+_META_LIST_KEYS = ("parents", "spouse", "flags", "adjudicated")
 # Date values are always single-quoted on emit. The v3 grammar REQUIRES quoting for
 # any value containing a comma or bracket, and a phrase can carry either; quoting
 # all four unconditionally keeps one rule instead of a per-value judgement call.
@@ -842,6 +860,8 @@ def _record_to_meta(record, original_meta=None, promote_dates=False):
         d["spouse"] = list(record.spouse)
     if record.flags:
         d["flags"] = list(record.flags)
+    if record.adjudicated:
+        d["adjudicated"] = list(record.adjudicated)
     # Date keys are written only when they BELONG in the meta block — see
     # _date_keys_to_write. Without that rule, `record.born` (which falls back to
     # the header parenthetical when the meta has no date key) would be written

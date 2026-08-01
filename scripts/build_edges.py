@@ -134,16 +134,29 @@ def validate_edges(limit=20):
     parents = defaultdict(set)        # id -> {parent_id}
     spouses = defaultdict(set)        # id -> {spouse_id}
     malformed = []                    # (id, key, raw_token)
+    adj_stale = []                    # (id, adjudicated_id) — see below
     for r in rows:
         if not r["id"]:
             continue
         meta = G.parse_meta(r["block"])
+        unverified = set()            # far-end ids this entry still marks with `?`
         for key, sink in (("parents", parents), ("spouse", spouses)):
             good = {pid for pid, _ in edge_ids(meta.get(key))}
             sink[r["id"]] |= good
+            for pid, ok in edge_ids(meta.get(key)):
+                if not ok:
+                    unverified.add(pid)
             for tok in edge_tokens(meta.get(key)):
                 if not STRICT_ID_RE.match(tok):
                     malformed.append((r["id"], key, tok))
+        # ADJUDICATED_STALE (deferred 32): an id listed as adjudicated that this
+        # entry no longer marks `?`. It means the edge was later cleared (or the
+        # id was mistyped) and the note was left behind — and a stale entry here
+        # SUPPRESSES a real candidate from the VERIFY lane, which is the one
+        # failure mode this key could introduce. Advisory, baseline 0.
+        for aid in edge_tokens(meta.get("adjudicated")):
+            if aid not in unverified:
+                adj_stale.append((r["id"], aid))
 
     collapse_pairs, collapse_notes = vault_config.get_known_gen_collapse(VAULT) if VAULT else (set(), {})
     dangling, selfedge, recip, gen_bad, gen_declared = [], [], [], [], []
@@ -177,6 +190,9 @@ def validate_edges(limit=20):
     print(f"  BROKEN SPOUSE RECIPROCITY (A->B, no B->A):   {len(recip)}   [should be 0]")
     print(f"  PARENT-GEN MISMATCH (parent != child gen+1): {len(gen_bad)}   [unexplained; gen-backlog signal, not necessarily an edge bug]")
     print(f"  GEN_COLLAPSE (declared in .autoresearch.json): {len(gen_declared)}   [expected; pedigree collapse, every edge correct]")
+    print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real VERIFY candidate]")
+    for c, aid in adj_stale[:limit]:
+        print(f"    ADJ_STALE {nm(c)} ({c}) adjudicated -> {aid} (no `?` edge to it)")
     for c, k, t in malformed[:limit]:
         print(f"    MALFORMED {nm(c)} ({c}) {k} -> {t!r} (not an id)")
     for c, k, p in dangling[:limit]:
