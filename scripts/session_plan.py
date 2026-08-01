@@ -109,10 +109,19 @@ LANES = ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")
 # vault counted in PEOPLE (operator, 30 JUL 2026), so the units are deliberately
 # comparable across lanes: 1.5% of the vault means the same amount of session
 # whichever lane is drawn.
+# ** A UNIT IS A DISPOSITION, NOT A SUCCESS ** (operator, 01 AUG 2026). Every lane
+# credits the same thing: a person addressed and not needing to be looked at again.
+# This module printed the SUCCESS-ONLY wording for EXPAND and IMPROVE for a day
+# after `22-research-iterations` was changed, so the plan told every session one
+# definition while the prompt stated another. Keep these strings in step with that
+# prompt's unit table.
+#
+# ⚠ A disposition must also REMOVE the person from the pool — "prose alone is not a
+# disposition" (see the prompt). A documented negative that no candidate builder can
+# see leaves the row on the worklist and does not count.
 LANE_UNITS = {
-    "EXPAND": "one person ADDED: a frontier row gains a sourced parent edge, "
-              "or the parent it names is minted",
-    "IMPROVE": "one SOURCE_GAP entry HARVESTED: its records found, read and cited\n              in a `- **Sources**` bullet (Recipe-S / prompt 19)",
+    "EXPAND": "one frontier row DISPOSED OF: it gains a sourced parent edge or the\n              parent it names is minted, OR it is closed with a documented negative",
+    "IMPROVE": "one SOURCE_GAP entry DISPOSED OF: records found, read and cited in a\n              `- **Sources**` bullet (Recipe-S / prompt 19), OR closed as a\n              documented negative naming the real route",
     "VERIFY": "one `?` edge adjudicated: cleared, contradicted, or classified "
               "with its reason on the entry",
     "ROTATE": "one drawn entry polled AND recorded with --record",
@@ -603,8 +612,13 @@ def main(argv=None):
     print(f"  RECOMMENDED LANE: {pick}  ({reason})")
     if lane_target:
         shown, is_dry = target_and_dryness(lane_target, sizes.get(pick, 0) if pick else lane_target)
-        print(f"  LANE TARGET: {shown} {'person' if shown == 1 else 'people'} "
+        # "at least" is the operator's word (01 AUG 2026): the target is a FLOOR,
+        # identical in every lane, and cost-per-person is not an input to it.
+        print(f"  LANE TARGET: AT LEAST {shown} {'person' if shown == 1 else 'people'} "
               f"this ITERATION — {lt_pct:g}% of {pool_n:,} ({lt_src})")
+        print("    Same floor in every lane, counted in PEOPLE. A lane being slow or")
+        print("    thin is not a reason to work fewer; if the floor is not met, report")
+        print("    what BLOCKED it.")
         if pick and is_dry:
             print(f"    ⚠ THE LANE HOLDS ONLY {sizes.get(pick, 0)} — it will RUN DRY before "
                   f"target, and a lane that runs dry is a HIT. Do not read {shown} as "
