@@ -1,0 +1,31 @@
+#!/bin/bash
+# FRAMEWORK-REPO commit-msg hook — PII gate for the MESSAGE.
+#
+# The sibling pre-commit hook checks the FILES a commit touches. It structurally
+# cannot check the message: at pre-commit time the message does not exist yet.
+# That gap was real, not theoretical — on 01 AUG 2026 a commit about to be pushed
+# to the public fork carried three denylist names and a real FamilySearch PID in
+# its message, and `privacy-audit-repo: ok` had just been printed, because that
+# script scans tracked file content and `git log -S` (a pickaxe over DIFF
+# content). A message is neither.
+#
+# It matters here more than in most repos: the working style rewards long,
+# specific commit messages that name the person and the record, because that is
+# what makes the history worth reading. Every one of those is a disclosure the
+# moment it reaches a public remote — and unlike a file, a published message
+# cannot be corrected without rewriting shared history.
+#
+# Bypass, when you genuinely must:  git commit --no-verify
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+CHECKER="$ROOT/scripts/privacy-audit-msg"
+
+if [[ ! -x "$CHECKER" ]]; then
+  echo "[commit-msg] WARNING: $CHECKER missing or not executable; message PII gate SKIPPED." >&2
+  echo "[commit-msg] This repo is the PUBLIC fork — do not rely on the skip." >&2
+  exit 0
+fi
+
+python3 "$CHECKER" --file "$1" || exit 1
+exit 0

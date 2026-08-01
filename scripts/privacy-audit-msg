@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""
+privacy-audit-msg — PII gate for COMMIT MESSAGES.
+
+Why this exists as a SEPARATE script, and why `privacy-audit-repo` could not do
+it. That script scans two things: the working-tree content of tracked files, and
+history via `git log -S<term>` — which is a pickaxe over DIFF CONTENT. A commit
+MESSAGE is neither. It is not a tracked file and it never appears in a diff, so
+it was outside the gate entirely, and the gate reported `ok` while a message
+named real people.
+
+Found 01 AUG 2026, on a push to the PUBLIC fork: one commit about to be published
+carried three denylist names and a real FamilySearch PID in its message, and
+`privacy-audit-repo: ok` had just been printed. The message was rewritten before
+the push. The two things that made it survivable were luck and a manual check —
+neither is a control.
+
+This matters more here than in most repos. The working style actively encourages
+long, specific commit messages that name the person and the record, because that
+is what makes the history worth reading. Every one of those is a disclosure if it
+reaches a public remote.
+
+WHAT IT CHECKS, both classes `privacy-audit-repo` already understands:
+  1. denylist NAMES (from .private/anonymization-denylist.txt), case-insensitive
+  2. record IDENTIFIERS — the FamilySearch PID shape, with the same placeholder
+     exemptions the sibling script uses (XXXX-XXX, AAAA-AAA, ABCD-123, EFGH-4JK)
+
+The WikiTree shape is deliberately NOT checked, for the reason the sibling script
+documents at length: `Surname-Number` is structurally identical to ordinary prose
+("Pre-1800", "Gen-2", "Phase-1"), and a check that fires on prose trains you to
+ignore it.
+
+SCOPE, deliberately: this stops the NEXT one. It does not relitigate what shipped
+— the same stance `privacy-audit-repo` takes for identifiers in history, and for
+the same reason: rewriting published history is a larger harm than the
+disclosure, and it is the operator's call, never a tool's.
+
+USAGE
+  privacy-audit-msg --file .git/COMMIT_EDITMSG     # the commit-msg hook path
+  privacy-audit-msg --rev-range origin/main..HEAD  # audit unpublished commits
+  privacy-audit-msg --rev-range all                # audit everything (reporting)
+
+Exit 0 clean, 1 on findings, 2 on a usage/config error.
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DENYLIST = os.path.join(ROOT, ".private", "anonymization-denylist.txt")
+
+# Same shape the sibling script detects: four alphanumerics, hyphen, three.
+IDENTIFIER_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{3}\b")
+PLACEHOLDER_IDENTIFIERS = {"ABCD-123", "EFGH-4JK"}
+
+
+def is_placeholder(token: str) -> bool:
+    """A token is a placeholder when each half is one repeated character, or it is
+    one of the deliberate stand-ins. Mirrors privacy-audit-repo exactly."""
+    if token in PLACEHOLDER_IDENTIFIERS:
+        return True
+    left, _, right = token.partition("-")
+    return len(set(left)) == 1 and len(set(right)) == 1
+
+
+def load_terms():
+    if not os.path.exists(DENYLIST):
+        sys.stderr.write(
+            f"privacy-audit-msg: missing {DENYLIST}\n"
+            "  This repo is a PUBLIC fork and the name check cannot run without it.\n"
+            "  Create it with one private term per line (it is gitignored).\n")
+        sys.exit(2)
+    terms = []
+    for line in open(DENYLIST, encoding="utf-8", errors="replace"):
+        t = line.strip()
+        if t and not t.startswith("#") and len(t) >= 3:
+            terms.append(t)
+    if not terms:
+        sys.stderr.write(f"privacy-audit-msg: no usable terms in {DENYLIST}\n")
+        sys.exit(2)
+    return terms
+
+
+def strip_comments(msg: str) -> str:
+    """git strips `#` lines before committing, so neither should we flag them —
+    the template and the status block are full of paths, not disclosures."""
+    return "\n".join(l for l in msg.splitlines() if not l.lstrip().startswith("#"))
+
+
+def scan(msg: str, terms):
+    """Return (name_hits, id_hits) for one message. Labels are redacted: this
+    script's own output must not become the disclosure it exists to prevent."""
+    body = strip_comments(msg)
+    low = body.lower()
+    names = sorted({t for t in terms if t.lower() in low})
+    ids = sorted({tok for tok in IDENTIFIER_RE.findall(body) if not is_placeholder(tok)})
+    return names, ids
+
+
+def label(s: str) -> str:
+    """Redact: first character, length. Enough to locate it in your own text."""
+    return f"{s[0]}{'*' * (len(s) - 1)} (len {len(s)})"
+
+
+def main():
+    ap = argparse.ArgumentParser(description="PII gate for commit messages.")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--file", help="path to a commit-message file (commit-msg hook)")
+    g.add_argument("--rev-range", help='a git rev-range, or the word "all" for every reachable commit')
+    args = ap.parse_args()
+    terms = load_terms()
+
+    if args.file:
+        msg = open(args.file, encoding="utf-8", errors="replace").read()
+        names, ids = scan(msg, terms)
+        if not names and not ids:
+            return 0
+        sys.stderr.write("\nprivacy-audit-msg: BLOCKED — this commit message discloses private data.\n\n")
+        if names:
+            sys.stderr.write("  denylist NAME(s) in the message:\n")
+            for n in names:
+                sys.stderr.write(f"    - {label(n)}\n")
+        if ids:
+            sys.stderr.write("  record IDENTIFIER(s) in the message "
+                             "(a pointer to a name discloses the person):\n")
+            for i in ids:
+                sys.stderr.write(f"    - {label(i)}\n")
+        sys.stderr.write(
+            "\n  This repo is the PUBLIC fork. A message is published exactly as written and\n"
+            "  cannot be edited afterwards without rewriting shared history.\n"
+            "  Rewrite the message with placeholders — the technical substance is the part\n"
+            "  worth keeping, and it survives anonymisation intact.\n"
+            "  Deliberate override: git commit --no-verify\n\n")
+        return 1
+
+    # accept "all", "--all", or a real rev-range; argparse cannot take a bare
+    # "--all" as a VALUE, which is why the documented spelling is the plain word.
+    rng = [] if args.rev_range in ("all", "--all") else [args.rev_range]
+    out = subprocess.run(["git", "log", "--format=%H%x00%B%x01"] + (["--all"] if not rng else rng),
+                         capture_output=True, text=True, cwd=ROOT)
+    if out.returncode != 0:
+        sys.stderr.write(f"privacy-audit-msg: git log failed:\n{out.stderr}\n")
+        return 2
+    bad = []
+    for chunk in out.stdout.split("\x01"):
+        if not chunk.strip():
+            continue
+        sha, _, msg = chunk.partition("\x00")
+        names, ids = scan(msg, terms)
+        if names or ids:
+            bad.append((sha.strip()[:8], names, ids))
+    scope = args.rev_range
+    if not bad:
+        print(f"privacy-audit-msg: ok ({scope}) — no denylist names or record identifiers in commit messages")
+        return 0
+    print(f"privacy-audit-msg: {len(bad)} commit message(s) with findings ({scope})")
+    for sha, names, ids in bad:
+        parts = []
+        if names:
+            parts.append(f"{len(names)} name(s)")
+        if ids:
+            parts.append(f"{len(ids)} identifier(s)")
+        print(f"  {sha}  {', '.join(parts)}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
