@@ -50,9 +50,25 @@ vault's session_plan_snapshots.json):
   SITTINGS; the win rate asks "does working it pay", which is a question about
   independent TRIALS. See sitting_of().
 
-A "win" is an ITERATION MEETING ITS LANE TARGET (people added off the frontier; a
-keystone written up; `?` edges adjudicated; rotation entries polled and recorded), or
-the lane running dry before it. ** Short of target is a MISS. ** That is stricter than
+A "win" is an ITERATION MEETING ITS LANE TARGET, or the lane running dry before it.
+** Short of target is a MISS. **
+
+** ONE UNIT IS ONE PERSON DISPOSED OF, IN EVERY LANE ** (changed 01 AUG 2026,
+operator-directed). A unit is a person you addressed and will not have to look at
+again: a frontier row extended OR closed with a documented negative; a SOURCE_GAP
+entry harvested OR closed as unharvestable; a `?` edge cleared, contradicted or
+classified; a rotation entry polled and recorded whatever the outcome. Previously
+EXPAND and IMPROVE credited only SUCCESSES while VERIFY and ROTATE credited
+dispositions, and the arms tracked that split exactly -- the two success-only lanes
+sat at EXPAND 0/3 and IMPROVE 0/2, the two disposition lanes at VERIFY 4/4 and
+ROTATE 2/2. Since the target counts PEOPLE, a unit has to mean the same thing in
+each lane or the lanes are not comparable and the bandit is choosing on the
+definition rather than on the work.
+
+! A NEGATIVE COUNTS ONLY IF IT REMOVES THE PERSON FROM THE CANDIDATE POOL --
+otherwise the same entry is "disposed of" every session and the count is free.
+For a 0-ARK entry FS will never index, that means a `pids` rule in the vault's
+.autoresearch.json `structural_gap`. Prose alone is not a disposition. That is stricter than
 the original "the metric moved at all", which produced sixteen consecutive hits: an arm
 that never loses carries no signal, and the draw was being decided by the tie-break and
 the staleness floor alone. Recorded per iteration by prompt 22-research-iterations via

@@ -25,10 +25,27 @@ comparable:
 
 | Lane | One unit of lane target |
 |---|---|
-| EXPAND | the vault GROWS by one person: a frontier row gains a sourced parent edge, or the parent it names is minted |
-| IMPROVE | one SOURCE_GAP entry HARVESTED: its records found, read, and cited in a `- **Sources**` bullet (Recipe-S / prompt 19) |
+| EXPAND | one frontier row DISPOSED OF: the vault grows by a person (the row gains a sourced parent edge, or the parent it names is minted), **or** the row is closed with a documented negative naming what was searched and why the route is closed |
+| IMPROVE | one SOURCE_GAP entry DISPOSED OF: its records found, read and cited in a `- **Sources**` bullet (Recipe-S / prompt 19), **or** the entry closed with a documented negative — FS holds nothing, or holds only excluded classes — naming the real route |
 | VERIFY | one `?`-marked edge adjudicated: cleared, contradicted, or classified with its reason on the entry |
 | ROTATE | one drawn entry polled AND recorded with `--record` |
+
+**A UNIT IS A DISPOSITION, NOT A SUCCESS** (changed 01 AUG 2026, operator-directed). Every lane
+now credits the same thing: **a person you addressed and will not have to look at again.** Before
+this change EXPAND and IMPROVE counted only successes while VERIFY and ROTATE counted dispositions,
+and the bandit's own record tracked that split exactly — **the two success-only lanes stood at
+EXPAND 0/3 and IMPROVE 0/2, the two disposition lanes at VERIFY 4/4 and ROTATE 2/2.** An IMPROVE
+iteration that harvested three entries and closed two more as documented negatives scored 3, while
+the same five people worked in VERIFY would have scored 5. The lane target is a count of PEOPLE, so
+what counts as one has to mean the same thing in each lane.
+
+⚠ **A NEGATIVE ONLY COUNTS IF IT REMOVES THE PERSON FROM THE POOL.** Otherwise the same entry is
+"disposed of" every session, the candidate list never shrinks, and the count becomes free. A
+documented negative must (a) say what was searched and what that search structurally cannot contain,
+and (b) land somewhere the candidate builder reads — for a 0-ARK entry FS will never index, that is
+a `pids` rule in the vault's `.autoresearch.json` `structural_gap`, which moves it out of the
+actionable SOURCE_GAP count. **Prose alone is not a disposition.** If you cannot close it in the
+data, it stays on the worklist and does not count.
 
 Copy-paste prompt (fill the placeholders):
 
