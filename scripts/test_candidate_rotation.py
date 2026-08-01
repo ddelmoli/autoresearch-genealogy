@@ -149,7 +149,7 @@ class TestVerifyShare(unittest.TestCase):
                  "name": f"pid {i}", "gen": i} for i in range(n)]
 
     def test_edges_are_reserved_before_pids_get_any(self):
-        out, eq, pq = sp.compose_verify(self.edges(34), self.pids(1131), target=21)
+        out, eq, pq = sp.compose_share(self.edges(34), self.pids(1131), target=21, share=0.5)
         self.assertEqual(eq, 10)
         self.assertEqual(pq, 11)
         self.assertTrue(all(r["id"].startswith("E-") for r in out[:eq]))
@@ -159,7 +159,7 @@ class TestVerifyShare(unittest.TestCase):
         """NEGATIVE CONTROL: a plain merge would return ~0 edge rows in the draw."""
         merged = self.edges(34) + self.pids(1131)
         naive = sum(1 for r in merged[:21] if r["id"].startswith("E-"))
-        out, _, _ = sp.compose_verify(self.edges(34), self.pids(1131), 21)
+        out, _, _ = sp.compose_share(self.edges(34), self.pids(1131), 21, 0.5)
         shared = sum(1 for r in out[:21] if r["id"].startswith("E-"))
         self.assertGreater(shared, 0)
         self.assertEqual(shared, 10)
@@ -168,23 +168,23 @@ class TestVerifyShare(unittest.TestCase):
         self.assertEqual(naive, 21)
 
     def test_short_edge_pool_gives_its_quota_back_to_pids(self):
-        out, eq, pq = sp.compose_verify(self.edges(3), self.pids(100), target=21)
+        out, eq, pq = sp.compose_share(self.edges(3), self.pids(100), target=21, share=0.5)
         self.assertEqual(eq, 3)
         self.assertEqual(pq, 18)
         self.assertEqual(len(out), 103, "composition must never drop rows")
 
     def test_no_edges_at_all(self):
-        out, eq, pq = sp.compose_verify([], self.pids(50), target=21)
+        out, eq, pq = sp.compose_share([], self.pids(50), target=21, share=0.5)
         self.assertEqual((eq, pq), (0, 21))
         self.assertEqual(len(out), 50)
 
     def test_no_pids_at_all(self):
-        out, eq, pq = sp.compose_verify(self.edges(50), [], target=21)
+        out, eq, pq = sp.compose_share(self.edges(50), [], target=21, share=0.5)
         self.assertEqual(eq, 10)
         self.assertEqual(len(out), 50)
 
     def test_everything_is_preserved(self):
-        out, _, _ = sp.compose_verify(self.edges(9), self.pids(9), target=21)
+        out, _, _ = sp.compose_share(self.edges(9), self.pids(9), target=21, share=0.5)
         self.assertEqual(sorted(r["id"] for r in out),
                          sorted([r["id"] for r in self.edges(9)]
                                 + [r["id"] for r in self.pids(9)]))

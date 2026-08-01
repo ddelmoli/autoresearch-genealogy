@@ -832,6 +832,25 @@ def classify(ark_count: int) -> str:
     return "WELL_SOURCED"
 
 
+def is_single_sourced(rec) -> bool:
+    """Documented, but by exactly ONE host — a corroboration gap, not a coverage gap.
+
+    ** DELIBERATELY CROSS-CUTTING, NOT A CATEGORY. ** The coverage categories sum to
+    the whole vault, and a person who silently vanishes from a census is the exact
+    failure the 26 JUL 2026 id-keying fix removed. Single-sourcing is ORTHOGONAL to
+    how many records someone has: a WELL_SOURCED person with 30 ARKs from one
+    aggregator is the case this is meant to surface, and folding it into the category
+    ladder would both break the sum and hide it behind "done".
+
+    LIVING_EXCLUDED is never single-sourced for this purpose: those people are not
+    web-researched at all, so a corroboration caption cannot apply to them (same
+    reasoning as the research gate in gather_records).
+    """
+    if rec.get("category") == "LIVING_EXCLUDED":
+        return False
+    return (rec.get("ark_count") or 0) > 0 and (rec.get("hosts") or 0) <= 1
+
+
 def is_structural(pid: Optional[str], gen: Optional[int], region: Optional[str]) -> bool:
     """A 0-ARK entry that can essentially never acquire an indexed-record ARK.
 
@@ -914,6 +933,17 @@ def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, inclu
             "category": category,
             "ark_count": ark_count,
             "per_host": per_host,
+            # ** SOURCE BREADTH (operator-directed, 01 AUG 2026). ** How many DISTINCT
+            # hosts document this person. The coverage categories count RECORDS and
+            # say nothing about INDEPENDENCE: thirty FamilySearch ARKs and nothing
+            # else scores WELL_SOURCED while resting entirely on one aggregator that
+            # itself copies. Measured when this was added: of 1,392 people, 665 cited
+            # exactly ONE host and only 26 cited two or more, and 660 of the 691 who
+            # cited anything cited FamilySearch. The operator's standing goal is a
+            # complete biography per person built from as many resources as possible,
+            # with FS as a SYNC POINT rather than the evidence base -- so breadth
+            # needs to be a number the banner reports, not an intention.
+            "hosts": len(per_host or {}),
             "narr_file": fname,
             "narr_name": narr_name,
         })
@@ -933,13 +963,22 @@ def heartbeat():
 
     counts = defaultdict(int)
     sg_pid = 0
+    single = multi = 0
     for r in gather_records():
         counts[r["category"]] += 1
         if r["category"] == "SOURCE_GAP" and r.get("pid"):
             sg_pid += 1
+        if is_single_sourced(r):
+            single += 1
+        elif (r.get("hosts") or 0) >= 2:
+            multi += 1
     sg, low, well = counts["SOURCE_GAP"], counts["LOW_COVERAGE"], counts["WELL_SOURCED"]
     base = (f"RECIPE-S: SOURCE_GAP {sg} (harvestable {sg_pid}), LOW_COVERAGE {low}, "
             f"WELL_SOURCED {well}, LIVING_EXCLUDED {counts['LIVING_EXCLUDED']}")
+    # Source BREADTH, reported every session so "do not rely on one repository"
+    # is a standing number rather than an intention that drifts back.
+    base += (f"; SINGLE_SOURCED {single} (documented by ONE host only), "
+             f"MULTI_SOURCED {multi}")
 
     # deferred_decisions 19: the strict/loose gap, reported every session so the
     # staged migration cannot quietly stall. Drops to 0 when the flip is safe.

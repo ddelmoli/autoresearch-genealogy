@@ -122,7 +122,7 @@ LANES = ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")
 # see leaves the row on the worklist and does not count.
 LANE_UNITS = {
     "EXPAND": "one frontier row DISPOSED OF: it gains a sourced parent edge or the\n              parent it names is minted, OR it is closed with a documented negative",
-    "IMPROVE": "one SOURCE_GAP entry DISPOSED OF: records found, read and cited in a\n              `- **Sources**` bullet (Recipe-S / prompt 19), OR closed as a\n              documented negative naming the real route",
+    "IMPROVE": "one entry DISPOSED OF: an unsourced entry's records found, read and\n              cited in a `- **Sources**` bullet, OR a SINGLE_SOURCED entry\n              corroborated from a SECOND host, OR either closed with a\n              documented negative naming the real route (prompt 25 sweeps\n              every resource; 19 is the FamilySearch leg only)",
     "VERIFY": "one `?` edge adjudicated (cleared, contradicted, or classified with\n"
               "              its reason on the entry), OR one FS PID confirmed live /\n"
               "              corrected / recorded dead (`profile_review.py --record\n"
@@ -201,6 +201,11 @@ HEAD_FRACTION = 3     # 1/N of the target is taken strictly by priority; the res
 # so the work the lane exists for would vanish behind mechanical checks. This
 # reserves a fixed fraction of the lane target for edges before PIDs get any.
 VERIFY_EDGE_SHARE = 0.5
+# Same protection for IMPROVE, which now also carries two populations of very
+# different size: SOURCE_GAP (0 records) against SINGLE_SOURCED (documented, but by
+# one host only -- 734 people when this was added). Without a reserved share the
+# corroboration backlog would bury the entries that have NO source at all.
+IMPROVE_GAP_SHARE = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -223,8 +228,48 @@ def harvestable_pid(pid):
     return bool(p) and p.upper() not in ("TBD", "NONE", "-")
 
 
+# ** WHERE TO GO WHEN FAMILYSEARCH IS NOT THE ANSWER (01 AUG 2026, operator-directed).
+# ** A worklist that only ever says "harvest the FS PID" trains every session to treat
+# FamilySearch as the evidence base rather than the sync point, which is how this vault
+# reached 660 of 691 source-citing entries on a single host. These are HINTS, not a
+# closed list: the per-person sweep in `25-person-research-sweep` is the authority, and
+# a region absent here just falls back to the generic line.
+ROUTE_HINTS = (
+    ("Italian", "Antenati (per-comune, coverage varies), the provincial state archive, "
+                "the diocesan archive for pre-1866 parish registers"),
+    ("Polish", "Geneteka, metryki.genealodzy.pl, szukajwarchiwach, AGAD"),
+    ("Jewish", "JewishGen Unified Search, JRI-Poland, Gesher Galicia, JOWBR, Yad Vashem"),
+    ("Colonial", "published town Vital Records, probate and land records, NEHGR"),
+    ("Scottish", "ScotlandsPeople, FS Scotland Births & Baptisms (parent search), NRS"),
+    ("British", "FreeREG, FreeBMD, GRO Online index, TNA Discovery, PRONI, the county "
+                "record office"),
+)
+GENERIC_ROUTE = ("Ancestry, WikiTree + what it CITES, newspapers/obituaries, "
+                 "HeritageQuest/Fold3, the regional archive")
+
+
+def route_hint(region, vault=None):
+    """A non-FamilySearch route for this person's region. Never returns FS.
+
+    The VAULT's own hints are consulted first (vault_config.get_route_hints): they key
+    on that vault's region labels, which are private family/place names and therefore
+    belong in its .autoresearch.json, never in this file. The tuple above holds only
+    generic ethnicity/region defaults."""
+    r = region or ""
+    hints = []
+    if vault:
+        try:
+            hints = vault_config.get_route_hints(vault)
+        except Exception:
+            hints = []
+    for needle, hint in list(hints) + list(ROUTE_HINTS):
+        if needle.lower() in r.lower():
+            return hint
+    return GENERIC_ROUTE
+
+
 def lane_improve(vault):
-    """SOURCE_GAP entries with a usable FS PID — the source-harvest worklist.
+    """The source-improvement worklist: SOURCE_GAP + SINGLE_SOURCED entries.
 
     ** REDEFINED 31 JUL 2026 (operator; deferred_decisions 24). ** This lane used
     to be `keystone_report` rows with `load >= 1 AND thin >= 3`, which measures
@@ -256,22 +301,53 @@ def lane_improve(vault):
     the structurally-unsourceable rows are split out — and `gather_records` has
     already applied the privacy gate, so living/unknown people are re-categorised
     to LIVING_EXCLUDED and cannot appear here.
+    ** UN-GATED FROM FamilySearch 01 AUG 2026 (operator-directed, session #127). **
+    This lane used to require `harvestable_pid()` — an FS PID — so a person with no
+    FamilySearch profile could not enter the improvement lane AT ALL, however
+    researchable they were at Antenati, Geneteka, GRO, PRONI or a diocesan archive.
+    That is how a vault whose stated goal is "as complete a biographical entry as
+    possible, from as many resources as possible" ended up with 660 of its 691
+    source-citing entries citing FamilySearch and only 26 people citing two hosts.
+    FamilySearch is the place this vault SYNCS with, not its evidence base.
+
+    So the lane now carries TWO populations, composed with a share (see
+    IMPROVE_GAP_SHARE):
+      - SOURCE_GAP  — 0 records, with or without an FS PID. The `why` names the
+                      route, which for a PID-less entry is a regional archive.
+      - SINGLE_SOURCED — has records but from exactly ONE host. Not a coverage gap;
+                      a CORROBORATION gap, and invisible to the category ladder
+                      because a person with 30 FS ARKs and nothing else is
+                      WELL_SOURCED. Measured at 734 people when this was added.
     """
     import harvest_sources as hs
     import keystone_report as kr
-    rows = [r for r in hs.gather_records()
-            if r.get("category") == "SOURCE_GAP" and harvestable_pid(r.get("pid"))]
+    recs = hs.gather_records()
+    gaps = [r for r in recs if r.get("category") == "SOURCE_GAP"]
+    singles = [r for r in recs if hs.is_single_sourced(r)]
     load = kr.load_by_id()          # no census: LOAD is pure graph reachability
-    for r in rows:
+    for r in gaps + singles:
         r["_load"] = load.get(r["id"], 0)
-    # Shallow generations first (they anchor the most descendants and their records
-    # are the densest), then LOAD as the tiebreaker, then name for a stable order.
-    rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0, -r["_load"], r["name"] or ""))
-    return [{"id": r["id"], "name": r["name"], "gen": r["gen"],
-             "file": r.get("narr_file") or "?",
-             "why": f"SOURCE_GAP: 0 records, FS {r['pid']} harvestable"
-                    + (f"; {r['_load']} people lean on it" if r["_load"] else "")}
-            for r in rows]
+    key = lambda r: (r["gen"] is None, r["gen"] or 0, -r["_load"], r["name"] or "")
+    gaps.sort(key=key)
+    singles.sort(key=key)
+
+    def row(r, kind):
+        load_s = f"; {r['_load']} people lean on it" if r.get("_load") else ""
+        if kind == "gap":
+            route = (f"FS {r['pid']} harvestable" if harvestable_pid(r.get("pid"))
+                     else f"NO FS PID — route: {route_hint(r.get('region'), vault)}")
+            why = f"SOURCE_GAP: 0 records, {route}{load_s}"
+        else:
+            host = next(iter(r.get("per_host") or {}), "one host")
+            why = (f"SINGLE_SOURCED: {r.get('ark_count')} record(s), all from "
+                   f"`{host}` — corroborate at {route_hint(r.get('region'), vault)}{load_s}")
+        return {"id": r["id"], "name": r["name"], "gen": r["gen"],
+                "file": r.get("narr_file") or "?",
+                "_cool_key": r["id"] if kind == "gap" else f"corrob:{r['id']}",
+                "_kind": kind, "why": why}
+
+    return ([row(r, "gap") for r in gaps],
+            [row(r, "corrob") for r in singles])
 
 
 def lane_verify(vault, include_adjudicated=False):
@@ -383,8 +459,8 @@ def verify_stale_pids(vault):
     return rows
 
 
-def compose_verify(edges, pids, target, share=None):
-    """Interleave the two VERIFY populations with a GUARANTEED SHARE for `?` edges.
+def compose_share(primary, secondary, target, share):
+    """Interleave two populations of a lane, reserving a share for the PRIMARY one.
 
     ** WHY A SHARE AND NOT A MERGE (measured 01 AUG 2026). ** On the reference vault
     the stale-PID population is ~1,131 rows against ~34 `?`-edge rows. Merged into one
@@ -394,14 +470,13 @@ def compose_verify(edges, pids, target, share=None):
     swamp the old one. When the edges run out the quota simply goes unfilled and PIDs
     take the rest; when the PIDs run dry, edges do.
 
-    Returns (composed_rows, edge_quota, pid_quota).
+    Returns (composed_rows, primary_quota, secondary_quota).
     """
-    share = VERIFY_EDGE_SHARE if share is None else share
     n = max(1, int(target or 1))
-    edge_quota = min(len(edges), max(1, int(n * share)))
-    pid_quota = max(0, n - edge_quota)
-    return (edges[:edge_quota] + pids[:pid_quota]
-            + edges[edge_quota:] + pids[pid_quota:]), edge_quota, pid_quota
+    p_quota = min(len(primary), max(1, int(n * share)))
+    s_quota = max(0, n - p_quota)
+    return (primary[:p_quota] + secondary[:s_quota]
+            + primary[p_quota:] + secondary[s_quota:]), p_quota, s_quota
 
 
 def lane_rotate(vault, sample_percent=None):
@@ -821,9 +896,10 @@ def main(argv=None):
     # share that protects the smaller one is a fraction of that target.
     v_edges = lane_verify(vault, include_adjudicated=a.include_adjudicated)
     v_pids = verify_stale_pids(vault)
+    i_gaps, i_corrob = lane_improve(vault)
     lanes = {
         "EXPAND": lane_expand(vault),
-        "IMPROVE": lane_improve(vault),
+        "IMPROVE": i_gaps + i_corrob,
         "VERIFY": v_edges + v_pids,
         "ROTATE": lane_rotate(vault, a.sample_percent),
     }
@@ -857,8 +933,15 @@ def main(argv=None):
                                         cooldown=cooldown_sittings)
             _p, _pc = rotate_candidates(v_pids, state, _ln, lane_target,
                                         cooldown=cooldown_sittings, seed_extra="pid")
-            lanes[_ln], v_eq, v_pq = compose_verify(_e, _p, lane_target)
+            lanes[_ln], v_eq, v_pq = compose_share(_e, _p, lane_target, VERIFY_EDGE_SHARE)
             cooled[_ln] = _ec + _pc
+        elif _ln == "IMPROVE":
+            _g, _gc = rotate_candidates(i_gaps, state, _ln, lane_target,
+                                        cooldown=cooldown_sittings)
+            _c, _cc = rotate_candidates(i_corrob, state, _ln, lane_target,
+                                        cooldown=cooldown_sittings, seed_extra="corrob")
+            lanes[_ln], i_gq, i_cq = compose_share(_g, _c, lane_target, IMPROVE_GAP_SHARE)
+            cooled[_ln] = _gc + _cc
         else:
             lanes[_ln], cooled[_ln] = rotate_candidates(
                 lanes[_ln], state, _ln, lane_target, cooldown=cooldown_sittings)
@@ -907,6 +990,12 @@ def main(argv=None):
             print(f"    This draw reserves {v_eq} for edges before PIDs get any "
                   f"({VERIFY_EDGE_SHARE:.0%} share), then {v_pq} PID checks —")
             print("    so the smaller population cannot be swamped by the larger.")
+        if pick == "IMPROVE":
+            print(f"    IMPROVE holds TWO populations: {len(i_gaps)} with NO source "
+                  f"+ {len(i_corrob)} documented by ONE host only.")
+            print(f"    This draw reserves {i_gq} for unsourced entries, then {i_cq} "
+                  f"corroboration rows. FamilySearch is the SYNC point, not the")
+            print("    evidence base — each row names a non-FS route to try.")
         if pick and LANE_UNITS.get(pick):
             print(f"    one unit = {LANE_UNITS[pick]}")
     print("  The draw is a recommendation; if you work a different lane, record THAT one.")

@@ -58,6 +58,8 @@ Run `19-fs-source-harvest` to harvest each FS-PID-bearing entry's FS-attached pr
 Run `18-edge-verification` to walk every unverified (`?`-marked) parent/spouse edge in `Family_Tree*.md` against the FS tree and resolve it — confirm, contradict, or record why it cannot be confirmed. Pairs with `scripts/build_edges.py` (seeds edges) and `scripts/verify_edges.py` (writes the result).
 
 **Want a fresh look at a tree you think you have already worked?**
+Run `25-person-research-sweep` to research ONE person across EVERY available resource -- FamilySearch (Sources, Research Help hints, and the discussions tab), Ancestry, WikiTree and what it CITES, the region's own archive, newspapers/obituaries and library surfaces -- then write the result into the entry as a cited BIOGRAPHY rather than a locator dump. This is the default unit of research work and what `22-research-iterations` dispatches to for IMPROVE; `19-fs-source-harvest` is now just its FamilySearch leg. FamilySearch is the place this vault SYNCS with, not its evidence base.
+
 Run `20-creative-vault-review` to pass every direct-line ancestor and significant collateral through a rotating battery of interpretive lenses, logging each hit as an enhancement (deepen, correct, source) or an extension (a new person or line to chase).
 
 **Running routine research sessions on a vault with the mechanized session loop?**

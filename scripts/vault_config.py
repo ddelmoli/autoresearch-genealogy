@@ -275,6 +275,29 @@ def get_known_gen_collapse(vault_dir):
 PERSON_MODELS = ("file", "narrative")
 
 
+def get_route_hints(vault_dir):
+    """Per-vault region -> non-FamilySearch research-route hints, most specific first.
+
+    ** THIS IS PER-CLIENT DATA AND MUST NOT BE HARD-CODED. ** The hints are keyed on a
+    vault's own REGION labels, which are its lineage and place names -- i.e. private
+    family facts. A first cut of this feature inlined them in session_plan.py and the
+    repo PII audit blocked the commit, correctly: the framework repo is public. Generic
+    ethnicity/region keys (Italian, Polish, British, Colonial, Jewish...) stay in the
+    script as defaults; anything naming a specific comune, parish or surname lives here.
+
+    Shape, in the vault's .autoresearch.json:
+        "route_hints": [["<region substring>", "<where to look>"], ...]
+    Order matters: the first substring match wins, so put the specific ones first.
+    Absent = the script's generic defaults alone.
+    """
+    cfg = load_config(vault_dir) or {}
+    out = []
+    for row in cfg.get("route_hints") or []:
+        if isinstance(row, (list, tuple)) and len(row) == 2:
+            out.append((str(row[0]), str(row[1])))
+    return out
+
+
 def get_person_model(vault_dir):
     """Return the vault's person-record model: "file" (default) or "narrative".
 

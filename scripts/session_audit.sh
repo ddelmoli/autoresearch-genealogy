@@ -339,6 +339,13 @@ parts = [
     # standing rather than remembered; the trailing "[review]" counts DECLARED rows
     # that cite no source or route, which is the cheap-win failure mode.
     "frontier -> " + run("extension_frontier.py", r"FRONTIER:", args=["--heartbeat"], max_lines=1),
+    # BIOGRAPHICAL completeness (bio_completeness.py), which is a DIFFERENT AXIS from
+    # the source census above: that one counts RECORDS, this one asks whether a life
+    # has actually been written. An entry with 30 ARKs and no prose scores
+    # WELL_SOURCED and is not finished work. Standing goal (operator, 01 AUG 2026):
+    # "every person in the vault to have as complete a biographical entry as
+    # possible". Reported every session so it cannot drift back into an intention.
+    "bio -> " + run("bio_completeness.py", r"BIO_COMPLETE", args=["--heartbeat"], max_lines=1),
     # FS write-back queue, counted off the ENTRIES (no queue file exists -- see the
     # writeback() docstring). Operator-gated work that no lane draws and no gate
     # counts, so the banner is the only thing that keeps it visible.
