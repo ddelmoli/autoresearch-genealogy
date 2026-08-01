@@ -240,6 +240,35 @@ class RecordTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_lane_target_is_never_capped_to_lane_size(self):
+        """** THE TARGET IS NOT CAPPED TO THE LANE SIZE ** (operator, 31 JUL 2026: "I don't
+        see any value in the cap").
+
+        main() used to print `min(lane_target, lane_size)`, which turned an EMPTY LANE into
+        a met goal: with 1 candidate it printed "LANE TARGET: 1", so any work at all was a
+        full-strength hit. Same "an arm that never loses carries no signal" defect the arms
+        reset was called to fix. It had already fired -- IMPROVE was drawn twice under the
+        new hit rule and capped BOTH times (5 of 21, then 1 of 21), so the configured target
+        had never once been tested.
+
+        Every case carries its negative control, because the risk of this change is
+        over-reporting dryness on a healthy lane.
+        """
+        # the case that motivated it: lane far smaller than target
+        self.assertEqual(sp.target_and_dryness(21, 1), (21, True),
+                         "a 1-row lane must still report the full target, and flag dryness")
+        # NEGATIVE CONTROL: a lane bigger than target is NOT dry and must not be flagged
+        self.assertEqual(sp.target_and_dryness(21, 305), (21, False),
+                         "a healthy lane is not dry")
+        # boundary: exactly enough is NOT dry
+        self.assertEqual(sp.target_and_dryness(21, 21), (21, False),
+                         "lane_size == target is reachable, not dry")
+        self.assertEqual(sp.target_and_dryness(21, 20), (21, True),
+                         "one short IS dry")
+        # an empty lane reports the target and is dry -- it never reports 0
+        self.assertEqual(sp.target_and_dryness(21, 0), (21, True),
+                         "an empty lane must not print a target of 0")
+
     def test_record_rejects_unknown_lane_and_outcome(self):
         with self.assertRaises(SystemExit):
             sp.record({"arms": {}, "history": []}, "NOPE", "hit")

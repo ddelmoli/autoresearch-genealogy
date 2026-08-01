@@ -239,6 +239,29 @@ def resolve_lane_target(vault, cfg, override=None):
     return (max(1, round(pool * pct / 100.0)) if pool else 0), pct, src
 
 
+def target_and_dryness(lane_target, lane_size):
+    """-> (target, is_dry). THE TARGET IS NEVER CAPPED TO THE LANE SIZE.
+
+    Removed 31 JUL 2026 (operator: "I don't see any value in the cap"). main() used to
+    print `min(lane_target, lane_size)`, which **relabelled an empty lane as a met goal**:
+    a 1-row lane printed "LANE TARGET: 1", so any work at all scored a full-strength hit.
+    That is the "an arm that never loses carries no signal" defect the 31 JUL arms reset
+    was called to fix, arriving by a different route — and it had already fired, because
+    IMPROVE has been drawn twice under the new hit rule and its target was capped BOTH
+    times (5 of 21, then 1 of 21). The configured target has never actually been tested.
+
+    The cap was also never load-bearing: **the hit rule already treats a lane that RUNS
+    DRY as a hit**, so a short lane was never at risk of being punished. And it was
+    internally inconsistent — `--json` has always emitted the UNCAPPED value, so the
+    printed number and the machine-readable one disagreed.
+
+    What the cap was really carrying is the DRYNESS SIGNAL, and that is worth keeping:
+    `is_dry` says the lane cannot reach target, which is information about the LANE
+    rather than a reduction of the goal.
+    """
+    return lane_target, (lane_size < lane_target)
+
+
 def sitting_of(entry):
     """The SITTING an observation belongs to. `session` when stamped, else the date.
 
@@ -489,10 +512,13 @@ def main(argv=None):
     print(f"  {counts}")
     print(f"  RECOMMENDED LANE: {pick}  ({reason})")
     if lane_target:
-        capped = min(lane_target, sizes.get(pick, 0)) if pick else lane_target
-        note = f" (lane has only {sizes.get(pick, 0)})" if pick and capped < lane_target else ""
-        print(f"  LANE TARGET: {capped} {'person' if capped == 1 else 'people'} "
-              f"this ITERATION — {lt_pct:g}% of {pool_n:,} ({lt_src}){note}")
+        shown, is_dry = target_and_dryness(lane_target, sizes.get(pick, 0) if pick else lane_target)
+        print(f"  LANE TARGET: {shown} {'person' if shown == 1 else 'people'} "
+              f"this ITERATION — {lt_pct:g}% of {pool_n:,} ({lt_src})")
+        if pick and is_dry:
+            print(f"    ⚠ THE LANE HOLDS ONLY {sizes.get(pick, 0)} — it will RUN DRY before "
+                  f"target, and a lane that runs dry is a HIT. Do not read {shown} as "
+                  f"reachable here.")
         if pick and LANE_UNITS.get(pick):
             print(f"    one unit = {LANE_UNITS[pick]}")
     print("  The draw is a recommendation; if you work a different lane, record THAT one.")
