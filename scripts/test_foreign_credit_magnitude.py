@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Regression tests for the MAGNITUDE half of Spec 05 (deferred_decisions 29).
+
+Runnable with no test framework: `python3 scripts/test_foreign_credit_magnitude.py`
+(exit 0 = pass).
+
+THE DEFECT THESE LOCK DOWN. Spec 05 gave the census a rule for WHETHER a foreign
+PID named inside someone else's entry may be credited: it must sit on a line that,
+with its sub-bullets, carries at least one record locator. A name in a
+`- Siblings:` list documents nothing and credits nothing. That half worked.
+
+The other half did not. Having decided the pid was creditable per-LINE,
+`scan_family_tree_files` credited it `record_count` — the record count of the
+**WHOLE ENTRY**. `_attributed_region` was computed inside `may_credit` and thrown
+away. So a relative named on any ONE line that happened to carry a locator
+inherited EVERY record in the entry.
+
+Measured on the reference vault the day it was found:
+
+    68 of 1,392 entries carried a WRONG record count
+    1,474 phantom records sat in the census
+    17 entries landed in the WRONG category, all WELL_SOURCED -> LOW_COVERAGE
+    SOURCE_GAP did NOT move: 0 entries became newly actionable
+
+The worst case read as 95 records against an actual 3. The shape that surfaced it:
+a wife named once, in her husband's marriage narrative, on a line citing the ONE
+atto that documents the marriage — and credited all 32 of his records.
+
+`entry_boundary_audit` reported 0 throughout and was RIGHT to — the entry blocks
+were sliced correctly. The disagreement was never about ownership, only about how
+much a documented mention is worth.
+
+An early projection that this fix would add ~33 SOURCE_GAP entries was WRONG, and
+is recorded here because the error is instructive: it compared the credited count
+against the entry's OWN count, but the correct credit is the ATTRIBUTED-REGION
+count, which for these people is normally non-zero. The fix buys coverage honesty,
+not extra worklist.
+
+Note this over-credited even the convention it exists to protect: an inline-
+collateral wife bullet should credit the locators on THAT bullet, not the whole
+husband entry.
+
+Every assertion is paired with a negative control that reintroduces the fault at
+runtime. A regression fixture that cannot be made to fail proves nothing.
+"""
+import json
+import os
+import shutil
+import sys
+import tempfile
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+
+import harvest_sources as HS
+import gen_person_index as G
+
+PASS = 0
+FAIL = 0
+
+# FS-PID- and ARK-shaped literals are assembled at runtime, never written out — an
+# ALL-CAPS four-then-three hyphenated token has the exact shape of a real
+# FamilySearch PID and the repo's PII gate blocks on it, correctly, since it cannot
+# tell a fixture from a person. Same convention as test_census_id_keyed.
+PID_A = "AAAA" + "-" + "111"          # the entry's own person
+PID_B = "BBBB" + "-" + "222"          # the relative named inside it
+ARK1 = "fs:1:1:" + "QQQQ" + "-" + "9991"
+ARK2 = "fs:1:1:" + "QQQQ" + "-" + "9992"
+ARK3 = "fs:1:1:" + "QQQQ" + "-" + "9993"
+ARK4 = "fs:1:1:" + "QQQQ" + "-" + "9994"
+ARK5 = "fs:1:1:" + "QQQQ" + "-" + "9995"
+ARK6 = "fs:1:1:" + "QQQQ" + "-" + "9996"
+
+
+def check(cond, label):
+    global PASS, FAIL
+    if cond:
+        PASS += 1
+        print(f"  ok   {label}")
+    else:
+        FAIL += 1
+        print(f"  FAIL {label}")
+
+
+def census(text):
+    """{display_name: (category, record_count)} for a one-file fixture vault.
+
+    Both modules resolve their vault at import time into a module global, so the
+    fixture has to redirect BOTH."""
+    d = tempfile.mkdtemp(prefix="census-magnitude-")
+    with open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8") as f:
+        json.dump({"person_model": "narrative"}, f)
+    with open(os.path.join(d, "Family_Tree_Fixture.md"), "w", encoding="utf-8") as f:
+        f.write(text)
+    saved_hs, saved_g = HS.VAULT, G.VAULT
+    try:
+        HS.VAULT, G.VAULT = d, d
+        recs = HS.gather_records()
+        return {r["name"]: (r["category"], r["ark_count"]) for r in recs}
+    finally:
+        HS.VAULT, G.VAULT = saved_hs, saved_g
+        shutil.rmtree(d)
+
+
+class whole_body_credit:
+    """Negative control: reinstate the exact fault — eligibility still decided by the
+    per-LINE attributed region, magnitude taken from the WHOLE entry body.
+
+    ** BOTH HALVES MATTER, and getting this wrong cost a wrong measurement. ** The
+    first cut returned `body` unconditionally, which also drops the ELIGIBILITY
+    test — more permissive than the original code ever was. Run against the live
+    vault it reported 209 entries changing category and a 'before' SOURCE_GAP of
+    167 against the banner's actual 252, i.e. it measured its own over-reach rather
+    than the defect. A control has to reproduce the fault it names and nothing else.
+    """
+
+    def __enter__(self):
+        self._saved = HS.attributed_region_for_pid
+
+        def old_behaviour(body, pid):
+            return body if HS.count_records(self._saved(body, pid)) else ""
+
+        HS.attributed_region_for_pid = old_behaviour
+        return self
+
+    def __exit__(self, *exc):
+        HS.attributed_region_for_pid = self._saved
+        return False
+
+
+# --- fixtures ---------------------------------------------------------------
+
+# THE P-BEAZEM SHAPE. The wife is named once, in a marriage narrative that cites the
+# ONE record documenting that marriage. The husband's entry holds four more records
+# that have nothing to do with her.
+MARRIAGE_NARRATIVE = f"""### Generation 5
+
+**Rich Husband** (b. 1850; d. 1920; FS PID {PID_A})
+- meta: {{id: P-AAA111, profile_status: complete, life_status: deceased, generation: 5, fs: {PID_A}}}
+- Married **Poor Wife** (FS {PID_B}), m. 17 JAN 1883 — marriage atto no 2 — {ARK5}
+- **Sources** (fixture):
+  - 1900 census — {ARK1}
+  - 1910 census — {ARK2}
+  - 1920 census — {ARK3}
+  - death certificate — {ARK4}
+
+**Poor Wife** (b. 1859; d. 1936; FS PID {PID_B})
+- meta: {{id: P-BBB222, profile_status: partial, life_status: deceased, generation: 5, fs: {PID_B}}}
+- Nothing of her own is cited here; the marriage record is on her husband's entry.
+"""
+
+# THE CONVENTION THAT MUST KEEP WORKING, at the right magnitude: an inline-collateral
+# bullet carrying its own locators credits its owner THOSE locators — not the four
+# unrelated records elsewhere in the entry.
+INLINE_COLLATERAL = f"""### Generation 9
+
+**Rich Husband** (b. 1700; d. 1770; FS PID {PID_A})
+- meta: {{id: P-AAA111, profile_status: complete, life_status: deceased, generation: 9, fs: {PID_A}}}
+- **Sources** (fixture):
+  - 1750 deed — {ARK1}
+  - 1755 deed — {ARK2}
+  - 1760 will — {ARK3}
+  - 1770 probate — {ARK4}
+- **FS-attached sources for wife Poor Wife** ({PID_B}, inline collateral):
+  - her baptism — {ARK5}
+  - her burial — {ARK6}
+
+**Poor Wife** (b. 1702; d. 1772; FS PID {PID_B})
+- meta: {{id: P-BBB222, profile_status: stub, life_status: deceased, generation: 9, fs: {PID_B}}}
+- Her records are recorded on her husband's entry, with her own locators.
+"""
+
+# THE ELIGIBILITY HALF, unchanged: a kin-list mention carries no locator of its own
+# and must still credit nothing at all.
+KIN_LIST = f"""### Generation 9
+
+**Rich Husband** (b. 1700; d. 1770; FS PID {PID_A})
+- meta: {{id: P-AAA111, profile_status: complete, life_status: deceased, generation: 9, fs: {PID_A}}}
+- Siblings: Poor Wife ({PID_B}), who has no records of her own here.
+- **Sources** (fixture):
+  - 1750 deed — {ARK1}
+  - 1755 deed — {ARK2}
+  - 1760 will — {ARK3}
+  - 1770 probate — {ARK4}
+
+**Poor Wife** (b. 1702; d. 1772; FS PID {PID_B})
+- meta: {{id: P-BBB222, profile_status: stub, life_status: deceased, generation: 9, fs: {PID_B}}}
+- Named in her brother's entry, with nothing of her own.
+"""
+
+
+def main():
+    print("== the P-BEAZEM shape: a documented mention credits ITS OWN record ==")
+    c = census(MARRIAGE_NARRATIVE)
+    check(c.get("Rich Husband", ("", 0))[1] == 5,
+          "the entry's own person keeps all 5 records in his body")
+    check(c.get("Poor Wife", ("", None))[1] == 1,
+          "the wife is credited the ONE marriage record naming her, not his 5")
+    check(c.get("Poor Wife", ("", 0))[0] == "LOW_COVERAGE",
+          "...so she lands in LOW_COVERAGE, where a 1-record person belongs")
+
+    print("\n== negative control: credit the whole body again ==")
+    with whole_body_credit():
+        n = census(MARRIAGE_NARRATIVE)
+    check(n.get("Poor Wife", ("", None))[1] == 5,
+          "she inherits all 5 of his records again (control works)")
+    check(n.get("Poor Wife", ("", 0))[0] == "WELL_SOURCED",
+          "...and reads WELL_SOURCED off a husband's entry - the live defect")
+    check(n.get("Rich Husband") == c.get("Rich Husband"),
+          "the entry's OWN person is unaffected either way (path 1 untouched)")
+
+    print("\n== inline collateral still credits its owner, at ITS magnitude ==")
+    i = census(INLINE_COLLATERAL)
+    check(i.get("Poor Wife", ("", None))[1] == 2,
+          "the wife gets the 2 locators on her own bullet, not the entry's 6")
+    check(i.get("Poor Wife", ("", 0))[0] == "LOW_COVERAGE",
+          "...LOW_COVERAGE, not WELL_SOURCED off her husband's deeds")
+    check(i.get("Rich Husband", ("", 0))[1] == 6,
+          "the husband's own count still includes every record in his body")
+
+    print("\n== negative control: the convention must be BREAKABLE ==")
+    with whole_body_credit():
+        m = census(INLINE_COLLATERAL)
+    check(m.get("Poor Wife", ("", None))[1] == 6,
+          "she inherits all 6 again (control works on this fixture too)")
+
+    print("\n== the eligibility half is UNCHANGED: a kin list credits nothing ==")
+    k = census(KIN_LIST)
+    check(k.get("Rich Husband", ("", 0))[1] == 4, "the owner keeps his records")
+    check(k.get("Poor Wife", ("", None))[1] == 0,
+          "a PID in a `- Siblings:` list still inherits NOTHING")
+    check(k.get("Poor Wife", ("", 0))[0] in ("SOURCE_GAP", "UNCITED", "BOOK_SOURCED"),
+          "...and lands in a gap category, where the IMPROVE lane can see her")
+
+    print("\n== the mirror-image defect is NOT introduced ==")
+    check(i.get("Poor Wife", ("", 0))[1] > 0 and c.get("Poor Wife", ("", 0))[1] > 0,
+          "a documented relative is never un-credited to zero")
+
+    print(f"\n{PASS} passed, {FAIL} failed")
+    return 1 if FAIL else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

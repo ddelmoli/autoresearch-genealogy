@@ -637,11 +637,42 @@ def may_credit(body: str, pid: str) -> bool:
     """
     if pid in own_pids(body):                # the entry's own person (meta-anchored)
         return True
+    return count_records(attributed_region_for_pid(body, pid)) > 0
+
+
+def attributed_region_for_pid(body: str, pid: str) -> str:
+    """The text within this entry that documents a FOREIGN `pid`: every line naming
+    it, plus that line's sub-bullets, concatenated.
+
+    ** THE MAGNITUDE HALF OF SPEC 05 (deferred_decisions 29, 01 AUG 2026). **
+    `may_credit` decided WHETHER a foreign pid was creditable with a per-LINE test,
+    and then `scan_family_tree_files` credited it the record count of the WHOLE
+    ENTRY — the attributed region was computed here and thrown away. So a relative
+    named on any one line that happened to carry a locator inherited every record in
+    the entry.
+
+    Measured on the reference vault the day it was found: 68 entries carried a wrong
+    record count, 1,474 phantom records were in the census, and 17 entries read as
+    WELL_SOURCED when they belonged in LOW_COVERAGE. The worst case read as 95
+    records against an actual 3. The shape that surfaced it: a wife named once, in
+    her husband's marriage narrative, on a line citing the ONE atto that documents
+    the marriage — and credited all 32 of his records.
+
+    SOURCE_GAP did NOT move and no entry became newly actionable: the gain here is
+    coverage honesty, not extra worklist. (An early projection that this would add
+    ~33 SOURCE_GAP entries was wrong — it used the entry's OWN count as the
+    counterfactual, where the correct credit is the attributed-region count, which
+    is normally non-zero.)
+
+    This over-credited even the convention it exists to protect: an inline-collateral
+    wife bullet should credit the locators on THAT bullet, not the husband's entry.
+
+    Overlapping regions are safe — a pid named on both a parent bullet and its
+    sub-bullet yields overlapping text, and `count_records` dedupes by locator set.
+    """
     lines = body.splitlines()
-    for i, line in enumerate(lines):
-        if pid in line and count_records(_attributed_region(lines, i)):
-            return True
-    return False
+    return "\n".join(_attributed_region(lines, i)
+                     for i, line in enumerate(lines) if pid in line)
 
 
 def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict[str, List[Tuple[str, str, int, int, dict]]]:
@@ -706,7 +737,14 @@ def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict
                 # A PID merely cross-referenced here (a name in a siblings /
                 # children / parents list, or a spouse in a couple header) does
                 # NOT inherit this entry's records.
-                if not may_credit(body, pid):
+                #
+                # ** AND NEITHER DOES A DOCUMENTED ONE INHERIT THE WHOLE ENTRY. **
+                # The credit is the records of the region that documents THIS pid,
+                # not `record_count` — see attributed_region_for_pid for the 88
+                # entries that taught us the difference (deferred 29).
+                region = attributed_region_for_pid(body, pid)
+                foreign_count = count_records(region)
+                if not foreign_count:
                     continue
                 target = pid_to_id.get(pid)
                 if not target:
@@ -714,9 +752,11 @@ def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict
                 # NOT the entry's scholarly citation: an entry's Cawley/Richardson
                 # cite documents the entry's OWN person, not a relative named in
                 # it. An inline-collateral relative is credited via the locator
-                # test, so record_count > 0 and this flag never decides its
+                # test, so foreign_count > 0 and this flag never decides its
                 # BOOK/UNCITED split. Same header-vector fix as may_credit.
-                out[target].append((fname, name, record_count, len(body), per_host, False))
+                # per_host is likewise scoped to the region, not the entry.
+                out[target].append((fname, name, foreign_count, len(region),
+                                    per_host_locators(region), False))
 
     return out
 
