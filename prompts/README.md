@@ -140,6 +140,7 @@ Every prompt has a matching review card. Read the card after the prompt finishes
 | 18 Edge Verification | [review-cards/18-edge-verification.md](../review-cards/18-edge-verification.md) |
 | 19 FS Source Harvest | [review-cards/19-fs-source-harvest.md](../review-cards/19-fs-source-harvest.md) |
 | 20 Creative Vault Review | [review-cards/20-creative-vault-review.md](../review-cards/20-creative-vault-review.md) |
+| 25 Person Research Sweep | [review-cards/25-person-research-sweep.md](../review-cards/25-person-research-sweep.md) |
 | 21 Session Start | [review-cards/21-session-start.md](../review-cards/21-session-start.md) |
 | 22 Research Iterations | [review-cards/22-research-iterations.md](../review-cards/22-research-iterations.md) |
 | 23 Session Review | [review-cards/23-session-review.md](../review-cards/23-session-review.md) |
