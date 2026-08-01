@@ -138,13 +138,50 @@ ARK_PATTERNS = [
 ]
 
 
+# ---------------------------------------------------------------- negated locators
+# A locator prefixed with `~` is DELIBERATELY NOT EVIDENCE and is not counted.
+#
+# Why this exists (deferred_decisions 28, added 01 AUG 2026). Recording WHY a source
+# was excluded requires naming it, and until now naming it in any documented form made
+# this census COUNT it: a "NOT COUNTED - Find a Grave, policy (e)" bullet citing
+# `1:1:694C-W9N2` moved that person from SOURCE_GAP to LOW_COVERAGE, crediting her with
+# the two sources the bullet existed to exclude. The vault had one syntax for "this
+# locator is evidence for this person" and none for "this locator exists and is
+# deliberately NOT evidence", so every exclusion was either undocumented or silently
+# counted -- which is also why the Find a Grave population (item 18) could not be
+# measured.
+#
+# The form is `~` immediately before the locator, host prefix included if present:
+#     ~fs:1:1:694C-W9N2      ~1:1:694C-W9N2      ~ark:/61903/1:1:694C-W9N2
+# It suppresses that ONE locator; an unmarked locator on the same line still counts.
+# Suppression is implemented by blanking the negated span BEFORE any pattern runs, so
+# every counter inherits it and none can drift.
+NEGATED_LOCATOR_RE = re.compile(
+    r"~\s*(?:[A-Za-z]{2,8}:)?(?:"
+    r"ark:/\d+/[\w.:\-]+"
+    r"|[13]:1:[A-Z0-9][A-Z0-9\-]*"
+    r"|(?:Family[Ss]earch\s+)?ARK\s+[A-Z0-9]{3,}-[A-Z0-9]{3,}"
+    r"|metryki\.genealodzy\.pl/[^\s)\]]+"
+    r"|szukajwarchiwach\.(?:gov\.pl|pl)/[^\s)\]]+"
+    r"|PL(?:_\d+){3,4}\.jpg"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def strip_negated_locators(text: str) -> str:
+    """Blank every `~`-prefixed locator so no counter can see it."""
+    return NEGATED_LOCATOR_RE.sub(" ", text or "")
+
+
 def extract_arks(text: str) -> set:
     """Extract all source-record-IDs from vault narrative text, normalized.
 
     Backward-compat anchor: this is the LEGACY locator-token counter and is left
-    UNCHANGED. `count_records` falls back to it for un-migrated bullets, so an
-    all-legacy vault reports exactly as before Spec 03 (record_count == old
-    ark_count)."""
+    UNCHANGED apart from honouring `~` negation. `count_records` falls back to it for
+    un-migrated bullets, so an all-legacy vault reports exactly as before Spec 03
+    (record_count == old ark_count)."""
+    text = strip_negated_locators(text)
     ids = set()
     for pat in ARK_PATTERNS:
         for m in pat.finditer(text):
@@ -229,7 +266,10 @@ def is_record_locator(token: str) -> bool:
 
 
 def record_locators(text: str) -> "List[str]":
-    """Every host-prefixed token in `text` that really cites a record."""
+    """Every host-prefixed token in `text` that really cites a record.
+
+    Honours `~` negation (deferred_decisions 28): a negated locator is not a citation."""
+    text = strip_negated_locators(text)
     return [m.group(0) for m in FULL_HOST_LOC_RE.finditer(text)
             if is_record_locator(m.group(0))]
 
@@ -237,6 +277,7 @@ def record_locators(text: str) -> "List[str]":
 def per_host_locators(text: str) -> "Dict[str, int]":
     """Return host_id -> count of DISTINCT locators of that host in `text`
     (across both legacy bare tokens and host-prefixed ones)."""
+    text = strip_negated_locators(text)
     counts: Dict[str, int] = defaultdict(int)
     seen = set()
     for pat, host, _kind in HOST_LOCATOR_PATTERNS:
