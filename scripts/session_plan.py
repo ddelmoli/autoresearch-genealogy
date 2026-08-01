@@ -4,7 +4,9 @@
 WHY IT EXISTS (29 JUL 2026 framework review). The toolkit answers "what should this
 session work?" with FIVE partial answers that rank overlapping populations in
 incompatible orders: extension_frontier (parentless, gen ascending), keystone_report
-(LOAD x THIN), harvest_sources (ARK-count buckets), profile_review (bandit draw), and
+(LOAD, now a tiebreaker), harvest_sources (the SOURCE_GAP worklist -- wired into
+IMPROVE 31 JUL 2026, deferred 24; it was named here for months while no lane read
+it), profile_review (bandit draw), and
 buildout (edgeless nodes by cluster). Nothing joined them, so every session re-argued
 the arbitration from prose — and the banner's information density (10 integrity gates
 to 5 aggregate work counts) pointed the opposite way from the stated EXTENSION-first
@@ -16,8 +18,15 @@ candidate-builder (imported, never re-derived — the "two readers, one entry" r
 
   EXPAND   extension_frontier SILENT rows: no parents edge, no declared reason.
            Ranked gen ascending (shallower = cheaper to verify, likelier to matter).
-  IMPROVE  keystone_report rows: LOAD x THIN — the tree leans on them and nobody
-           wrote them up. Ranked by score.
+  IMPROVE  harvest_sources SOURCE_GAP rows with a usable FS PID: entries carrying
+           ZERO cited records that a Recipe-S harvest can actually be run against.
+           Ranked gen ascending, with keystone LOAD as a TIEBREAKER.
+           ** REDEFINED 31 JUL 2026 (deferred 24). ** It was keystone_report's
+           LOAD x THIN, which measures whether anyone WROTE THE ENTRY UP rather
+           than whether it is SOURCED — a different question, and a disjoint
+           population (of its last candidate, zero were SOURCE_GAP). The keystone
+           report still exists and still finds real work; it is now a REPORT
+           (`keystone_report.py --summary`), not this lane's definition.
   VERIFY   entries whose `parents:`/`spouse:` lists carry `?`-marked (not yet
            FS-confirmed) edges. Ranked gen ascending. ⚠ Read the entry before
            stripping a `?` — it survives legitimately as FS-GAP, SCHOLARLY HEDGE,
@@ -87,7 +96,7 @@ LANES = ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")
 LANE_UNITS = {
     "EXPAND": "one person ADDED: a frontier row gains a sourced parent edge, "
               "or the parent it names is minted",
-    "IMPROVE": "one keystone entry written up (sourced, de-thinned)",
+    "IMPROVE": "one SOURCE_GAP entry HARVESTED: its records found, read and cited\n              in a `- **Sources**` bullet (Recipe-S / prompt 19)",
     "VERIFY": "one `?` edge adjudicated: cleared, contradicted, or classified "
               "with its reason on the entry",
     "ROTATE": "one drawn entry polled AND recorded with --record",
@@ -127,14 +136,60 @@ def lane_expand(vault):
             for r in rows]
 
 
+def harvestable_pid(pid):
+    """A PID a Recipe-S harvest can actually be run against."""
+    p = (pid or "").strip()
+    return bool(p) and p.upper() not in ("TBD", "NONE", "-")
+
+
 def lane_improve(vault):
+    """SOURCE_GAP entries with a usable FS PID — the source-harvest worklist.
+
+    ** REDEFINED 31 JUL 2026 (operator; deferred_decisions 24). ** This lane used
+    to be `keystone_report` rows with `load >= 1 AND thin >= 3`, which measures
+    NARRATIVE COMPLETENESS ("has anyone written this entry up"), not sourcing. The
+    operator's question was the finding: IMPROVE is supposed to be about enhancing
+    entries via source harvesting, so its population is the source census.
+
+    What the measurement showed, and why the fix is not just swapping the metric:
+
+      - **No lane fed the source census at all.** This module's own header comment
+        listed `harvest_sources` as a candidate source, and `22-research-iterations`
+        routes "a harvest target -> 19-fs-source-harvest" — but nothing produced
+        harvest targets. Recipe-S ran on a calendar cadence, outside the bandit.
+      - The two populations were **disjoint**: of the old filter's 1 candidate,
+        ZERO were SOURCE_GAP.
+      - **`load >= 1` was the binding constraint, not `thin`.** Keeping LOAD as a
+        FILTER and swapping in SOURCE_GAP would have given a SEVEN-row lane, because
+        an unsourced entry is typically an untouched leaf with no wired ancestry
+        above it, so its LOAD is 0 by construction. (Inversely, LOW_COVERAGE has
+        ~8x more load-bearing rows than SOURCE_GAP: 1-3 ARKs means somebody already
+        worked the entry, which usually means its parents got wired too.)
+
+    So LOAD is DEMOTED FROM FILTER TO TIEBREAKER: load-bearing entries sort to the
+    top without excluding the rest of the backlog.
+
+    The category comes from `harvest_sources.gather_records()`, not from an ARK
+    count, and that distinction is load-bearing: BOOK_SOURCED and UNCITED entries
+    ALSO have 0 ARKs. SOURCE_GAP is specifically the harvestable remainder, after
+    the structurally-unsourceable rows are split out — and `gather_records` has
+    already applied the privacy gate, so living/unknown people are re-categorised
+    to LIVING_EXCLUDED and cannot appear here.
+    """
+    import harvest_sources as hs
     import keystone_report as kr
-    rows = [r for r in kr.build_rows(vault) if r["load"] >= 1 and r["thin"] >= 3]
-    rows.sort(key=lambda o: (-o["score"], -o["load"], -o["thin"], o["name"]))
-    return [{"id": r["id"], "name": r["name"], "gen": r["gen"], "file": r["file"],
-             "blocked": r["blocked"],
-             "why": ("VITALS-BLOCKED — declare, do not research: " if r["blocked"] else "")
-                    + f"keystone: {r['load']} people lean on it, thin {r['thin']}/6 ({r['why']})"}
+    rows = [r for r in hs.gather_records()
+            if r.get("category") == "SOURCE_GAP" and harvestable_pid(r.get("pid"))]
+    load = kr.load_by_id()          # no census: LOAD is pure graph reachability
+    for r in rows:
+        r["_load"] = load.get(r["id"], 0)
+    # Shallow generations first (they anchor the most descendants and their records
+    # are the densest), then LOAD as the tiebreaker, then name for a stable order.
+    rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0, -r["_load"], r["name"] or ""))
+    return [{"id": r["id"], "name": r["name"], "gen": r["gen"],
+             "file": r.get("narr_file") or "?",
+             "why": f"SOURCE_GAP: 0 records, FS {r['pid']} harvestable"
+                    + (f"; {r['_load']} people lean on it" if r["_load"] else "")}
             for r in rows]
 
 
@@ -304,10 +359,29 @@ def since_epoch(state):
     sittings running. That is worse than the tally it replaced. When `arms_reset.date`
     is present, observations recorded before it are kept in `history` as the record but
     no longer feed the floors, so the bootstrap floor re-samples each lane under the
-    rule now in force."""
+    rule now in force.
+
+    ** A RESET CAN ALSO BE PER-LANE (31 JUL 2026, deferred 24). ** When ONE lane's
+    DEFINITION changes, its observations stop describing the population the lane now
+    draws from, while every other lane's stay valid — so a global reset would throw
+    away good data to fix one arm. `lane_epochs: {"IMPROVE": "2026-08-01"}` retires
+    just that lane's history from the floors; it COMPOSES with the global
+    `arms_reset.date` rather than replacing it, and an absent key means "no per-lane
+    epoch", i.e. exactly the previous behaviour.
+    """
     hist = state.get("history", [])
     epoch = (state.get("arms_reset") or {}).get("date")
-    return [h for h in hist if not epoch or (h.get("date") or "") >= epoch]
+    lane_epochs = state.get("lane_epochs") or {}
+    out = []
+    for h in hist:
+        d = h.get("date") or ""
+        if epoch and d < epoch:
+            continue
+        le = lane_epochs.get(h.get("lane"))
+        if le and d < le:
+            continue
+        out.append(h)
+    return out
 
 
 def sittings_in_order(history):

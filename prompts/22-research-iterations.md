@@ -26,7 +26,7 @@ comparable:
 | Lane | One unit of lane target |
 |---|---|
 | EXPAND | the vault GROWS by one person: a frontier row gains a sourced parent edge, or the parent it names is minted |
-| IMPROVE | one keystone entry written up (LOAD x THIN row, sourced and de-thinned) |
+| IMPROVE | one SOURCE_GAP entry HARVESTED: its records found, read, and cited in a `- **Sources**` bullet (Recipe-S / prompt 19) |
 | VERIFY | one `?`-marked edge adjudicated: cleared, contradicted, or classified with its reason on the entry |
 | ROTATE | one drawn entry polled AND recorded with `--record` |
 
@@ -139,18 +139,18 @@ iteration recorded honestly, so that the next session's draw is informed by real
 observations rather than by an arm that has never lost.
 
 **Metric**: Per iteration, the drawn lane's metric against the session-start
-value: EXPAND = people added to the vault off frontier rows; IMPROVE = keystones
-written up; VERIFY = `?`-marked edges adjudicated; ROTATE = entries polled and
+value: EXPAND = people added to the vault off frontier rows; IMPROVE = SOURCE_GAP
+entries harvested (0 records -> cited); VERIFY = `?`-marked edges adjudicated; ROTATE = entries polled and
 recorded. Per sitting: iterations completed at or above the lane target, out of
 `Iterations`.
 
 **Direction**: Maximize iterations that meet their lane target; minimize the lane
-backlogs (SILENT, keystone count, `?` tokens) those iterations draw from.
+backlogs (SILENT, SOURCE_GAP, `?` tokens) those iterations draw from.
 
 **Verify**: `python3 scripts/session_plan.py` at each draw (counts, lane, target;
 the draw reason names sittings, not observations, for the two floors);
 the owning tool's heartbeat at the end of the iteration
-(`extension_frontier.py --heartbeat`, `keystone_report.py --summary`,
+(`extension_frontier.py --heartbeat`, `harvest_sources.py --heartbeat`,
 `grep -rhoE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | wc -l`,
 `profile_review.py --heartbeat`); one `history` observation per worked iteration in
 the vault's `session_plan_snapshots.json`.

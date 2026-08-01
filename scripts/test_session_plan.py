@@ -269,6 +269,58 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(sp.target_and_dryness(21, 0), (21, True),
                          "an empty lane must not print a target of 0")
 
+    def test_per_lane_epoch_retires_only_that_lane(self):
+        """** A LANE WHOSE DEFINITION CHANGES NEEDS ITS OWN RESET ** (deferred 24,
+        31 JUL 2026). IMPROVE was redefined from keystone LOAD x THIN to the
+        SOURCE_GAP harvest worklist, so its old observations describe a population
+        the lane no longer draws from -- while EXPAND/VERIFY/ROTATE observations
+        stay perfectly valid.
+
+        A GLOBAL reset would have thrown away three good arms to fix one, which is
+        why `lane_epochs` exists and why it COMPOSES with `arms_reset.date` instead
+        of replacing it.
+        """
+        st = {"history": [
+            {"date": "2026-07-30", "lane": "IMPROVE", "outcome": "hit"},
+            {"date": "2026-07-30", "lane": "VERIFY", "outcome": "hit"},
+            {"date": "2026-08-02", "lane": "IMPROVE", "outcome": "miss"},
+            {"date": "2026-08-02", "lane": "VERIFY", "outcome": "hit"},
+        ]}
+        # no epochs at all -> everything is visible (the pre-existing behaviour)
+        self.assertEqual(len(sp.since_epoch(st)), 4, "absent epochs must change nothing")
+
+        # a PER-LANE epoch retires only that lane's older rows
+        st["lane_epochs"] = {"IMPROVE": "2026-08-01"}
+        seen = sp.since_epoch(st)
+        improve = [h for h in seen if h["lane"] == "IMPROVE"]
+        verify = [h for h in seen if h["lane"] == "VERIFY"]
+        self.assertEqual(len(improve), 1, "IMPROVE's pre-epoch row is retired")
+        self.assertEqual(improve[0]["date"], "2026-08-02")
+        # NEGATIVE CONTROL: the other lane is untouched. If this ever drops to 1 the
+        # per-lane epoch has become global again, which is the whole thing it avoids.
+        self.assertEqual(len(verify), 2, "a per-lane epoch must NOT touch other lanes")
+
+        # it COMPOSES with the global epoch rather than overriding it
+        st["arms_reset"] = {"date": "2026-08-02"}
+        seen = sp.since_epoch(st)
+        self.assertEqual(len(seen), 2, "the global epoch still applies to every lane")
+        self.assertTrue(all(h["date"] >= "2026-08-02" for h in seen))
+
+        # and the history itself is never mutated -- the record is kept, only the
+        # FLOORS' view narrows
+        self.assertEqual(len(st["history"]), 4, "since_epoch must not drop rows from history")
+
+    def test_harvestable_pid(self):
+        """IMPROVE only offers entries a Recipe-S harvest can actually run against."""
+        # Placeholders, never real PIDs: this is the PUBLIC repo, and a record
+        # identifier is a pointer to a person even with no name beside it.
+        for good in ("ABCD-123", "  EFGH-4JK "):
+            self.assertTrue(sp.harvestable_pid(good), good)
+        # NEGATIVE CONTROLS: the placeholders the vault uses for "not looked up yet"
+        # and "looked, none exists" are NOT harvestable and must never enter the lane.
+        for bad in (None, "", "   ", "TBD", "tbd", "none", "NONE", "-"):
+            self.assertFalse(sp.harvestable_pid(bad), repr(bad))
+
     def test_record_rejects_unknown_lane_and_outcome(self):
         with self.assertRaises(SystemExit):
             sp.record({"arms": {}, "history": []}, "NOPE", "hit")

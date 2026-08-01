@@ -279,19 +279,22 @@ def census_records(vault):
     return out
 
 
-def build_rows(vault, warn=None):
-    """Every entry scored: LOAD, THIN, score = LOAD x THIN. Unfiltered, unsorted.
+def load_by_id(rows=None):
+    """id -> LOAD: how many people become unreachable if this entry is removed.
 
-    The one candidate-builder, shared by main() and by session_plan.py's IMPROVE
-    lane — extracted 29 JUL 2026 so the plan cannot drift from the report (the
-    "two readers, one entry" failure class: a second reader with its own parse of
-    the same population silently disagrees with the first).
+    Extracted 31 JUL 2026 so `session_plan.lane_improve` can rank by LOAD without
+    paying for the source census. LOAD is pure graph reachability over the parent
+    edges — it needs `parse_narrative()` and nothing else, while `build_rows` also
+    runs `harvest_sources` for THIN's veto. Two callers, ONE implementation: a
+    second reader with its own reachability walk is exactly the drift this vault
+    keeps paying for.
+
+    Note what LOAD requires, because it is why it makes a poor FILTER: an entry
+    scores > 0 only if it has a wired `parents` edge AND is the SOLE path to those
+    ancestors. A sibling or co-parent reaching the same parents drops it to 0.
     """
-    rows = {r["id"]: r for r in g.parse_narrative() if r.get("id")}
-    bodies = bodies_by_id(vault)
-    recs = census_records(vault)
-    if not recs and warn:
-        warn("census unavailable; THIN veto disabled")
+    if rows is None:
+        rows = {r["id"]: r for r in g.parse_narrative() if r.get("id")}
 
     # child -> parents, restricted to ids that actually exist (build_edges --validate
     # keeps dangling refs at 0, but never trust that here; a dangling ref would
@@ -317,6 +320,24 @@ def build_rows(vault, warn=None):
             continue
         lost = len(base) - len(reachable(roots, edges, skip=pid))
         load[pid] = max(lost - 1, 0)  # exclude the removed person themself
+    return load
+
+
+def build_rows(vault, warn=None):
+    """Every entry scored: LOAD, THIN, score = LOAD x THIN. Unfiltered, unsorted.
+
+    The one candidate-builder, shared by main() and by session_plan.py's IMPROVE
+    lane — extracted 29 JUL 2026 so the plan cannot drift from the report (the
+    "two readers, one entry" failure class: a second reader with its own parse of
+    the same population silently disagrees with the first).
+    """
+    rows = {r["id"]: r for r in g.parse_narrative() if r.get("id")}
+    bodies = bodies_by_id(vault)
+    recs = census_records(vault)
+    if not recs and warn:
+        warn("census unavailable; THIN veto disabled")
+
+    load = load_by_id(rows)
 
     out = []
     for pid, r in rows.items():

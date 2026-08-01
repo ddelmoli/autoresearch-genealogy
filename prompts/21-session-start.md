@@ -64,7 +64,8 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
    - RECORD THE SESSION-START VALUES you will be judged against at review.
      The banner carries the frontier and census numbers; the other two are NOT
      in it, so run them:
-       python3 scripts/keystone_report.py --summary          # keystone count
+       python3 scripts/harvest_sources.py --heartbeat        # SOURCE_GAP (IMPROVE)
+       python3 scripts/keystone_report.py --summary          # keystones (report, no longer a lane)
        grep -rhoE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | wc -l   # ? edges
      Phase 3 compares against these four, and a session that never wrote down a
      "before" cannot honestly report movement.
