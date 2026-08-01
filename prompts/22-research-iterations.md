@@ -26,7 +26,7 @@ comparable:
 | Lane | One unit of lane target |
 |---|---|
 | EXPAND | one frontier row DISPOSED OF: the vault grows by a person (the row gains a sourced parent edge, or the parent it names is minted), **or** the row is closed with a documented negative naming what was searched and why the route is closed |
-| IMPROVE | one SOURCE_GAP entry DISPOSED OF: its records found, read and cited in a `- **Sources**` bullet (Recipe-S / prompt 19), **or** the entry closed with a documented negative — FS holds nothing, or holds only excluded classes — naming the real route |
+| IMPROVE | one entry DISPOSED OF: an unsourced entry's records found, read and cited in a `- **Sources**` bullet (prompt 25's sweep), **or** a `SINGLE_SOURCED` entry corroborated from a SECOND host, **or** either closed with a documented negative naming the real route. ⚠ "FS holds nothing" is NOT a disposition on its own — it closes one repository, and the entry only leaves the pool when the other routes are named too |
 | VERIFY | one `?`-marked edge adjudicated: cleared, contradicted, or classified with its reason on the entry — **or** one FS PID confirmed live, corrected, or recorded dead (`profile_review.py --record P-XXXXXX --probed fs`) |
 | ROTATE | one drawn entry polled AND recorded with `--record` |
 
@@ -79,10 +79,22 @@ movement honestly.
      and the lane you actually work is the one you record in step 4.
 
 2. WORK THE LANE TOP-DOWN to the lane target, in the plan's ranking order,
-   dispatching to the owning prompt or workflow for the work type: VERIFY ->
-   18-edge-verification; a harvest target -> 19-fs-source-harvest; EXPAND ->
-   01-tree-expansion and the frontier declaration pattern; a stalled entry ->
-   20-creative-vault-review. The plan ranks; those prompts do the work.
+   dispatching to the owning prompt for the work type. The plan RANKS; those
+   prompts do the work, and each is applied to ONE PERSON at a time:
+
+     IMPROVE          -> 25-person-research-sweep   (the default unit of work)
+     EXPAND           -> 01-tree-expansion + the frontier declaration pattern;
+                         use 25 when the parent is not findable on FS either
+     VERIFY, `?` edge -> 18-edge-verification
+     VERIFY, stale PID-> confirm the profile still resolves, then
+                         profile_review.py --record <id> --probed fs
+     ROTATE           -> the profile-review poll; escalate a HIT to 25
+     a stalled entry  -> 20-creative-vault-review
+
+   ! 19-fs-source-harvest IS NO LONGER THE DEFAULT for a sourcing target. It is
+   the FamilySearch LEG of 25, and reaching for it alone is how the vault ended
+   up with 660 of its 691 source-citing entries on one host. Run 25 and let FS
+   be step 2a of a sweep, not the whole sweep.
 
 3. STANDING RULES, every iteration:
    - Check before searching, PER SOURCE: grep logs/ and Open_Questions.md for
@@ -238,7 +250,8 @@ says so when it caps).
 1. Take the pending draw if there is one; otherwise run `session_plan.py` and
    present the counts, the drawn lane, the lane target and the top candidates.
 2. Work the lane top-down to the lane target, dispatching to the owning prompt
-   for the work type.
+   for the work type — `25-person-research-sweep` for IMPROVE and for any row
+   needing sources, since it is the per-PERSON unit this loop repeats.
 3. Apply the standing rules throughout; queue outward mutations instead of
    performing them.
 4. Record the iteration with `session_plan.py --record`, hit only at target.
