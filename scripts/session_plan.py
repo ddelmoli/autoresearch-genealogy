@@ -94,6 +94,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import subprocess
 import sys
 from datetime import date
@@ -145,6 +146,50 @@ PER_LANE = 5          # rows shown per lane (DISPLAY only -- not a work target)
 LANE_TARGET_PERCENT = 1.5
 MIN_SAMPLE = 2        # bootstrap floor: no exploitation until every lane has this many
 STALE_AFTER = 6       # staleness floor: a lane undrawn for this many draws is due
+
+# ** CANDIDATE ROTATION (operator-directed, 01 AUG 2026, session #127). **
+#
+# THE DEFECT. Three of the four lanes ranked candidates with a DETERMINISTIC sort
+# (gen ascending) and took the top N. So whichever rows sit at the shallow end are
+# presented FIRST, EVERY SESSION, UNTIL THEY CLEAR -- and a row that is merely HARD
+# never clears. Measured on the reference vault at #127: ONE entry's parent edge was
+# walked and classified a permanent FS-GAP independently in THREE separate sittings,
+# by three sessions that each reached the same answer unaided -- and it still ranked
+# FIRST in the next draw. The `adjudicated` key (deferred
+# 32) fixed the SETTLED half of this by removing judged rows from the pool; it did
+# nothing for rows that are open, hard, and permanently at the head of the list.
+#
+# ROTATE never had the problem, because profile_review has carried a per-entry
+# cooldown (`last_polled` + POLL_COOLDOWN_DAYS) since it was written -- and the one
+# time that cooldown broke (30 JUL 2026: it PRINTED the FS PID but keyed the
+# cooldown on the vault id, so recording the displayed key never entered cooldown)
+# the symptom was exactly this, the same people redrawn every session. So: four
+# lanes, four different PERMANENT-exclusion stores (`adjudicated` / frontier
+# `declared` / `.autoresearch.json structural_gap` / none), and exactly ONE
+# cooldown. This lifts the cooldown to all four.
+#
+# ** COOLDOWN, NOT RANDOMISATION, IS THE FIX -- and the distinction is the point. **
+# The operator's instinct was to randomise the candidate list. Randomisation makes
+# repetition UNPREDICTABLE, not RARE: a shuffle can hand you the same row twice
+# running. A cooldown is a guarantee. Randomisation also throws away real priority
+# -- gen ascending is not arbitrary, shallower means closer to the anchor. So the
+# order is: cooldown first (guarantee), then a SEEDED STRATIFIED sample of what is
+# left (variety), with the top of the priority order always represented.
+#
+# ** A COOLED ROW IS DEPRIORITISED, NEVER REMOVED. ** It goes to the BACK of its
+# lane, so the lane size stays honest, a lane cannot be starved into looking empty,
+# and a session that works past the target still reaches it. If EVERY row is
+# cooling the original order is returned unchanged.
+#
+# ** OFFERS ARE STAMPED AT `--record`, NOT AT PLAN TIME. ** The plan is run several
+# times per sitting (and by the SessionStart hook), so stamping on display would
+# cool rows nobody looked at, and would do it again on every re-run. Instead the
+# plan writes the ids it offered into `pending.offered`, and `record()` stamps them
+# only when the recorded lane MATCHES the drawn one -- i.e. only when a session
+# actually worked that lane. Override the lane and nothing is cooled, which is
+# correct: nobody looked at those rows.
+OFFER_COOLDOWN = 3    # sittings a row spends at the BACK after being offered and not disposed
+HEAD_FRACTION = 3     # 1/N of the target is taken strictly by priority; the rest is sampled
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +505,70 @@ def sittings_in_order(history):
     return out
 
 
+def cooling(state, lane, row_id, cooldown=OFFER_COOLDOWN):
+    """(is_cooling, sittings_since_offered) for one row in one lane.
+
+    Keyed on the VAULT id, never on an external PID — that is the exact bug that
+    broke the ROTATE cooldown on 30 JUL 2026 (printed one key, cooled on another),
+    and the whole point of `id` being the identity key. A stamp naming a sitting
+    that has fallen out of the retained history reads as COLD rather than as an
+    error: history is trimmed by epoch, and an unreadable stamp must not pin a row
+    at the back for ever.
+    """
+    stamp = ((state.get("offered") or {}).get(lane) or {}).get(row_id)
+    if not stamp:
+        return False, None
+    order = sittings_in_order(state.get("history") or [])
+    if stamp not in order:
+        return False, None
+    since = len(order) - 1 - order.index(stamp)
+    return since < cooldown, since
+
+
+def stamp_offered(state, lane, ids, sitting_key):
+    """Mark `ids` as offered in `lane` during `sitting_key`. Called from record()."""
+    d = state.setdefault("offered", {}).setdefault(lane, {})
+    for i in ids:
+        if i:
+            d[i] = sitting_key
+    return state
+
+
+def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
+                      head_fraction=HEAD_FRACTION, seed_extra=""):
+    """Order one lane's candidates: priority head, seeded sample, then cooled rows.
+
+    Returns (ordered_rows, n_cooling). Pure function of its inputs — pinned by
+    scripts/test_session_plan.py. Length is always preserved: this REORDERS, it
+    never filters, so `len(rows)` stays the honest lane size.
+
+    The seed is derived from the lane and the number of recorded observations, so
+    the list is STABLE across the several plan runs inside one iteration (history
+    does not change until `--record`) and RESAMPLES for the next iteration (it
+    does). That stability matters: a list that reshuffled on every invocation would
+    make the printed plan unreproducible within a sitting.
+    """
+    if not rows:
+        return list(rows), 0
+    hot, cold = [], []
+    for r in rows:
+        is_cool, _ = cooling(state, lane, r.get("id"), cooldown)
+        (cold if is_cool else hot).append(r)
+    if not hot:
+        # Everything is cooling. Deprioritising all of it would be meaningless, and
+        # silently emptying the lane would be a lie, so hand back the plain order.
+        return list(rows), len(cold)
+    n = max(1, int(target or 1))
+    head_k = max(1, n // max(1, head_fraction))
+    head, pool = hot[:head_k], hot[head_k:]
+    want = max(0, n - len(head))
+    rng = random.Random(f"{lane}|{len(state.get('history') or [])}|{seed_extra}")
+    sampled = rng.sample(pool, min(want, len(pool))) if want and pool else []
+    picked = {id(r) for r in sampled}
+    rest = [r for r in pool if id(r) not in picked]
+    return head + sampled + rest + cold, len(cold)
+
+
 def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER):
     """Pick the recommended lane. Pure function of (state, lane_sizes) — pinned by
     scripts/test_session_plan.py. Returns (lane, reason)."""
@@ -524,6 +633,15 @@ def record(state, lane, outcome, note="", session=None, today=None):
     # primitive, so a hand-run plan cannot be undone by a later record either.
     pend = state.get("pending")
     if pend and (pend.get("lane") == lane and (pend.get("date") or "") <= today):
+        # ** STAMP THE COOLDOWN HERE, and only here. ** The rows in `pending.offered`
+        # were presented for THIS lane and this sitting has now recorded an outcome
+        # for it, so they have had their turn whether or not each one was disposed of.
+        # Stamping at plan time instead would cool rows nobody looked at, and would
+        # re-cool them on every re-run of the plan within the sitting. Note this runs
+        # AFTER the history append above, so the current sitting is already in
+        # sittings_in_order() and `cooling()` reads these rows as since=0.
+        stamp_offered(state, lane, pend.get("offered") or [],
+                      sitting_of({"session": session, "date": today}))
         state["pending"] = None
     return state
 
@@ -595,6 +713,7 @@ def main(argv=None):
     per_lane = a.limit or int(cfg.get("per_lane", PER_LANE))
     min_sample = int(cfg.get("min_sample", MIN_SAMPLE))
     stale_after = int(cfg.get("stale_after", STALE_AFTER))
+    cooldown_sittings = int(cfg.get("offer_cooldown", OFFER_COOLDOWN))
 
     state = load_state(vault)
 
@@ -635,13 +754,27 @@ def main(argv=None):
     except Exception:
         pool_n = 0
 
+    # Candidate rotation: cooldown + seeded stratified sample, in EVERY lane.
+    # Runs after the target is resolved (it sizes the priority head) and after
+    # `sizes` is taken (it reorders, never filters, so the counts are unchanged).
+    cooled = {}
+    for _ln in LANES:
+        lanes[_ln], cooled[_ln] = rotate_candidates(
+            lanes[_ln], state, _ln, lane_target, cooldown=cooldown_sittings)
+
     if pick:
-        state["pending"] = {"date": date.today().isoformat(), "lane": pick}
+        # The ids this draw actually OFFERS. record() stamps them only if the
+        # recorded lane matches, so overriding the draw cools nothing.
+        offered = [r.get("id") for r in lanes[pick][:max(lane_target or per_lane, per_lane)]
+                   if r.get("id")]
+        state["pending"] = {"date": date.today().isoformat(), "lane": pick,
+                            "offered": offered}
         save_state(vault, state)
 
     if a.json:
         print(json.dumps({"date": date.today().isoformat(), "lane": pick,
                           "reason": reason, "sizes": sizes, "blocked": blocked,
+                          "cooling": cooled, "offer_cooldown": cooldown_sittings,
                           "lane_target": lane_target, "lane_target_percent": lt_pct,
                           "lane_target_source": lt_src, "pool": pool_n,
                           "lanes": {ln: rows[:per_lane] for ln, rows in lanes.items()}},
@@ -679,7 +812,9 @@ def main(argv=None):
         mark = " <-- THIS SESSION" if ln == pick else ""
         floor = (f"  [{blocked[ln]} vitals-blocked: declare, do not research — "
                  f"workable {sizes[ln] - blocked[ln]}]" if blocked[ln] else "")
-        print(f"\n  [{ln}] {sizes[ln]} candidates{mark}{floor}")
+        cool = (f"  [{cooled[ln]} cooling: offered within the last "
+                f"{cooldown_sittings} sittings, moved to the back]" if cooled.get(ln) else "")
+        print(f"\n  [{ln}] {sizes[ln]} candidates{mark}{floor}{cool}")
         for r in rows[:per_lane]:
             gen = f"Gen {r['gen']:>2}" if r.get("gen") not in (None, "") else "Gen  ?"
             print(f"    {gen}  {str(r.get('name'))[:42]:44} {r.get('why')}")
