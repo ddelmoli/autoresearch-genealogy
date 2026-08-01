@@ -29,7 +29,7 @@ FACETS. Two groups, because they answer different questions.
   LIFE — the texture that makes an entry a biography rather than a data row. These
     are NOT universally applicable (not everyone emigrated or left a will), so they
     are reported as ENRICHMENT, never scored as failures:
-    occupation, residence, migration, military, probate, narrative
+    occupation, residence, migration, military, probate, burial, narrative
 
 ! THE LIFE FACETS ARE KEYWORD-DETECTED AND ARE THEREFORE A FLOOR, NOT A COUNT. An
 entry that describes a trade without using any of the words below reads as having no
@@ -58,7 +58,8 @@ import vault_config  # noqa: E402
 import person_store as PS  # noqa: E402
 
 CORE = ("born", "died", "parents", "spouse_or_children", "sources")
-LIFE = ("occupation", "residence", "migration", "military", "probate", "narrative")
+LIFE = ("occupation", "residence", "migration", "military", "probate", "burial",
+        "narrative")
 
 OCCUPATION_RE = re.compile(
     r"\b(occupation|labou?rer|farmer|yeoman|weaver|butcher|miller|smith|carpenter|"
@@ -75,6 +76,17 @@ MILITARY_RE = re.compile(
     r"\b(regiment|enlisted|draft (?:card|registration)|militia|company [A-K]\b|"
     r"war of 1812|civil war|revolutionary war|wwi|wwii|world war|veteran|"
     r"pension file|service record)\b", re.I)
+# ** BURIAL (operator ruling 01 AUG 2026, superseding the memorial class-ban). ** A
+# photographed stone whose image was actually seen is evidence -- of the death date,
+# the burial place, family grouping, plot adjacency, and inscriptions a structured
+# index drops. It stays OUT of the ARK record census (that metric counts independent
+# primary records, and post-mortem artifacts inflated the deep generations), so it
+# credits the BIOGRAPHY here instead. This vault's best origin breakthrough -- a
+# Gen-5 ancestor's town of origin from a landsmanshaft society plot, and his father
+# from the Hebrew patronymic on the matzeva -- was burial evidence and nothing else.
+BURIAL_RE = re.compile(
+    r"\b(burial evidence|buried|burial|interment|cemetery|churchyard|headstone|"
+    r"gravestone|matzeva|tombstone|monument inscription|plot \d|sepolt\w+)\b", re.I)
 PROBATE_RE = re.compile(
     r"\b(will (?:of|proved|dated)|probate|administration|inventory|testator|"
     r"bequeath\w*|letters of admin|estate of)\b", re.I)
@@ -111,6 +123,7 @@ def facets(rec, block, has_children):
         "migration": bool(MIGRATION_RE.search(body)),
         "military": bool(MILITARY_RE.search(body)),
         "probate": bool(PROBATE_RE.search(body)),
+        "burial": bool(BURIAL_RE.search(body)),
         "narrative": narrative_lines(body) >= 4,
     }
     return f
@@ -180,7 +193,8 @@ def main(argv=None):
         print(f"BIO_COMPLETE {comp}/{n} ({comp*100//n}% carry all {len(CORE)} core "
               f"facets: born, died, parents, spouse/children, sources); BIO_THIN "
               f"{thin} (<=2); occupation {life['occupation']}, residence "
-              f"{life['residence']}, migration {life['migration']} "
+              f"{life['residence']}, migration {life['migration']}, "
+              f"burial {life['burial']} "
               f"[keyword-detected = a FLOOR, read the rows]")
         return 0
 

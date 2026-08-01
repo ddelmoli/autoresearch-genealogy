@@ -124,9 +124,14 @@ the entry's own `- **Sources**` bullet; `python3 scripts/prose_audit.py`.
   panels state guesses as facts; open the image or the page.
 - **A hint is a candidate.** Check identifiers before citing; a fitting date is not
   evidence.
-- **User trees and contributor-built memorial/headstone indexes are never records**
-  (policy (d) and (e)) — they may be *pointers*, and what they CITE may be real.
-  Negate an excluded locator with `~` rather than omitting it.
+- **User trees are never records** (policy (d)) — they may be *pointers*, and what
+  they CITE may be real. Negate an excluded locator with `~` rather than omitting it.
+- **A memorial/headstone index is judged on the ARTIFACT, not the brand** (policy (e)):
+  a stone whose PHOTO you actually opened is evidence — record it in a
+  `- **Burial evidence**` bullet (off the ARK metric), good for the death date,
+  burial place, family grouping and inscriptions an index drops, but NEVER alone for
+  a birth date. No image = a contributor's assertion, worth nothing, negate it. A
+  modern monument for a pre-1750 person is memorialisation, not evidence.
 - **Log the empty resources.** An unlogged negative gets re-run for ever.
 - **Prior negatives are scoped, not final** — one source, one spelling, one date.
 - Outward mutations are operator-gated: queue them.

@@ -19,7 +19,8 @@ Prompt: [25 Person Research Sweep](../prompts/25-person-research-sweep.md)
 - The sweep stopped at FamilySearch and the entry now cites one host. FS is the SYNC point, not the evidence base.
 - A claim is written from a search-result snippet or a structured data panel rather than the record itself — panels state guesses as confidently as facts.
 - An FS hint is cited as a record without an identifier check; a matching date is treated as evidence of identity.
-- A user tree, Find a Grave, or BillionGraves entry is cited as a record (policy (d)/(e)) rather than negated with `~` or used only as a pointer.
+- A user tree is cited as a record (policy (d)) rather than negated with `~` or used only as a pointer.
+- A memorial is cited as evidence WITHOUT its photograph having been opened, or a headstone age is used as a birth date, or a modern monument for a pre-1750 person is treated as contemporary (policy (e)'s three tiers).
 - "Not on FamilySearch" is written as "no records exist", or a single-spelling zero is written as absence.
 - The Sources bullet grew but the prose did not: a record count is not a biography.
 - Negatives are not logged, so the next session re-runs the same spent route.
