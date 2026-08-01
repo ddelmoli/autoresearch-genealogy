@@ -123,8 +123,10 @@ LANES = ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")
 LANE_UNITS = {
     "EXPAND": "one frontier row DISPOSED OF: it gains a sourced parent edge or the\n              parent it names is minted, OR it is closed with a documented negative",
     "IMPROVE": "one SOURCE_GAP entry DISPOSED OF: records found, read and cited in a\n              `- **Sources**` bullet (Recipe-S / prompt 19), OR closed as a\n              documented negative naming the real route",
-    "VERIFY": "one `?` edge adjudicated: cleared, contradicted, or classified "
-              "with its reason on the entry",
+    "VERIFY": "one `?` edge adjudicated (cleared, contradicted, or classified with\n"
+              "              its reason on the entry), OR one FS PID confirmed live /\n"
+              "              corrected / recorded dead (`profile_review.py --record\n"
+              "              P-XXXXXX --probed fs`). Both are one PERSON disposed of.",
     "ROTATE": "one drawn entry polled AND recorded with --record",
 }
 # Defaults; override via .maintenance.json `session_plan` block.
@@ -190,6 +192,15 @@ STALE_AFTER = 6       # staleness floor: a lane undrawn for this many draws is d
 # correct: nobody looked at those rows.
 OFFER_COOLDOWN = 3    # sittings a row spends at the BACK after being offered and not disposed
 HEAD_FRACTION = 3     # 1/N of the target is taken strictly by priority; the rest is sampled
+
+# ** VERIFY CARRIES TWO POPULATIONS, AND THE SMALLER ONE IS PROTECTED BY A SHARE **
+# (operator-directed, 01 AUG 2026). VERIFY was `?`-marked edges only; it now also
+# offers entries whose FS PID has not been confirmed live (see verify_stale_pids).
+# Measured when that was added: ~1,131 PID rows against ~34 edge rows. Merged into
+# one sampled pool the edge rows would be 3% of the lane -- half a row per draw --
+# so the work the lane exists for would vanish behind mechanical checks. This
+# reserves a fixed fraction of the lane target for edges before PIDs get any.
+VERIFY_EDGE_SHARE = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -325,6 +336,72 @@ def lane_verify(vault, include_adjudicated=False):
                          "why": why})
     rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0))
     return rows
+
+
+def verify_stale_pids(vault):
+    """Entries whose FS PID has not been CONFIRMED LIVE inside the probe cooldown.
+
+    ** THE SECOND HALF OF VERIFY (operator-directed, 01 AUG 2026, session #127). **
+    An `fs:` PID is an external pointer, and FamilySearch rots them: a profile merged
+    away or deleted leaves a PID that still LOOKS like a person and reads, on a walk,
+    as someone with no relatives. A stale PID does not just mislead VERIFY — IMPROVE
+    harvests AGAINST these PIDs, so one silently poisons that lane too.
+
+    ** THE STATE IS profile_review's, NOT A NEW STORE. ** It already keeps a per-entry
+    `last_probed_fs` on the vault id, with a ~365d cooldown, and already treats an
+    UNDATED negative as expired on sight. Reading it here (rather than inventing a
+    second timestamp) is the "two readers, one entry" rule: profile_review owns that
+    state and `--record --probed fs` is how a session writes it.
+
+    Ranked never-probed first, then oldest probe, then generation.
+    """
+    import person_store as PS
+    import profile_review as pr
+    today = date.today()
+    entries = (pr.load_state(vault) or {}).get("entries", {})
+    rows = []
+    for r in PS.iter_people(vault):
+        if (r.life_status or "") in ("living", "unknown"):
+            continue  # never web-searched at all
+        pid = str((r.external_ids or {}).get("fs") or "")
+        if not harvestable_pid(pid):
+            continue
+        due, days, why = pr.probe_status(entries.get(r.id, {}), "fs", today)
+        if not due:
+            continue
+        rows.append({"id": r.id, "name": r.name, "gen": r.generation,
+                     "file": r.source_file,
+                     # namespaced so a PID offer and an edge offer on the SAME person
+                     # do not cool each other -- they are different work
+                     "_cool_key": f"pid:{r.id}",
+                     "_days": -1 if days is None else days,
+                     "why": f"FS PID liveness unconfirmed — {why}"})
+    rows.sort(key=lambda r: (r["_days"] >= 0, -r["_days"],
+                             r["gen"] is None, r["gen"] or 0))
+    for r in rows:
+        r.pop("_days", None)
+    return rows
+
+
+def compose_verify(edges, pids, target, share=None):
+    """Interleave the two VERIFY populations with a GUARANTEED SHARE for `?` edges.
+
+    ** WHY A SHARE AND NOT A MERGE (measured 01 AUG 2026). ** On the reference vault
+    the stale-PID population is ~1,131 rows against ~34 `?`-edge rows. Merged into one
+    pool and sampled, the edge rows are 3% of the lane: a 21-row draw returns half an
+    edge row, and the work VERIFY exists for silently disappears behind mechanical
+    checks. The share fixes the edge quota FIRST, so adding the new population cannot
+    swamp the old one. When the edges run out the quota simply goes unfilled and PIDs
+    take the rest; when the PIDs run dry, edges do.
+
+    Returns (composed_rows, edge_quota, pid_quota).
+    """
+    share = VERIFY_EDGE_SHARE if share is None else share
+    n = max(1, int(target or 1))
+    edge_quota = min(len(edges), max(1, int(n * share)))
+    pid_quota = max(0, n - edge_quota)
+    return (edges[:edge_quota] + pids[:pid_quota]
+            + edges[edge_quota:] + pids[pid_quota:]), edge_quota, pid_quota
 
 
 def lane_rotate(vault, sample_percent=None):
@@ -534,6 +611,16 @@ def stamp_offered(state, lane, ids, sitting_key):
     return state
 
 
+def cool_key(row):
+    """The cooldown key for a row. `_cool_key` namespaces a SUB-POPULATION of a lane.
+
+    VERIFY offers two kinds of work on the same person (a `?` edge, and an unconfirmed
+    FS PID). Cooling one must not cool the other — they are different work — so the
+    stale-PID rows carry `pid:<id>` while edge rows use the bare vault id.
+    """
+    return row.get("_cool_key") or row.get("id")
+
+
 def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
                       head_fraction=HEAD_FRACTION, seed_extra=""):
     """Order one lane's candidates: priority head, seeded sample, then cooled rows.
@@ -552,7 +639,7 @@ def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
         return list(rows), 0
     hot, cold = [], []
     for r in rows:
-        is_cool, _ = cooling(state, lane, r.get("id"), cooldown)
+        is_cool, _ = cooling(state, lane, cool_key(r), cooldown)
         (cold if is_cool else hot).append(r)
     if not hot:
         # Everything is cooling. Deprioritising all of it would be meaningless, and
@@ -730,10 +817,14 @@ def main(argv=None):
         return 0
 
     # The full plan.
+    # VERIFY's two populations are kept APART until the target is known, because the
+    # share that protects the smaller one is a fraction of that target.
+    v_edges = lane_verify(vault, include_adjudicated=a.include_adjudicated)
+    v_pids = verify_stale_pids(vault)
     lanes = {
         "EXPAND": lane_expand(vault),
         "IMPROVE": lane_improve(vault),
-        "VERIFY": lane_verify(vault, include_adjudicated=a.include_adjudicated),
+        "VERIFY": v_edges + v_pids,
         "ROTATE": lane_rotate(vault, a.sample_percent),
     }
     if a.sample_percent:
@@ -759,14 +850,24 @@ def main(argv=None):
     # `sizes` is taken (it reorders, never filters, so the counts are unchanged).
     cooled = {}
     for _ln in LANES:
-        lanes[_ln], cooled[_ln] = rotate_candidates(
-            lanes[_ln], state, _ln, lane_target, cooldown=cooldown_sittings)
+        if _ln == "VERIFY":
+            # Rotate each population on its OWN, then compose with the edge share:
+            # sampling the merged pool would let 1,131 PID rows swamp 34 edge rows.
+            _e, _ec = rotate_candidates(v_edges, state, _ln, lane_target,
+                                        cooldown=cooldown_sittings)
+            _p, _pc = rotate_candidates(v_pids, state, _ln, lane_target,
+                                        cooldown=cooldown_sittings, seed_extra="pid")
+            lanes[_ln], v_eq, v_pq = compose_verify(_e, _p, lane_target)
+            cooled[_ln] = _ec + _pc
+        else:
+            lanes[_ln], cooled[_ln] = rotate_candidates(
+                lanes[_ln], state, _ln, lane_target, cooldown=cooldown_sittings)
 
     if pick:
         # The ids this draw actually OFFERS. record() stamps them only if the
         # recorded lane matches, so overriding the draw cools nothing.
-        offered = [r.get("id") for r in lanes[pick][:max(lane_target or per_lane, per_lane)]
-                   if r.get("id")]
+        offered = [cool_key(r) for r in lanes[pick][:max(lane_target or per_lane, per_lane)]
+                   if cool_key(r)]
         state["pending"] = {"date": date.today().isoformat(), "lane": pick,
                             "offered": offered}
         save_state(vault, state)
@@ -800,6 +901,12 @@ def main(argv=None):
             print(f"    ⚠ THE LANE HOLDS ONLY {sizes.get(pick, 0)} — it will RUN DRY before "
                   f"target, and a lane that runs dry is a HIT. Do not read {shown} as "
                   f"reachable here.")
+        if pick == "VERIFY":
+            print(f"    VERIFY holds TWO populations: {len(v_edges)} `?` edges + "
+                  f"{len(v_pids)} unconfirmed FS PIDs.")
+            print(f"    This draw reserves {v_eq} for edges before PIDs get any "
+                  f"({VERIFY_EDGE_SHARE:.0%} share), then {v_pq} PID checks —")
+            print("    so the smaller population cannot be swamped by the larger.")
         if pick and LANE_UNITS.get(pick):
             print(f"    one unit = {LANE_UNITS[pick]}")
     print("  The draw is a recommendation; if you work a different lane, record THAT one.")

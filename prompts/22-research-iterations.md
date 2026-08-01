@@ -27,7 +27,7 @@ comparable:
 |---|---|
 | EXPAND | one frontier row DISPOSED OF: the vault grows by a person (the row gains a sourced parent edge, or the parent it names is minted), **or** the row is closed with a documented negative naming what was searched and why the route is closed |
 | IMPROVE | one SOURCE_GAP entry DISPOSED OF: its records found, read and cited in a `- **Sources**` bullet (Recipe-S / prompt 19), **or** the entry closed with a documented negative — FS holds nothing, or holds only excluded classes — naming the real route |
-| VERIFY | one `?`-marked edge adjudicated: cleared, contradicted, or classified with its reason on the entry |
+| VERIFY | one `?`-marked edge adjudicated: cleared, contradicted, or classified with its reason on the entry — **or** one FS PID confirmed live, corrected, or recorded dead (`profile_review.py --record P-XXXXXX --probed fs`) |
 | ROTATE | one drawn entry polled AND recorded with `--record` |
 
 **A UNIT IS A DISPOSITION, NOT A SUCCESS** (changed 01 AUG 2026, operator-directed). Every lane
@@ -38,6 +38,15 @@ EXPAND 0/3 and IMPROVE 0/2, the two disposition lanes at VERIFY 4/4 and ROTATE 2
 iteration that harvested three entries and closed two more as documented negatives scored 3, while
 the same five people worked in VERIFY would have scored 5. The lane target is a count of PEOPLE, so
 what counts as one has to mean the same thing in each lane.
+
+⚠ **VERIFY NOW CARRIES TWO POPULATIONS, AND THE DRAW PROTECTS THE SMALLER ONE.** Alongside
+`?`-marked edges it offers entries whose FS PID has not been confirmed live within the probe
+cooldown — an external id rots, and a profile merged away or deleted reads on a walk as a person
+with no relatives, which also silently poisons an IMPROVE harvest run against that PID. The two
+populations differ hugely in size (on the reference vault ~34 edges against ~1,131 PIDs), so the
+plan reserves a fixed share of the lane target for edges **before** PIDs get any; it prints the
+split. Do not "simplify" that into one pool — sampling a merged pool returns roughly half an edge
+row per draw and the edge work disappears.
 
 ⚠ **A NEGATIVE ONLY COUNTS IF IT REMOVES THE PERSON FROM THE POOL.** Otherwise the same entry is
 "disposed of" every session, the candidate list never shrinks, and the count becomes free. A

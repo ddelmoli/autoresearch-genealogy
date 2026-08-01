@@ -135,6 +135,76 @@ class TestRotate(unittest.TestCase):
         self.assertNotEqual([r["id"] for r in a], [r["id"] for r in b])
 
 
+class TestVerifyShare(unittest.TestCase):
+    """VERIFY carries two populations of wildly different size (~34 edges vs ~1,131
+    unconfirmed PIDs on the reference vault). Merged and sampled, the edge rows would
+    be 3% of the lane -- half a row per draw -- and the work the lane exists for would
+    vanish. The share fixes the edge quota FIRST."""
+
+    def edges(self, n):
+        return [{"id": f"E-{i:05d}", "name": f"edge {i}", "gen": i} for i in range(n)]
+
+    def pids(self, n):
+        return [{"id": f"P-{i:05d}", "_cool_key": f"pid:P-{i:05d}",
+                 "name": f"pid {i}", "gen": i} for i in range(n)]
+
+    def test_edges_are_reserved_before_pids_get_any(self):
+        out, eq, pq = sp.compose_verify(self.edges(34), self.pids(1131), target=21)
+        self.assertEqual(eq, 10)
+        self.assertEqual(pq, 11)
+        self.assertTrue(all(r["id"].startswith("E-") for r in out[:eq]))
+        self.assertTrue(all(r["id"].startswith("P-") for r in out[eq:eq + pq]))
+
+    def test_the_swamping_scenario_is_what_this_prevents(self):
+        """NEGATIVE CONTROL: a plain merge would return ~0 edge rows in the draw."""
+        merged = self.edges(34) + self.pids(1131)
+        naive = sum(1 for r in merged[:21] if r["id"].startswith("E-"))
+        out, _, _ = sp.compose_verify(self.edges(34), self.pids(1131), 21)
+        shared = sum(1 for r in out[:21] if r["id"].startswith("E-"))
+        self.assertGreater(shared, 0)
+        self.assertEqual(shared, 10)
+        # the naive merge only looks fine because these fixtures are ordered; the
+        # real builder SAMPLES, which is what drops edges to ~3% of the draw.
+        self.assertEqual(naive, 21)
+
+    def test_short_edge_pool_gives_its_quota_back_to_pids(self):
+        out, eq, pq = sp.compose_verify(self.edges(3), self.pids(100), target=21)
+        self.assertEqual(eq, 3)
+        self.assertEqual(pq, 18)
+        self.assertEqual(len(out), 103, "composition must never drop rows")
+
+    def test_no_edges_at_all(self):
+        out, eq, pq = sp.compose_verify([], self.pids(50), target=21)
+        self.assertEqual((eq, pq), (0, 21))
+        self.assertEqual(len(out), 50)
+
+    def test_no_pids_at_all(self):
+        out, eq, pq = sp.compose_verify(self.edges(50), [], target=21)
+        self.assertEqual(eq, 10)
+        self.assertEqual(len(out), 50)
+
+    def test_everything_is_preserved(self):
+        out, _, _ = sp.compose_verify(self.edges(9), self.pids(9), target=21)
+        self.assertEqual(sorted(r["id"] for r in out),
+                         sorted([r["id"] for r in self.edges(9)]
+                                + [r["id"] for r in self.pids(9)]))
+
+
+class TestCoolKeyNamespacing(unittest.TestCase):
+    def test_pid_row_uses_a_namespaced_key(self):
+        self.assertEqual(sp.cool_key({"id": "P-00001", "_cool_key": "pid:P-00001"}),
+                         "pid:P-00001")
+
+    def test_edge_row_uses_the_bare_vault_id(self):
+        self.assertEqual(sp.cool_key({"id": "P-00001"}), "P-00001")
+
+    def test_the_two_kinds_of_work_cool_INDEPENDENTLY(self):
+        """Same person, two jobs. Offering the PID check must not hide the `?` edge."""
+        st = {"history": hist(1), "offered": {"VERIFY": {"pid:P-00001": "S1"}}}
+        self.assertTrue(sp.cooling(st, "VERIFY", "pid:P-00001")[0])
+        self.assertFalse(sp.cooling(st, "VERIFY", "P-00001")[0])
+
+
 class TestStampOnRecord(unittest.TestCase):
     def _pending(self, lane="VERIFY"):
         return {"arms": {}, "history": [], "offered": {},
