@@ -318,12 +318,26 @@ def lane_improve(vault):
                       a CORROBORATION gap, and invisible to the category ladder
                       because a person with 30 FS ARKs and nothing else is
                       WELL_SOURCED. Measured at 734 people when this was added.
+
+    ** RETURNS THE VAULT-WIDE BREADTH CENSUS AS A THIRD VALUE (deferred 34, option 2,
+    operator-directed 02 AUG 2026). ** The lane printed its own CANDIDATE counts and
+    nothing else, so the number the 01 AUG biography ruling is actually about —
+    MULTI_SOURCED, the one that has to go UP — appeared nowhere at the moment a
+    session chose what to do. It sat only in `harvest_sources --heartbeat`, which the
+    lane does not call. Session #128 duly optimised the visible number: SOURCE_GAP
+    238 -> 222 while SINGLE_SOURCED went 734 -> 750 and MULTI_SOURCED did not move at
+    all, because sixteen people went from NO source to ONE host and that scores the
+    same as a corroboration. Printing it is not scoring it — the floor is untouched.
     """
     import harvest_sources as hs
     import keystone_report as kr
     recs = hs.gather_records()
     gaps = [r for r in recs if r.get("category") == "SOURCE_GAP"]
     singles = [r for r in recs if hs.is_single_sourced(r)]
+    # Same test `harvest_sources.heartbeat` uses, so the two can never disagree.
+    breadth = {"single": len(singles),
+               "multi": sum(1 for r in recs
+                            if not hs.is_single_sourced(r) and (r.get("hosts") or 0) >= 2)}
     load = kr.load_by_id()          # no census: LOAD is pure graph reachability
     for r in gaps + singles:
         r["_load"] = load.get(r["id"], 0)
@@ -347,7 +361,8 @@ def lane_improve(vault):
                 "_kind": kind, "why": why}
 
     return ([row(r, "gap") for r in gaps],
-            [row(r, "corrob") for r in singles])
+            [row(r, "corrob") for r in singles],
+            breadth)
 
 
 def lane_verify(vault, include_adjudicated=False):
@@ -771,11 +786,35 @@ def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER)
                   f"{len(lane_sittings.get(pick, ()))} sitting(s)")
 
 
-def record(state, lane, outcome, note="", session=None, today=None):
+def record(state, lane, outcome, note="", session=None, today=None,
+           sourced=None, corroborated=None):
+    """Record one iteration's outcome for `lane`.
+
+    ** `sourced` / `corroborated` SPLIT THE IMPROVE UNIT (deferred 34, option 1,
+    operator-directed 02 AUG 2026). ** IMPROVE's two dispositions — an unsourced
+    entry cited for the first time, and a SINGLE_SOURCED entry corroborated from a
+    SECOND host — scored identically while costing wildly differently, and only the
+    second serves the stated biography goal. Recording the split does NOT change
+    scoring: both still count one person toward the same floor, and the floor stays
+    "the same in every lane, counted in PEOPLE" (operator, 01 AUG 2026; weighting
+    was rejected on sight as reintroducing cost-per-person reasoning). What it buys
+    is that an all-FS-harvest draw is visible AT REVIEW rather than a month later,
+    which is how #128's went unnoticed.
+
+    Both are optional and IMPROVE-only; the numbers are advisory and deliberately
+    NOT reconciled against the target, because a draw can dispose of a person by
+    documented negative, which is neither.
+    """
     if lane not in LANES:
         raise SystemExit(f"unknown lane {lane!r}; one of {', '.join(LANES)}")
     if outcome not in ("hit", "miss"):
         raise SystemExit("outcome must be hit or miss")
+    split = None
+    if sourced is not None or corroborated is not None:
+        if lane != "IMPROVE":
+            raise SystemExit("--sourced/--corroborated split the IMPROVE unit and "
+                             f"apply only to that lane, not {lane}")
+        split = {"sourced": sourced or 0, "corroborated": corroborated or 0}
     today = today or date.today().isoformat()
     cur = arm_of(state, lane)
     state.setdefault("arms", {})[lane] = {
@@ -785,6 +824,7 @@ def record(state, lane, outcome, note="", session=None, today=None):
     state.setdefault("history", []).append(
         {"date": today, "lane": lane, "outcome": outcome,
          **({"session": session} if session is not None else {}),
+         **({"split": split} if split else {}),
          **({"note": note} if note else {})})
 
     # ** CLEAR `pending` ONLY IF THIS RECORD CONSUMED IT. ** (31 JUL 2026.)
@@ -806,6 +846,24 @@ def record(state, lane, outcome, note="", session=None, today=None):
                       sitting_of({"session": session, "date": today}))
         state["pending"] = None
     return state
+
+
+def last_improve_split(state):
+    """The most recent IMPROVE record that carried a SOURCED/CORROBORATED split.
+
+    Returns None when no draw has been recorded with one yet — which is the state
+    every vault starts in, and is why the caller must not assume a dict. Reads
+    backwards so the newest wins; a record without a split is skipped rather than
+    treated as zeroes, because "not reported" and "reported as none" are different
+    facts and only the first should be silent.
+    """
+    for h in reversed(state.get("history", []) or []):
+        if h.get("lane") == "IMPROVE" and h.get("split"):
+            sp = h["split"]
+            return {"date": h.get("date", "?"),
+                    "sourced": sp.get("sourced", 0),
+                    "corroborated": sp.get("corroborated", 0)}
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -858,6 +916,16 @@ def main(argv=None):
     ap.add_argument("--lane")
     ap.add_argument("--outcome", choices=["hit", "miss"])
     ap.add_argument("--note", default="")
+    # deferred 34 option 1: IMPROVE's two dispositions, reported apart. Advisory --
+    # they do not change scoring, and they need not sum to the target (a person can
+    # be disposed of by documented negative, which is neither).
+    ap.add_argument("--sourced", type=int, metavar="N",
+                    help="IMPROVE only: of this draw's disposals, how many were an "
+                         "UNSOURCED entry cited for the first time (0 -> cited).")
+    ap.add_argument("--corroborated", type=int, metavar="N",
+                    help="IMPROVE only: of this draw's disposals, how many were a "
+                         "SINGLE_SOURCED entry corroborated from a SECOND host "
+                         "(1 host -> 2+). This is the one that moves MULTI_SOURCED.")
     ap.add_argument("--session", type=int, metavar="N",
                     help="the SITTING this observation belongs to (the session number "
                          "21-session-start established). The bandit floors count "
@@ -886,9 +954,16 @@ def main(argv=None):
     if a.record:
         if not (a.lane and a.outcome):
             raise SystemExit("--record needs --lane and --outcome")
-        save_state(vault, record(state, a.lane.upper(), a.outcome, a.note, a.session))
+        save_state(vault, record(state, a.lane.upper(), a.outcome, a.note, a.session,
+                                 sourced=a.sourced, corroborated=a.corroborated))
         stamp = f" (sitting #{a.session})" if a.session is not None else ""
         print(f"PLAN: recorded lane {a.lane.upper()} -> {a.outcome}{stamp}")
+        if a.sourced is not None or a.corroborated is not None:
+            print(f"  IMPROVE split: {a.sourced or 0} sourced (0 -> cited) / "
+                  f"{a.corroborated or 0} corroborated (1 host -> 2+)")
+            if not (a.corroborated or 0):
+                print("  ⚠ ZERO corroborations: this draw lowered SOURCE_GAP without "
+                      "moving MULTI_SOURCED.")
         return 0
 
     # The full plan.
@@ -896,7 +971,7 @@ def main(argv=None):
     # share that protects the smaller one is a fraction of that target.
     v_edges = lane_verify(vault, include_adjudicated=a.include_adjudicated)
     v_pids = verify_stale_pids(vault)
-    i_gaps, i_corrob = lane_improve(vault)
+    i_gaps, i_corrob, i_breadth = lane_improve(vault)
     lanes = {
         "EXPAND": lane_expand(vault),
         "IMPROVE": i_gaps + i_corrob,
@@ -996,6 +1071,18 @@ def main(argv=None):
             print(f"    This draw reserves {i_gq} for unsourced entries, then {i_cq} "
                   f"corroboration rows. FamilySearch is the SYNC point, not the")
             print("    evidence base — each row names a non-FS route to try.")
+            # deferred 34, option 2: the GOAL metric, at the moment of choosing.
+            # SOURCE_GAP is the lane's worklist; MULTI_SOURCED is what the 01 AUG
+            # biography ruling is about, and it is the one that must go UP.
+            print(f"    ** GOAL METRIC (vault-wide, not this draw): SINGLE_SOURCED "
+                  f"{i_breadth['single']} / MULTI_SOURCED {i_breadth['multi']}. **")
+            print("    Clearing SOURCE_GAP with an FS-only harvest moves a person from")
+            print("    NO source to ONE host: it lowers SOURCE_GAP and RAISES")
+            print("    SINGLE_SOURCED. Only a SECOND host raises MULTI_SOURCED.")
+            _sp = last_improve_split(state)
+            if _sp:
+                print(f"    Last recorded IMPROVE draw ({_sp['date']}): "
+                      f"{_sp['sourced']} sourced / {_sp['corroborated']} corroborated.")
         if pick and LANE_UNITS.get(pick):
             print(f"    one unit = {LANE_UNITS[pick]}")
     print("  The draw is a recommendation; if you work a different lane, record THAT one.")

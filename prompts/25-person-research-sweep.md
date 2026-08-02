@@ -36,6 +36,11 @@ AUTORESEARCH_VAULT="[VAULT_PATH]".
 
    a. FAMILYSEARCH, all THREE surfaces, not just the first:
       - Sources tab with **Detail View ON** (off = a false "0 ARKs" read).
+        Detail View also renders each source's COLLECTION TITLE: capture it with
+        every locator, because that one string both becomes the record description
+        below AND decides the policy-(e) memorial exclusion
+        (`harvest_sources.is_memorial_collection` -- negate a positive with `~`,
+        never judge the brands by eye). Full rule in `19-fs-source-harvest` step 3.
       - **Research Help**: unattached record hints, possible duplicates, data
         problems, and prior not-a-match decisions. It does NOT render under
         automation (the driven tab is backgrounded), so fetch the four

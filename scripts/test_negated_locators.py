@@ -80,6 +80,40 @@ def main():
     check(H.per_host_locators("fs:1:1:AAAA-BBB").get("familysearch", 0) == 1,
           "per_host_locators still counts a live one")
 
+    # ** deferred_decisions 33, option 1 (operator-directed 02 AUG 2026). **
+    # The memorial exclusion is decidable at HARVEST time from the collection title
+    # Detail View renders, so a conformant harvest can never add a NEW unlabelled
+    # memorial locator. These pin the classifier that harvest reads.
+    print("memorial collection classifier — positive cases")
+    for title in ("Find A Grave Index for Burials at Sea and Other Select Burial Locations",
+                  "United States, Find a Grave Index, 1600s-Current",
+                  "BillionGraves Index",
+                  "Billion Graves Index, 1800-2020",
+                  "FIND A GRAVE INDEX",              # case-insensitive
+                  "  find a grave index  "):         # surrounding whitespace
+        check(H.is_memorial_collection(title), f"excluded class: {title!r}")
+
+    print("memorial collection classifier — NEGATIVE CONTROLS (real record classes)")
+    # If any of these ever returned True the harvest would silently negate real
+    # primary records, which is a worse failure than the one this fixes.
+    for title in ("Massachusetts, Births and Christenings, 1639-1915",
+                  "United States Census, 1910",
+                  "New York, Southern District, Naturalization Records, 1897-1944",
+                  "Italy, Sondrio, Civil Registration (Stato Civile), 1866-1938",
+                  "GenealogyBank Historical Newspaper Obituaries, 1815-2011",
+                  "United States, Obituary Records, 2014-2023",
+                  "", "   ", None):
+        check(not H.is_memorial_collection(title), f"NOT the excluded class: {title!r}")
+
+    print("memorial collection classifier — JOWBR is a burial index this vault TRUSTS")
+    # The operator's 01 AUG 2026 ruling turned on exactly this: banning one
+    # contributor-built burial index while citing another of the same class was not a
+    # principled line. This vault's best origin breakthrough came from JOWBR.
+    for title in ("JOWBR Burial Registry",
+                  "Jewish Online Worldwide Burial Registry",
+                  "JOWBR cemetery memorial index"):   # allowlist beats the marker
+        check(not H.is_memorial_collection(title), f"allowlisted: {title!r}")
+
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0
 

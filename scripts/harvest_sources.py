@@ -174,6 +174,69 @@ def strip_negated_locators(text: str) -> str:
     return NEGATED_LOCATOR_RE.sub(" ", text or "")
 
 
+# ** THE MEMORIAL CLASSES, IN ONE PLACE (deferred_decisions 33, option 1;
+# operator-directed 02 AUG 2026). **
+#
+# Policy (e) excludes contributor-built memorial and headstone indexes from the
+# record census. `CLAUDE.method.md` carries a standing warning that this "IS A
+# POLICY, NOT YET A COUNTER", and that is exactly right about a locator ALREADY IN
+# THE VAULT: a bare `fs:1:1:QVKJ-YZTW` does not say which collection it belongs to,
+# so no text analysis can tell a Find a Grave ARK from a parish register.
+#
+# ** It is exactly WRONG about the moment of harvest. ** With Detail View on, each
+# source row renders its full citation, COLLECTION TITLE INCLUDED. Session #128 used
+# that to identify and negate 12 memorial locators mechanically, in the same pass
+# that read the records. So the retrospective backlog still needs a resolve-against-FS
+# pass (item 33 option 3, deferred), but a conformant harvest can never add a NEW one.
+#
+# This list exists so the classification has ONE home. It was previously restated in
+# prose in prompts 19 and 25 and in CLAUDE.method.md, which is three places to drift
+# — and the vault's own rule is "do NOT restate the rule inline where it can drift".
+#
+# ⚠ MATCHED ON THE COLLECTION TITLE, NEVER ON THE ARK. There is deliberately no
+# locator-shaped test here, because there cannot be one.
+MEMORIAL_COLLECTION_MARKERS = (
+    "find a grave",
+    "findagrave",
+    "billiongraves",
+    "billion graves",
+    "cemetery memorial index",
+    "headstone index",
+    "grave index",
+)
+
+# Titles that CONTAIN a memorial marker but are NOT the excluded class. JOWBR is the
+# worked case and the reason this list exists: it is itself a contributor-built burial
+# index, this vault cites it throughout, and the operator's 01 AUG 2026 ruling turned
+# on the point that banning one brand while trusting another of the same class was not
+# a principled line. Burial evidence is credited to the BIOGRAPHY (a `- **Burial
+# evidence**` bullet + the bio_completeness `burial` facet), not to the ARK census.
+MEMORIAL_ALLOWLIST_MARKERS = (
+    "jowbr",
+    "jewish online worldwide burial",
+)
+
+
+def is_memorial_collection(title: str) -> bool:
+    """Does this FS collection title name a policy-(e) memorial/headstone index?
+
+    Call it at HARVEST time with the collection title Detail View renders, and negate
+    a positive with the `~` prefix so the locator is documented without being counted.
+
+    ⚠ ** THIS DECIDES THE CLASS, NOT THE TIER. ** The 01 AUG 2026 ruling is that the
+    test is the ARTIFACT: a PHOTOGRAPHED STONE you have actually looked at is real
+    evidence of a death date and a burial, and belongs in a `- **Burial evidence**`
+    bullet; an image-less memorial page is a contributor's assertion worth nothing;
+    a modern monument for a pre-1750 person is memorialisation. Telling those apart
+    requires OPENING the memorial, so no function can do it — this only answers
+    "is this collection the excluded class", which is the part a harvest can automate.
+    """
+    t = (title or "").casefold()
+    if any(m in t for m in MEMORIAL_ALLOWLIST_MARKERS):
+        return False
+    return any(m in t for m in MEMORIAL_COLLECTION_MARKERS)
+
+
 def extract_arks(text: str) -> set:
     """Extract all source-record-IDs from vault narrative text, normalized.
 

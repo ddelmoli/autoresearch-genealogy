@@ -328,5 +328,93 @@ class RecordTests(unittest.TestCase):
             sp.record({"arms": {}, "history": []}, "EXPAND", "maybe")
 
 
+class ImproveSplitTests(unittest.TestCase):
+    """** deferred_decisions 34, option 1 (operator-directed 02 AUG 2026). **
+
+    IMPROVE's two dispositions cost wildly differently and only one serves the
+    biography goal, but they scored identically and nothing recorded which had
+    happened -- so #128's all-FamilySearch draw read as a clean 17-of-21 while
+    SINGLE_SOURCED went UP by 16 and MULTI_SOURCED did not move.
+
+    The split is REPORTING ONLY. The negative control below is the load-bearing
+    test: recording a split must leave the bandit arithmetic byte-identical, because
+    the floor is "the same in every lane, counted in PEOPLE" and weighting it was
+    rejected on sight.
+    """
+
+    def _st(self):
+        return {"arms": {}, "history": [], "pending": None}
+
+    def test_split_is_recorded_on_the_history_row(self):
+        st = sp.record(self._st(), "IMPROVE", "hit", today="2026-08-02",
+                       sourced=13, corroborated=8)
+        self.assertEqual(st["history"][-1]["split"],
+                         {"sourced": 13, "corroborated": 8})
+
+    def test_one_half_alone_is_enough_and_the_other_defaults_to_zero(self):
+        st = sp.record(self._st(), "IMPROVE", "miss", today="2026-08-02", sourced=4)
+        self.assertEqual(st["history"][-1]["split"],
+                         {"sourced": 4, "corroborated": 0})
+
+    def test_zero_corroborated_is_RECORDED_not_dropped(self):
+        """An explicit 0 is the #128 signal itself -- it must survive, not vanish
+        into 'no split reported'."""
+        st = sp.record(self._st(), "IMPROVE", "hit", today="2026-08-02",
+                       sourced=17, corroborated=0)
+        self.assertEqual(st["history"][-1]["split"]["corroborated"], 0)
+        self.assertEqual(sp.last_improve_split(st)["corroborated"], 0)
+
+    def test_no_split_leaves_no_key(self):
+        st = sp.record(self._st(), "IMPROVE", "hit", today="2026-08-02")
+        self.assertNotIn("split", st["history"][-1])
+
+    def test_split_is_IMPROVE_ONLY(self):
+        for lane in ("EXPAND", "VERIFY", "ROTATE"):
+            with self.assertRaises(SystemExit, msg=lane):
+                sp.record(self._st(), lane, "hit", sourced=1)
+
+    def test_NEGATIVE_CONTROL_the_split_does_not_change_scoring(self):
+        """Same two draws, one pair recorded with a split and one without: the arms
+        must be identical. If this ever fails, the split has become a weight."""
+        plain = self._st()
+        plain = sp.record(plain, "IMPROVE", "hit", today="2026-08-02")
+        plain = sp.record(plain, "IMPROVE", "miss", today="2026-08-02")
+        split = self._st()
+        split = sp.record(split, "IMPROVE", "hit", today="2026-08-02",
+                          sourced=0, corroborated=21)
+        split = sp.record(split, "IMPROVE", "miss", today="2026-08-02",
+                          sourced=21, corroborated=0)
+        self.assertEqual(plain["arms"], split["arms"])
+        self.assertEqual(plain["arms"]["IMPROVE"], {"iterations": 2, "wins": 1})
+
+    def test_last_improve_split_is_None_before_any_is_recorded(self):
+        self.assertIsNone(sp.last_improve_split({"history": []}))
+        self.assertIsNone(sp.last_improve_split({}))
+
+    def test_last_improve_split_takes_the_NEWEST(self):
+        st = self._st()
+        st = sp.record(st, "IMPROVE", "hit", today="2026-08-01",
+                       sourced=1, corroborated=1)
+        st = sp.record(st, "IMPROVE", "hit", today="2026-08-02",
+                       sourced=9, corroborated=12)
+        self.assertEqual(sp.last_improve_split(st),
+                         {"date": "2026-08-02", "sourced": 9, "corroborated": 12})
+
+    def test_a_later_IMPROVE_row_WITHOUT_a_split_does_not_mask_the_last_one(self):
+        """'not reported' and 'reported as none' are different facts; only the first
+        is silent, so an unsplit row is skipped rather than read as zeroes."""
+        st = self._st()
+        st = sp.record(st, "IMPROVE", "hit", today="2026-08-01",
+                       sourced=5, corroborated=6)
+        st = sp.record(st, "IMPROVE", "hit", today="2026-08-02")
+        self.assertEqual(sp.last_improve_split(st)["sourced"], 5)
+
+    def test_other_lanes_never_supply_the_last_improve_split(self):
+        st = self._st()
+        st["history"] = [{"date": "2026-08-02", "lane": "VERIFY", "outcome": "hit",
+                          "split": {"sourced": 99, "corroborated": 99}}]
+        self.assertIsNone(sp.last_improve_split(st))
+
+
 if __name__ == "__main__":
     unittest.main()
