@@ -122,7 +122,16 @@ LANES = ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")
 # see leaves the row on the worklist and does not count.
 LANE_UNITS = {
     "EXPAND": "one frontier row DISPOSED OF: it gains a sourced parent edge or the\n              parent it names is minted, OR it is closed with a documented negative",
-    "IMPROVE": "one entry DISPOSED OF: an unsourced entry's records found, read and\n              cited in a `- **Sources**` bullet, OR a SINGLE_SOURCED entry\n              corroborated from a SECOND host, OR either closed with a\n              documented negative naming the real route (prompt 25 sweeps\n              every resource; 19 is the FamilySearch leg only)",
+    "IMPROVE": "one entry DISPOSED OF: an unsourced entry's records found, read and\n"
+               "              cited in a `- **Sources**` bullet, OR a SINGLE_SOURCED entry\n"
+               "              corroborated from a SECOND host, OR either closed with a\n"
+               "              documented negative naming the real route (prompt 25 sweeps\n"
+               "              every resource; 19 is the FamilySearch leg only), OR the\n"
+               "              person's problem characterised and filed as a numbered\n"
+               "              Open_Questions entry naming a resolver (operator, 02 AUG\n"
+               "              2026). ! A question does NOT shrink SOURCE_GAP, so count it\n"
+               "              ONCE, name the Q number in --note, and never use it in place\n"
+               "              of a closure you could actually have made",
     "VERIFY": "one `?` edge adjudicated (cleared, contradicted, or classified with\n"
               "              its reason on the entry), OR one FS PID confirmed live /\n"
               "              corrected / recorded dead (`profile_review.py --record\n"

@@ -26,7 +26,7 @@ comparable:
 | Lane | One unit of lane target |
 |---|---|
 | EXPAND | one frontier row DISPOSED OF: the vault grows by a person (the row gains a sourced parent edge, or the parent it names is minted), **or** the row is closed with a documented negative naming what was searched and why the route is closed |
-| IMPROVE | one entry DISPOSED OF: an unsourced entry's records found, read and cited in a `- **Sources**` bullet (prompt 25's sweep), **or** a `SINGLE_SOURCED` entry corroborated from a SECOND host, **or** either closed with a documented negative naming the real route. ⚠ "FS holds nothing" is NOT a disposition on its own — it closes one repository, and the entry only leaves the pool when the other routes are named too |
+| IMPROVE | one entry DISPOSED OF: an unsourced entry's records found, read and cited in a `- **Sources**` bullet (prompt 25's sweep), **or** a `SINGLE_SOURCED` entry corroborated from a SECOND host, **or** either closed with a documented negative naming the real route, **or** the person's problem characterised and filed as a numbered `Open_Questions` entry naming a resolver (operator, 02 AUG 2026 — see the note below on how that squares with "prose alone is not a disposition"). ⚠ "FS holds nothing" is NOT a disposition on its own — it closes one repository, and the entry only leaves the pool when the other routes are named too |
 | VERIFY | one `?`-marked edge adjudicated: cleared, contradicted, or classified with its reason on the entry — **or** one FS PID confirmed live, corrected, or recorded dead (`profile_review.py --record P-XXXXXX --probed fs`) |
 | ROTATE | one drawn entry polled AND recorded with `--record` |
 
@@ -55,6 +55,26 @@ and (b) land somewhere the candidate builder reads — for a 0-ARK entry FS will
 a `pids` rule in the vault's `.autoresearch.json` `structural_gap`, which moves it out of the
 actionable SOURCE_GAP count. **Prose alone is not a disposition.** If you cannot close it in the
 data, it stays on the worklist and does not count.
+
+⭐ **RAISING AN OPEN QUESTION *IS* A DISPOSITION** (operator, 02 AUG 2026). A person you researched,
+whose problem you characterised, and for whom you filed a numbered `Open_Questions` entry naming a
+resolver **has been addressed** — the next session inherits a specified action instead of a blank
+row, and that is the thing the lane target is counting. **Correction work counts on the same
+footing**: proving a vault value wrong, retracting a bad declaration, or showing a route hint is
+misleading all advance the record even though they cite no new locator.
+
+⚠ **AND IT SITS IN TENSION WITH THE RULE DIRECTLY ABOVE — read both.** A question does NOT shrink
+`SOURCE_GAP`; the row stays in the candidate pool. So the two rules are reconciled by SCOPE, not by
+one overriding the other:
+- **Count the question ONCE, for the sitting that did the work.** A later session that re-notices
+  the same problem has not disposed of anything.
+- **Say which kind each disposition was** when recording: `--sourced` / `--corroborated` for cited
+  records, and name the question numbers in the `--note` for question-dispositions. A draw that was
+  ALL questions and no records is legitimate and must be visible as such.
+- **It is not a substitute for closing what can be closed.** If the person can be sourced, source
+  them; if the negative can land in `structural_gap`, land it. A question is the right disposition
+  for a problem that genuinely needs work you cannot do now — not a cheaper way to score a row you
+  could have finished.
 
 Copy-paste prompt (fill the placeholders):
 
