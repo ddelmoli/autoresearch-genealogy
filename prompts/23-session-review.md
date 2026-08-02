@@ -99,6 +99,24 @@ do NOT perform any FamilySearch write.
      and hand that command's total, plus the log pointer, to the close prompt for
      OPEN / NEXT.
 
+4.5 SWEEP FOR UNCAPTURED OPEN QUESTIONS — the backstop for the standing rule that
+   anything needing further research gets an Open_Questions entry, not just a
+   narrative bullet (CLAUDE.method.md). The rule fires at the moment of the
+   finding; this catches what the moment missed, which is the normal case,
+   because the pull when you are mid-harvest is to write the caveat and move on.
+   - Re-read THIS SITTING'S diff, not your memory, for the phrases a deferred
+     finding leaves behind:
+     git -C [VAULT_PATH] diff <first-commit>~1 -- 'Family_Tree*.md' \
+       | grep -E "^\+" | grep -iE "not adjudicated|not resolved|not established|
+         needs checking|unresolved|variance|discrepan|to confirm|worth settling"
+   - For each hit, ask the threshold question: does resolving it need work NOT
+     YET DONE? If yes it is owed a question; if you settled it, or it is a closed
+     negative with no route left, it is not.
+   - Report the count RAISED this sitting and the count you judged not owed, with
+     one line each. ! A sitting that harvested many people and raised zero
+     questions is the signal to look again, not a clean result.
+   - Batch thin findings of the same shape into one numbered question.
+
 5. CONFIRM THE SESSION LOG IS COMPLETE: logs/<today>-<slug>.md exists, carries
    the narrative of every iteration, every negative, every record citation and
    every retraction, and now the write-back queue. The close block will INDEX
@@ -190,6 +208,9 @@ iteration of `22-research-iterations` and is reviewed as part of the same sittin
 4. Queue each FS write-back as a bullet on the person's own entry (evidence +
    per-target privacy mark), with the reasoning in the session log; report the
    count from the grep, not by hand.
+4.5 Sweep this sitting's diff for findings that need an `Open_Questions` entry
+   and were left in the narrative only; raise or batch them, and report both the
+   raised count and what you judged not owed.
 5. Confirm the session log is complete.
 6. Assemble the close-block material, including the required RETRACTIONS and
    NEGATIVES / DO-NOT-REDO fields.

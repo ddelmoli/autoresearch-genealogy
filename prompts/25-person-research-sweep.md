@@ -82,6 +82,14 @@ AUTORESEARCH_VAULT="[VAULT_PATH]".
    `- **Sources**` bullet, one sub-bullet per RECORD, **naming the record** before
    its locators (`- 1910 US Census, Manhattan — fs:1:1:XXXX-XXX`). A bare locator
    says where; only the description says what.
+   ! AND OPEN AN Open_Questions ENTRY FOR ANYTHING STILL UNRESOLVED -- do not leave
+   it in the narrative alone. A sweep routinely turns up a contradiction, a record
+   located but unread, or a choice between candidates; the entry states CURRENT
+   STATE, so those die there unless they also reach the register. Owed when
+   resolving it needs work not yet done; NOT owed for what you settled, or for a
+   closed negative with no route left (that is a declaration). Batch thin ones,
+   cross-link both ways, and name what would settle it. Full rule in
+   CLAUDE.method.md.
    ! CITE THE SECOND HOST WHEN YOU HAVE IT. One record held by two repositories is
    ONE record with two locators; recording both is what moves this person out of
    SINGLE_SOURCED.

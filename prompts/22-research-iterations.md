@@ -101,6 +101,15 @@ movement honestly.
      the name first, and do not re-run a spent route.
    - Log negatives. "Searched X, found nothing" is the deliverable that stops
      the next session repeating it.
+   - ! ANYTHING NEEDING FURTHER RESEARCH GETS AN Open_Questions ENTRY, not just a
+     narrative bullet. An entry states CURRENT STATE; Open_Questions is the
+     register of what is UNRESOLVED, and a discrepancy recorded only on an entry
+     is invisible to everything that picks work. Owed when resolving it needs
+     work not yet done (a source located but unread, a contradiction, a choice
+     between candidates); NOT owed for something you settled, or for a closed
+     negative with no route left — that is a declaration. Batch thin ones into
+     one question, cross-link both ways, and name what would settle it. Full
+     rule in CLAUDE.method.md.
    - A null is a statement about the SEARCH, not about the record. Name what was
      searched and what that search structurally cannot contain: one spelling,
      one field value, one repository. Calibrating a zero proves the index holds
