@@ -24,11 +24,27 @@ Copy-paste prompt (fill the placeholders):
 Research [PERSON] as completely as the available resources allow. Vault:
 AUTORESEARCH_VAULT="[VAULT_PATH]".
 
-0. CHECK BEFORE SEARCHING, PER SOURCE. grep vault/logs/ and Open_Questions.md for
+0a. CHECK BEFORE SEARCHING, PER SOURCE. grep vault/logs/ and Open_Questions.md for
    the name, and READ THE ENTRY. A prior negative is a fact about ONE source with
    ONE spelling on ONE date -- it does not close the person, and it does not close
    a different repository. Do not re-run a spent route; do note which routes the
    entry already says are closed.
+
+0b. ⛔ CONFIRM THE FS PID RESOLVES, BEFORE ANY HARVESTING. If the person carries an
+   `fs:` PID, load `/tree/person/family/{PID}` and check the profile is still THAT
+   person: the name and dates match, and the URL did not redirect. A profile merged
+   away or deleted still LOOKS like a person, reads on a walk as someone with no
+   relatives, and silently poisons everything you harvest against it.
+   - ⚠ POLL FOR A PID PATTERN INSIDE THE FAMILY PANEL. `document.title` resolves
+     LONG before the panel mounts, so a title-gated read returns an empty panel that
+     cannot be told from "no parents on FS". That produced three bad reads in one
+     sitting on 02 AUG 2026, two of them flatly wrong.
+   - Record it with `profile_review.py --record <id> --probed fs`.
+   - ⛔ **THIS SCORES NOTHING.** It is a PRECONDITION of the sweep, not a
+     disposition (deferred 40): you are opening the profile to harvest it anyway.
+     Counting it would let the cheapest action in the system satisfy a lane floor
+     that sourcing has never met. The plan marks rows needing it; the mark is a
+     reminder, never a unit.
 
 1. SWEEP THE RESOURCES. Work DOWN this list. Log every one you touch, including
    the empty ones -- a negative naming what was searched is the deliverable that
@@ -156,8 +172,10 @@ the entry's own `- **Sources**` bullet; `python3 scripts/prose_audit.py`.
 **Protocol**:
 
 1. Check the logs and the entry for what has already been tried, per source.
-2. Sweep the resources in order, logging each including the empty ones.
-3. Read every promising find at the source, checking identifiers before adopting.
-4. Write the biography and the `- **Sources**` bullet, naming each record.
-5. Record scoped negatives on the entry.
-6. Queue outward mutations; never perform them.
+2. Confirm the FS PID still resolves to this person (step 0) -- it scores nothing,
+   and a merged-away PID poisons every harvest run against it.
+3. Sweep the resources in order, logging each including the empty ones.
+4. Read every promising find at the source, checking identifiers before adopting.
+5. Write the biography and the `- **Sources**` bullet, naming each record.
+6. Record scoped negatives on the entry.
+7. Queue outward mutations; never perform them.

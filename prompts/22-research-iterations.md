@@ -26,20 +26,41 @@ comparable:
 | Lane | One unit of lane target |
 |---|---|
 | EXPAND | one frontier row DISPOSED OF: the vault grows by a person (the row gains a sourced parent edge, or the parent it names is minted), **or** the row is closed with a documented negative naming what was searched and why the route is closed |
-| IMPROVE | one entry DISPOSED OF: an unsourced entry's records found, read and cited in a `- **Sources**` bullet (prompt 25's sweep), **or** a `SINGLE_SOURCED` entry corroborated from a SECOND host, **or** either closed with a documented negative naming the real route, **or** the person's problem characterised and filed as a numbered `Open_Questions` entry naming a resolver (operator, 02 AUG 2026 — see the note below on how that squares with "prose alone is not a disposition"). ⚠ "FS holds nothing" is NOT a disposition on its own — it closes one repository, and the entry only leaves the pool when the other routes are named too |
-| VERIFY | one `?`-marked edge adjudicated: cleared, contradicted, or classified with its reason on the entry — **or** one FS PID confirmed live, corrected, or recorded dead (`profile_review.py --record P-XXXXXX --probed fs`) |
+| IMPROVE | one entry DISPOSED OF: an unsourced entry's records found, read and cited in a `- **Sources**` bullet (prompt 25's sweep), **or** a `SINGLE_SOURCED` entry corroborated from a SECOND host, **or** either closed with a documented negative naming the real route, **or** the person's problem characterised and filed as a numbered `Open_Questions` entry naming a resolver (operator, 02 AUG 2026 — see the note below on how that squares with "prose alone is not a disposition"). ⚠ "FS holds nothing" is NOT a disposition on its own — it closes one repository, and the entry only leaves the pool when the other routes are named too, **or** a **DEFECT row settled**: a `?` edge adjudicated (cleared, contradicted, or classified with its reason on the entry) or a **gate finding** resolved / declared. ⛔ **Confirming an FS PID is live is NOT a unit** — it is step 0 of prompt 25 and scores nothing (deferred 40) |
 | ROTATE | one drawn entry polled AND recorded with `--record` |
 
 **A UNIT IS A DISPOSITION, NOT A SUCCESS** (changed 01 AUG 2026, operator-directed). Every lane
 now credits the same thing: **a person you addressed and will not have to look at again.** Before
-this change EXPAND and IMPROVE counted only successes while VERIFY and ROTATE counted dispositions,
+this change EXPAND and IMPROVE counted only successes while VERIFY (now retired) and ROTATE counted dispositions,
 and the bandit's own record tracked that split exactly — **the two success-only lanes stood at
 EXPAND 0/3 and IMPROVE 0/2, the two disposition lanes at VERIFY 4/4 and ROTATE 2/2.** An IMPROVE
 iteration that harvested three entries and closed two more as documented negatives scored 3, while
 the same five people worked in VERIFY would have scored 5. The lane target is a count of PEOPLE, so
 what counts as one has to mean the same thing in each lane.
 
-⚠ **VERIFY NOW CARRIES TWO POPULATIONS, AND THE DRAW PROTECTS THE SMALLER ONE.** Alongside
+⛔ **VERIFY WAS COLLAPSED INTO IMPROVE ON 02 AUG 2026 (operator; deferred 39 + 40). THERE ARE
+THREE LANES: EXPAND, IMPROVE, ROTATE.** The paragraph below describes the retired design and is
+kept because the SHARE mechanism it introduced is still what protects IMPROVE's small populations.
+
+**Why it went.** The two lanes already drew from mostly the same people — **694 in both, 72% of
+IMPROVE and 71% of VERIFY-PID** — and the two jobs are ONE ACTION: `25-person-research-sweep`
+cannot harvest a person's FamilySearch sources without loading the profile, which *is* the liveness
+check. Stale-PID work was justified in this very file as protection for IMPROVE's own harvest, i.e.
+it was a **precondition** that had been given equal billing as a lane.
+
+⚠ **THE COLLAPSE IS ASYMMETRIC, AND THAT IS THE WHOLE DESIGN.** IMPROVE stood at **0 wins / 9**
+and VERIFY at **11 / 13**, latterly on PID checks alone. A naive merge would hand the expensive
+lane a cheap way to meet a floor it had never met, turning every honest miss into a hit and hiding
+the fact that six-source sweeps are slow. So:
+- **Confirming an FS PID is live SCORES NOTHING.** It is **step 0 of prompt 25** — you are opening
+  the profile to harvest it anyway — and the plan annotates drawn rows that need it.
+- **`?` edges are no longer a population.** Keying a lane on a self-assigned mark meant it saw
+  **76 of 2,393 edge tokens (3.2%)** and could not see **any** of the 8 children carrying an
+  unexplained PARENT-GEN MISMATCH. They are now ONE INPUT to a **DEFECT** population that also
+  carries the gate findings, and that population gets a reserved share of every IMPROVE draw.
+- **The unit stays IMPROVE's**: a person whose RECORD moved.
+
+*(retired design, for the record)* Alongside
 `?`-marked edges it offers entries whose FS PID has not been confirmed live within the probe
 cooldown — an external id rots, and a profile merged away or deleted reads on a walk as a person
 with no relatives, which also silently poisons an IMPROVE harvest run against that PID. The two
@@ -105,9 +126,10 @@ movement honestly.
      IMPROVE          -> 25-person-research-sweep   (the default unit of work)
      EXPAND           -> 01-tree-expansion + the frontier declaration pattern;
                          use 25 when the parent is not findable on FS either
-     VERIFY, `?` edge -> 18-edge-verification
-     VERIFY, stale PID-> confirm the profile still resolves, then
-                         profile_review.py --record <id> --probed fs
+     IMPROVE, defect  -> 18-edge-verification for a `?` edge; for a GATE finding,
+                         resolve the generation or declare it in known_gen_collapse
+     any drawn row     -> if it is marked "PID liveness unconfirmed", confirm the
+       with a stale PID   profile resolves BEFORE harvesting (step 0, scores NOTHING)
      ROTATE           -> the profile-review poll; escalate a HIT to 25
      a stalled entry  -> 20-creative-vault-review
 
@@ -207,7 +229,7 @@ observations rather than by an arm that has never lost.
 
 **Metric**: Per iteration, the drawn lane's metric against the session-start
 value: EXPAND = people added to the vault off frontier rows; IMPROVE = SOURCE_GAP
-entries harvested (0 records -> cited); VERIFY = `?`-marked edges adjudicated; ROTATE = entries polled and
+entries harvested (0 records -> cited) + defect rows settled; ROTATE = entries polled and
 recorded. Per sitting: iterations completed at or above the lane target, out of
 `Iterations`.
 

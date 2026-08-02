@@ -72,7 +72,7 @@ A session is FOUR phase prompts, run in order, and only phase 2 is a loop:
 | 3. Review | `23-session-review` | reconcile the sitting against the tools, re-measure every lane metric, gates vs baseline, assemble the FS write-back queue | no |
 | 4. Close | `24-session-close` | `scripts/session_close.py` checklist -> Handoff close block -> next session's draw and starting command -> commit | no |
 
-These are dispatchers, not campaigns: the numbered prompts above are what a lane dispatches TO (e.g. VERIFY -> prompt 18, a harvest target -> prompt 19).
+These are dispatchers, not campaigns: the numbered prompts above are what a lane dispatches TO (e.g. an IMPROVE defect row -> prompt 18, a harvest target -> prompt 25, whose FamilySearch leg is prompt 19).
 
 ## Overriding A Field For One Run
 

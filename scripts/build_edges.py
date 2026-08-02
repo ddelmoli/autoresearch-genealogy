@@ -108,6 +108,38 @@ def edge_ids(val):
     return out
 
 
+def gen_mismatches(vault=None):
+    """UNEXPLAINED parent-generation mismatches, as DATA. (deferred 39)
+
+    ** ONE COMPUTATION, TWO READERS. ** `validate_edges()` prints these as a gate
+    line; `session_plan.lane_defects()` offers them as work. Before this they would
+    have been two implementations of the same rule, which is exactly the drift the
+    "two readers, one entry" lesson is about -- so the gate calls this too and the
+    lane cannot disagree with the banner.
+
+    Returns [(child_id, parent_id, child_gen, parent_gen)] with declared pedigree
+    collapse EXCLUDED (that is `known_gen_collapse`, and it is expected).
+    """
+    rows = G.parse_narrative()
+    id2row = {r["id"]: r for r in rows if r["id"]}
+    v = vault if vault is not None else VAULT
+    collapse_pairs, _ = vault_config.get_known_gen_collapse(v) if v else (set(), {})
+    out = []
+    for r in rows:
+        cid = r["id"]
+        if not cid:
+            continue
+        meta = G.parse_meta(r["block"])
+        for p, _ok in edge_ids(meta.get("parents")):
+            if p == cid or p not in id2row:
+                continue
+            cg, pg = id2row[cid]["gen"], id2row[p]["gen"]
+            if cg is not None and pg is not None and pg != cg + 1 \
+                    and (cid, p) not in collapse_pairs:
+                out.append((cid, p, cg, pg))
+    return out
+
+
 def validate_edges(limit=20):
     """Read-only edge-graph integrity checks over the written meta blocks.
     Advisory (NOT the HARD gate — gen mismatches may be the known gen backlog,
@@ -152,7 +184,7 @@ def validate_edges(limit=20):
         # ADJUDICATED_STALE (deferred 32): an id listed as adjudicated that this
         # entry no longer marks `?`. It means the edge was later cleared (or the
         # id was mistyped) and the note was left behind — and a stale entry here
-        # SUPPRESSES a real candidate from the VERIFY lane, which is the one
+        # SUPPRESSES a real candidate from the IMPROVE defect pool (was VERIFY), which is the one
         # failure mode this key could introduce. Advisory, baseline 0.
         for aid in edge_tokens(meta.get("adjudicated")):
             if aid not in unverified:
@@ -169,8 +201,13 @@ def validate_edges(limit=20):
                 dangling.append((cid, "parents", p))
             else:
                 cg, pg = id2row[cid]["gen"], id2row[p]["gen"]
-                if cg is not None and pg is not None and pg != cg + 1:
-                    (gen_declared if (cid, p) in collapse_pairs else gen_bad).append((cid, p, cg, pg))
+                if cg is not None and pg is not None and pg != cg + 1 \
+                        and (cid, p) in collapse_pairs:
+                    gen_declared.append((cid, p, cg, pg))
+    # UNEXPLAINED mismatches come from the SHARED helper, which is also what
+    # session_plan's IMPROVE defect pool offers as work (deferred 39). One
+    # computation, two readers -- the banner and the worklist cannot drift.
+    gen_bad = gen_mismatches(VAULT)
     for sid, sset in spouses.items():
         for s in sset:
             if s == sid:
@@ -190,7 +227,7 @@ def validate_edges(limit=20):
     print(f"  BROKEN SPOUSE RECIPROCITY (A->B, no B->A):   {len(recip)}   [should be 0]")
     print(f"  PARENT-GEN MISMATCH (parent != child gen+1): {len(gen_bad)}   [unexplained; gen-backlog signal, not necessarily an edge bug]")
     print(f"  GEN_COLLAPSE (declared in .autoresearch.json): {len(gen_declared)}   [expected; pedigree collapse, every edge correct]")
-    print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real VERIFY candidate]")
+    print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real IMPROVE defect candidate]")
     for c, aid in adj_stale[:limit]:
         print(f"    ADJ_STALE {nm(c)} ({c}) adjudicated -> {aid} (no `?` edge to it)")
     for c, k, t in malformed[:limit]:

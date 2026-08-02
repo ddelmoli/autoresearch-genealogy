@@ -85,7 +85,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--vault")
-    ap.add_argument("--lane", help="lane actually worked this session (EXPAND/IMPROVE/VERIFY/ROTATE)")
+    ap.add_argument("--lane", help="lane actually worked this session (EXPAND/IMPROVE/ROTATE)")
     ap.add_argument("--outcome", choices=["hit", "miss"])
     ap.add_argument("--note", default="")
     ap.add_argument("--session", type=int, metavar="N",

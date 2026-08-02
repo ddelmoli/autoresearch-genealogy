@@ -27,7 +27,10 @@ candidate-builder (imported, never re-derived — the "two readers, one entry" r
            population (of its last candidate, zero were SOURCE_GAP). The keystone
            report still exists and still finds real work; it is now a REPORT
            (`keystone_report.py --summary`), not this lane's definition.
-  VERIFY   entries whose `parents:`/`spouse:` lists carry `?`-marked (not yet
+  (VERIFY was COLLAPSED into IMPROVE 02 AUG 2026 -- deferred 39 + 40. It drew
+           from mostly the same people, its edge population is exhausted, and its
+           PID half was IMPROVE's own precondition wearing a lane's clothes.)
+  -- was: entries whose `parents:`/`spouse:` lists carry `?`-marked (not yet
            FS-confirmed) edges. Ranked gen ascending. ⚠ Read the entry before
            stripping a `?` — it survives legitimately as FS-GAP, SCHOLARLY HEDGE,
            or PRIVACY (see CLAUDE.method.md).
@@ -104,7 +107,30 @@ import vault_config  # noqa: E402
 
 SNAPSHOT_FILE = "session_plan_snapshots.json"
 CONFIG_KEY = "session_plan"
-LANES = ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")
+LANES = ("EXPAND", "IMPROVE", "ROTATE")
+
+# ** VERIFY WAS COLLAPSED INTO IMPROVE, 02 AUG 2026 (operator; deferred 39 + 40). **
+#
+# 40 measured that the two lanes already drew from mostly the same people: 694 in
+# both, 72% of IMPROVE and 71% of VERIFY-PID. And the two jobs are ONE ACTION --
+# `25-person-research-sweep` cannot harvest a person's FamilySearch sources without
+# loading the profile, which IS the liveness check. The method file justified
+# stale-PID work as protection for IMPROVE's own harvest, i.e. it described a
+# PRECONDITION and then gave it equal billing as a lane.
+#
+# ** THE COLLAPSE IS ASYMMETRIC, AND THAT IS THE WHOLE DESIGN. ** IMPROVE stood at
+# 0 wins / 9 and VERIFY at 11 / 13, latterly on PID checks alone. Merging naively
+# would hand the expensive lane a cheap way to meet a floor it had NEVER met, so
+# every honest miss would become a hit and the vault would stop being able to see
+# that six-source sweeps are slow. Therefore:
+#   - PID liveness is NOT a population and NOT a unit. It is step 0 of prompt 25,
+#     annotated on whatever rows are drawn (`pid_stale`), and it scores NOTHING.
+#   - `?` edges are NOT a population either (deferred 39: keying the lane on a
+#     self-assigned mark meant VERIFY saw 76 of 2,393 edge tokens, 3.2%, and could
+#     not see ANY of the 8 children carrying an unexplained PARENT-GEN MISMATCH).
+#     They are one input to a DEFECT population that also carries the gate findings.
+#   - The unit stays IMPROVE's: a person whose RECORD moved.
+IMPROVE_DEFECT_SHARE = 0.25   # reserved for defect rows before sourcing rows get any
 
 # What ONE unit of the lane target is, per lane. The target is a percent of the
 # vault counted in PEOPLE (operator, 30 JUL 2026), so the units are deliberately
@@ -131,11 +157,14 @@ LANE_UNITS = {
                "              Open_Questions entry naming a resolver (operator, 02 AUG\n"
                "              2026). ! A question does NOT shrink SOURCE_GAP, so count it\n"
                "              ONCE, name the Q number in --note, and never use it in place\n"
-               "              of a closure you could actually have made",
-    "VERIFY": "one `?` edge adjudicated (cleared, contradicted, or classified with\n"
-              "              its reason on the entry), OR one FS PID confirmed live /\n"
-              "              corrected / recorded dead (`profile_review.py --record\n"
-              "              P-XXXXXX --probed fs`). Both are one PERSON disposed of.",
+               "              of a closure you could actually have made,\n"
+               "              OR a DEFECT row settled: a `?` edge adjudicated (cleared,\n"
+               "              contradicted, or classified with its reason on the entry) or\n"
+               "              a gate finding resolved / declared.\n"
+               "              ! CONFIRMING AN FS PID IS LIVE SCORES NOTHING. It is step 0\n"
+               "              of prompt 25 -- you load the profile to harvest it anyway --\n"
+               "              and counting it would let the cheapest action in the system\n"
+               "              satisfy a floor that sourcing has never met (deferred 40).",
     "ROTATE": "one drawn entry polled AND recorded with --record",
 }
 # Defaults; override via .maintenance.json `session_plan` block.
@@ -202,14 +231,16 @@ STALE_AFTER = 6       # staleness floor: a lane undrawn for this many draws is d
 OFFER_COOLDOWN = 3    # sittings a row spends at the BACK after being offered and not disposed
 HEAD_FRACTION = 3     # 1/N of the target is taken strictly by priority; the rest is sampled
 
-# ** VERIFY CARRIES TWO POPULATIONS, AND THE SMALLER ONE IS PROTECTED BY A SHARE **
+# ** HISTORICAL (VERIFY collapsed into IMPROVE 02 AUG 2026); the SHARE mechanism it
+# introduced is still in use, now protecting IMPROVE's defect + gap populations. **
+# ** VERIFY CARRIED TWO POPULATIONS, AND THE SMALLER ONE WAS PROTECTED BY A SHARE **
 # (operator-directed, 01 AUG 2026). VERIFY was `?`-marked edges only; it now also
 # offers entries whose FS PID has not been confirmed live (see verify_stale_pids).
 # Measured when that was added: ~1,131 PID rows against ~34 edge rows. Merged into
 # one sampled pool the edge rows would be 3% of the lane -- half a row per draw --
 # so the work the lane exists for would vanish behind mechanical checks. This
 # reserves a fixed fraction of the lane target for edges before PIDs get any.
-VERIFY_EDGE_SHARE = 0.5
+VERIFY_EDGE_SHARE = 0.5      # retained: referenced by tests pinning the share maths
 # Same protection for IMPROVE, which now also carries two populations of very
 # different size: SOURCE_GAP (0 records) against SINGLE_SOURCED (documented, but by
 # one host only -- 734 people when this was added). Without a reserved share the
@@ -441,7 +472,9 @@ def lane_verify(vault, include_adjudicated=False):
 def verify_stale_pids(vault):
     """Entries whose FS PID has not been CONFIRMED LIVE inside the probe cooldown.
 
-    ** THE SECOND HALF OF VERIFY (operator-directed, 01 AUG 2026, session #127). **
+    ** WAS THE SECOND HALF OF VERIFY (01 AUG 2026); SINCE 02 AUG IT IS AN ANNOTATION,
+    NOT A POPULATION (deferred 40) -- read through `pid_stale_ids()`, and note that
+    confirming a PID SCORES NOTHING. The rationale below is why it still runs. **
     An `fs:` PID is an external pointer, and FamilySearch rots them: a profile merged
     away or deleted leaves a PID that still LOOKS like a person and reads, on a walk,
     as someone with no relatives. A stale PID does not just mislead VERIFY — IMPROVE
@@ -481,6 +514,75 @@ def verify_stale_pids(vault):
     for r in rows:
         r.pop("_days", None)
     return rows
+
+
+def lane_defects(vault, include_adjudicated=False):
+    """People carrying a KNOWN, SPECIFIC defect in their record. (deferred 39)
+
+    ** WHY THIS EXISTS. ** VERIFY keyed its edge half on the `?` mark, which is a
+    mark the vault puts on ITSELF. Measured 02 AUG 2026: 76 of 2,393 edge tokens
+    carry it -- 3.2% -- so 96.8% of edges were never re-examined by anything, and
+    an edge cleared once was never looked at again. Worse, `build_edges --validate`
+    was reporting 14 unexplained PARENT-GEN MISMATCHes across 8 children -- real
+    structural inconsistencies on NAMED edges -- and **not one of those 8 was
+    visible to the lane**, because none of their edges happened to carry a `?`.
+    The lane whose job was verification could not see a single one of the vault's
+    own flagged defects.
+
+    ** SO THE POOL IS DEFINED BY EVIDENCE OF A PROBLEM, NOT BY A SELF-ASSIGNED MARK. **
+    Two sources, ranked in that order:
+      1. GATE findings -- a parent/child generation that does not add up. Machine
+         found, specific, and previously drawn by nothing.
+      2. `?` edges not yet `adjudicated` -- the old VERIFY edge population, kept
+         because it is real work, but now ONE input rather than the definition.
+
+    Declared pedigree collapse is excluded: `build_edges` already separates
+    GEN_COLLAPSE (expected) from PARENT-GEN MISMATCH (unexplained), and re-offering
+    a declared row would be the "never bulk-declare to reach 0" failure in reverse.
+    """
+    rows, seen = [], set()
+    # 1. Gate findings first -- these are the ones nothing has ever drawn.
+    try:
+        import build_edges as be
+        import gen_person_index as g
+        info = {r["id"]: r for r in g.parse_narrative() if r.get("id")}
+        for cid, _pid, cg, pg in be.gen_mismatches(vault):
+            if cid in seen:
+                continue
+            seen.add(cid)
+            r = info.get(cid, {})
+            rows.append({"id": cid, "name": r.get("name") or "?", "gen": cg,
+                         "file": r.get("file") or "",
+                         "_defect": "gate",
+                         "why": f"GATE: parent gen {pg}, expected {cg + 1} — an "
+                                f"UNEXPLAINED generation mismatch on a named edge "
+                                f"(not declared collapse). Resolve it, or declare it "
+                                f"in `known_gen_collapse` with a note."})
+    except Exception as e:                         # never silently drop the population
+        print(f"session_plan: WARNING - gate findings unavailable for the IMPROVE "
+              f"defect pool ({type(e).__name__}: {e}). `?` edges still offered.",
+              file=sys.stderr)
+    # 2. Then the `?` edges, as ONE input rather than the whole lane.
+    for r in lane_verify(vault, include_adjudicated=include_adjudicated):
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        rows.append({**r, "_defect": "edge"})
+    rows.sort(key=lambda r: (r.get("_defect") != "gate",
+                             r["gen"] is None, r["gen"] or 0))
+    return rows
+
+
+def pid_stale_ids(vault):
+    """Vault ids whose FS PID has not been confirmed live inside the probe cooldown.
+
+    ** NOT A POPULATION AND NOT A UNIT (deferred 40). ** This is an ANNOTATION on
+    whatever rows a draw offers: you are about to open the profile to harvest it, so
+    confirm it resolves first -- a merged-away PID reads as a person with no
+    relatives and silently poisons the harvest. Scoring it would hand the lane the
+    cheapest action in the system as a way to meet its floor.
+    """
+    return {r["id"] for r in verify_stale_pids(vault)}
 
 
 def compose_share(primary, secondary, target, share):
@@ -796,7 +898,7 @@ def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER)
 
 
 def record(state, lane, outcome, note="", session=None, today=None,
-           sourced=None, corroborated=None):
+           sourced=None, corroborated=None, verified=None):
     """Record one iteration's outcome for `lane`.
 
     ** `sourced` / `corroborated` SPLIT THE IMPROVE UNIT (deferred 34, option 1,
@@ -810,20 +912,28 @@ def record(state, lane, outcome, note="", session=None, today=None,
     is that an all-FS-harvest draw is visible AT REVIEW rather than a month later,
     which is how #128's went unnoticed.
 
-    Both are optional and IMPROVE-only; the numbers are advisory and deliberately
+    ** `verified` IS THE THIRD SLOT (deferred 40, 02 AUG 2026). ** When VERIFY was
+    collapsed into IMPROVE the lane gained a DEFECT population -- `?` edges and gate
+    findings -- whose dispositions are neither "sourced" nor "corroborated". Without
+    a slot of its own, a draw that spent itself adjudicating edges would record as
+    0/0 and read exactly like a draw that achieved nothing. ⚠ It does NOT cover
+    confirming an FS PID is live: that is a precondition and scores nothing at all.
+
+    All three are optional and IMPROVE-only; the numbers are advisory and deliberately
     NOT reconciled against the target, because a draw can dispose of a person by
-    documented negative, which is neither.
+    documented negative, which is none of them.
     """
     if lane not in LANES:
         raise SystemExit(f"unknown lane {lane!r}; one of {', '.join(LANES)}")
     if outcome not in ("hit", "miss"):
         raise SystemExit("outcome must be hit or miss")
     split = None
-    if sourced is not None or corroborated is not None:
+    if sourced is not None or corroborated is not None or verified is not None:
         if lane != "IMPROVE":
-            raise SystemExit("--sourced/--corroborated split the IMPROVE unit and "
-                             f"apply only to that lane, not {lane}")
-        split = {"sourced": sourced or 0, "corroborated": corroborated or 0}
+            raise SystemExit("--sourced/--corroborated/--verified split the IMPROVE "
+                             f"unit and apply only to that lane, not {lane}")
+        split = {"sourced": sourced or 0, "corroborated": corroborated or 0,
+                 "verified": verified or 0}
     today = today or date.today().isoformat()
     cur = arm_of(state, lane)
     state.setdefault("arms", {})[lane] = {
@@ -917,7 +1027,7 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--heartbeat", action="store_true")
     ap.add_argument("--include-adjudicated", action="store_true",
-                    help="VERIFY: also offer `?` edges already walked and judged "
+                    help="IMPROVE defect pool: also offer `?` edges already walked and judged "
                          "(listed in the entry's `adjudicated:` meta key). Audit "
                          "pass only -- they are excluded from a normal draw.")
     ap.add_argument("--record", action="store_true",
@@ -931,6 +1041,11 @@ def main(argv=None):
     ap.add_argument("--sourced", type=int, metavar="N",
                     help="IMPROVE only: of this draw's disposals, how many were an "
                          "UNSOURCED entry cited for the first time (0 -> cited).")
+    ap.add_argument("--verified", type=int, metavar="N",
+                    help="With --record --lane IMPROVE: how many of this draw's "
+                         "dispositions were DEFECT rows settled (a `?` edge "
+                         "adjudicated, or a gate finding resolved/declared). "
+                         "Confirming a PID is live is NOT one of these.")
     ap.add_argument("--corroborated", type=int, metavar="N",
                     help="IMPROVE only: of this draw's disposals, how many were a "
                          "SINGLE_SOURCED entry corroborated from a SECOND host "
@@ -964,27 +1079,31 @@ def main(argv=None):
         if not (a.lane and a.outcome):
             raise SystemExit("--record needs --lane and --outcome")
         save_state(vault, record(state, a.lane.upper(), a.outcome, a.note, a.session,
-                                 sourced=a.sourced, corroborated=a.corroborated))
+                                 sourced=a.sourced, corroborated=a.corroborated,
+                                 verified=a.verified))
         stamp = f" (sitting #{a.session})" if a.session is not None else ""
         print(f"PLAN: recorded lane {a.lane.upper()} -> {a.outcome}{stamp}")
-        if a.sourced is not None or a.corroborated is not None:
+        if a.sourced is not None or a.corroborated is not None or a.verified is not None:
             print(f"  IMPROVE split: {a.sourced or 0} sourced (0 -> cited) / "
-                  f"{a.corroborated or 0} corroborated (1 host -> 2+)")
+                  f"{a.corroborated or 0} corroborated (1 host -> 2+) / "
+                  f"{a.verified or 0} defect rows settled")
             if not (a.corroborated or 0):
                 print("  ⚠ ZERO corroborations: this draw lowered SOURCE_GAP without "
                       "moving MULTI_SOURCED.")
+            if (a.verified or 0) and not ((a.sourced or 0) or (a.corroborated or 0)):
+                print("  ⚠ ALL-DEFECT draw: no record moved. Legitimate, and visible "
+                      "here on purpose (deferred 40).")
         return 0
 
     # The full plan.
-    # VERIFY's two populations are kept APART until the target is known, because the
-    # share that protects the smaller one is a fraction of that target.
-    v_edges = lane_verify(vault, include_adjudicated=a.include_adjudicated)
-    v_pids = verify_stale_pids(vault)
+    # IMPROVE's THREE populations are kept APART until the target is known, because
+    # the shares that protect the smaller ones are fractions of that target.
+    i_defects = lane_defects(vault, include_adjudicated=a.include_adjudicated)
     i_gaps, i_corrob, i_breadth = lane_improve(vault)
+    stale_pids = pid_stale_ids(vault)      # an ANNOTATION, never a population
     lanes = {
         "EXPAND": lane_expand(vault),
-        "IMPROVE": i_gaps + i_corrob,
-        "VERIFY": v_edges + v_pids,
+        "IMPROVE": i_defects + i_gaps + i_corrob,
         "ROTATE": lane_rotate(vault, a.sample_percent),
     }
     if a.sample_percent:
@@ -1010,25 +1129,40 @@ def main(argv=None):
     # `sizes` is taken (it reorders, never filters, so the counts are unchanged).
     cooled = {}
     for _ln in LANES:
-        if _ln == "VERIFY":
-            # Rotate each population on its OWN, then compose with the edge share:
-            # sampling the merged pool would let 1,131 PID rows swamp 34 edge rows.
-            _e, _ec = rotate_candidates(v_edges, state, _ln, lane_target,
-                                        cooldown=cooldown_sittings)
-            _p, _pc = rotate_candidates(v_pids, state, _ln, lane_target,
-                                        cooldown=cooldown_sittings, seed_extra="pid")
-            lanes[_ln], v_eq, v_pq = compose_share(_e, _p, lane_target, VERIFY_EDGE_SHARE)
-            cooled[_ln] = _ec + _pc
-        elif _ln == "IMPROVE":
+        if _ln == "IMPROVE":
+            # THREE populations, each rotated on its OWN then composed by share.
+            # Sampling a merged pool would let 761 corroboration rows swamp the 8
+            # gate defects -- the same swamping the old VERIFY share existed to stop.
+            _d, _dc = rotate_candidates(i_defects, state, _ln, lane_target,
+                                        cooldown=cooldown_sittings, seed_extra="defect")
             _g, _gc = rotate_candidates(i_gaps, state, _ln, lane_target,
                                         cooldown=cooldown_sittings)
             _c, _cc = rotate_candidates(i_corrob, state, _ln, lane_target,
                                         cooldown=cooldown_sittings, seed_extra="corrob")
-            lanes[_ln], i_gq, i_cq = compose_share(_g, _c, lane_target, IMPROVE_GAP_SHARE)
-            cooled[_ln] = _gc + _cc
+            # Defects reserve their share FIRST; sourcing rows split what is left.
+            _src, _gq, _cq = compose_share(_g, _c, lane_target, IMPROVE_GAP_SHARE)
+            lanes[_ln], i_dq, _srcq = compose_share(_d, _src, lane_target,
+                                                    IMPROVE_DEFECT_SHARE)
+            # ⚠ REPORT WHAT IS ACTUALLY TAKEN, NOT THE INNER SPLIT. The inner
+            # compose sizes gaps/corrob against the FULL target; the outer one then
+            # takes only `_srcq` of that ordering. Printing the inner quotas made
+            # 5 + 10 + 11 = 26 for a target of 21 -- three numbers that cannot all
+            # be true at once, in the one line telling the session how deep to go.
+            i_gq = min(_gq, _srcq)
+            i_cq = max(0, _srcq - i_gq)
+            cooled[_ln] = _dc + _gc + _cc
         else:
             lanes[_ln], cooled[_ln] = rotate_candidates(
                 lanes[_ln], state, _ln, lane_target, cooldown=cooldown_sittings)
+    # PID staleness is an ANNOTATION on whatever was drawn, not a population and not
+    # a unit (deferred 40). Mark the rows so the sweep knows to confirm the profile
+    # resolves BEFORE harvesting it -- a merged-away PID reads as a person with no
+    # relatives and silently poisons the harvest.
+    for _ln in LANES:
+        for _r in lanes[_ln]:
+            if _r.get("id") in stale_pids:
+                _r["why"] = (_r.get("why") or "") + \
+                    "  [PID liveness unconfirmed — confirm it resolves as step 0; scores NOTHING]"
 
     if pick:
         # The ids this draw actually OFFERS. record() stamps them only if the
@@ -1068,18 +1202,19 @@ def main(argv=None):
             print(f"    ⚠ THE LANE HOLDS ONLY {sizes.get(pick, 0)} — it will RUN DRY before "
                   f"target, and a lane that runs dry is a HIT. Do not read {shown} as "
                   f"reachable here.")
-        if pick == "VERIFY":
-            print(f"    VERIFY holds TWO populations: {len(v_edges)} `?` edges + "
-                  f"{len(v_pids)} unconfirmed FS PIDs.")
-            print(f"    This draw reserves {v_eq} for edges before PIDs get any "
-                  f"({VERIFY_EDGE_SHARE:.0%} share), then {v_pq} PID checks —")
-            print("    so the smaller population cannot be swamped by the larger.")
         if pick == "IMPROVE":
-            print(f"    IMPROVE holds TWO populations: {len(i_gaps)} with NO source "
-                  f"+ {len(i_corrob)} documented by ONE host only.")
-            print(f"    This draw reserves {i_gq} for unsourced entries, then {i_cq} "
-                  f"corroboration rows. FamilySearch is the SYNC point, not the")
-            print("    evidence base — each row names a non-FS route to try.")
+            _ngate = sum(1 for r in i_defects if r.get("_defect") == "gate")
+            print(f"    IMPROVE holds THREE populations: {len(i_defects)} DEFECT "
+                  f"({_ngate} gate finding(s) + {len(i_defects) - _ngate} `?` edges), "
+                  f"{len(i_gaps)} with NO source,")
+            print(f"    {len(i_corrob)} documented by ONE host only. This draw reserves "
+                  f"{i_dq} for defects first, then {i_gq} unsourced + {i_cq} "
+                  f"corroboration.")
+            print("    FamilySearch is the SYNC point, not the evidence base — each")
+            print("    sourcing row names a non-FS route to try.")
+            print(f"    ⚠ {len(stale_pids)} drawn-or-not entries have an UNCONFIRMED FS "
+                  f"PID. Confirming one is step 0 of prompt 25 and SCORES NOTHING")
+            print("      — it is a precondition, not a disposition (deferred 40).")
             # deferred 34, option 2: the GOAL metric, at the moment of choosing.
             # SOURCE_GAP is the lane's worklist; MULTI_SOURCED is what the 01 AUG
             # biography ruling is about, and it is the one that must go UP.

@@ -138,7 +138,7 @@ class RecloseTests(unittest.TestCase):
         self.assertIn("first close", r.stdout)
 
     def test_recorded_observation_carries_the_sitting(self):
-        self.close("--session", "125", "--lane", "VERIFY", "--outcome", "miss")
+        self.close("--session", "125", "--lane", "IMPROVE", "--outcome", "miss")
         self.assertEqual(self.state()["history"][-1]["session"], 125)
 
 

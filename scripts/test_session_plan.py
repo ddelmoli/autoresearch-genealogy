@@ -14,11 +14,11 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import session_plan as sp  # noqa: E402
 
-ALL_FULL = {"EXPAND": 10, "IMPROVE": 10, "VERIFY": 10, "ROTATE": 10}
+ALL_FULL = {"EXPAND": 10, "IMPROVE": 10, "ROTATE": 10}
 
 
 def hist(*lanes_per_sitting):
-    """History from an explicit list of sittings: hist(("EXPAND","IMPROVE"), ("VERIFY",))
+    """History from an explicit list of sittings: hist(("EXPAND","IMPROVE"), ("ROTATE",))
     is two sittings, the first of which worked two lanes."""
     out = []
     for i, lanes in enumerate(lanes_per_sitting, start=1):
@@ -29,7 +29,7 @@ def hist(*lanes_per_sitting):
 
 # Two sittings for every lane: enough to clear the bootstrap floor, so a test that
 # is about STALENESS or EXPLOIT is not silently answered by the floor above it.
-WARMUP = (("EXPAND",), ("IMPROVE",), ("VERIFY",), ("ROTATE",)) * 2
+WARMUP = (("EXPAND",), ("IMPROVE",), ("ROTATE",)) * 2
 
 
 def arms(sittings=WARMUP, **kw):
@@ -49,23 +49,23 @@ class DrawTests(unittest.TestCase):
         self.assertIn("bootstrap", reason)
 
     def test_bootstrap_prefers_least_sampled(self):
-        # ROTATE has been worked in no sitting at all; VERIFY in one.
-        st = arms((("EXPAND",), ("EXPAND",), ("IMPROVE",), ("IMPROVE",), ("VERIFY",)),
-                  EXPAND=(2, 2), IMPROVE=(2, 0), VERIFY=(1, 1), ROTATE=(0, 0))
+        # ROTATE has been worked in no sitting at all.
+        st = arms((("EXPAND",), ("EXPAND",), ("IMPROVE",), ("IMPROVE",)),
+                  EXPAND=(2, 2), IMPROVE=(2, 0), ROTATE=(0, 0))
         lane, reason = sp.draw_lane(st, ALL_FULL)
         self.assertEqual(lane, "ROTATE")
         self.assertIn("bootstrap", reason)
 
     def test_no_exploitation_on_tiny_n_even_with_perfect_record(self):
-        # EXPAND is 1-for-1 (rate 1.0) but VERIFY is unsampled: floor wins.
-        st = arms((("EXPAND",), ("IMPROVE",), ("IMPROVE",), ("ROTATE",), ("ROTATE",)),
-                  EXPAND=(1, 1), IMPROVE=(2, 0), VERIFY=(0, 0), ROTATE=(2, 1))
+        # EXPAND is 1-for-1 (rate 1.0) but ROTATE is unsampled: floor wins.
+        st = arms((("EXPAND",), ("IMPROVE",), ("IMPROVE",)),
+                  EXPAND=(1, 1), IMPROVE=(2, 0), ROTATE=(0, 0))
         lane, _ = sp.draw_lane(st, ALL_FULL)
-        self.assertEqual(lane, "VERIFY")
+        self.assertEqual(lane, "ROTATE")
 
     def test_empty_lane_never_drawn(self):
         st = {"arms": {}, "history": []}
-        sizes = {"EXPAND": 0, "IMPROVE": 5, "VERIFY": 0, "ROTATE": 0}
+        sizes = {"EXPAND": 0, "IMPROVE": 5, "ROTATE": 0}
         lane, _ = sp.draw_lane(st, sizes)
         self.assertEqual(lane, "IMPROVE")
 
@@ -76,26 +76,26 @@ class DrawTests(unittest.TestCase):
         self.assertIn("empty", reason)
 
     def test_staleness_floor_beats_exploit(self):
-        # All sampled past the floor; VERIFY absent from the recent window.
-        st = arms(WARMUP + (("EXPAND",), ("IMPROVE",), ("ROTATE",),
-                            ("EXPAND",), ("IMPROVE",), ("ROTATE",)),
-                  EXPAND=(6, 5), IMPROVE=(6, 1), VERIFY=(2, 0), ROTATE=(6, 2))
+        # All sampled past the floor; ROTATE absent from the last SIX sittings, so
+        # the staleness floor must beat EXPAND's better rate.
+        st = arms(WARMUP + (("EXPAND",), ("IMPROVE",)) * 3,
+                  EXPAND=(6, 5), IMPROVE=(6, 1), ROTATE=(2, 0))
         lane, reason = sp.draw_lane(st, ALL_FULL)
-        self.assertEqual(lane, "VERIFY")
+        self.assertEqual(lane, "ROTATE")
         self.assertIn("staleness", reason)
 
     def test_exploit_picks_best_smoothed_rate(self):
-        st = arms(WARMUP + (("EXPAND",), ("IMPROVE",), ("VERIFY",),
+        st = arms(WARMUP + (("EXPAND",), ("IMPROVE",),
                             ("ROTATE",), ("EXPAND",), ("IMPROVE",)),
-                  EXPAND=(6, 5), IMPROVE=(6, 1), VERIFY=(6, 3), ROTATE=(6, 2))
+                  EXPAND=(6, 5), IMPROVE=(6, 1), ROTATE=(6, 2))
         lane, reason = sp.draw_lane(st, ALL_FULL)
         self.assertEqual(lane, "EXPAND")  # (5+1)/(6+2) = 0.75, the max
         self.assertIn("exploit", reason)
 
     def test_exploit_tie_breaks_by_lane_order(self):
-        st = arms(WARMUP + (("ROTATE",), ("VERIFY",), ("IMPROVE",),
-                            ("EXPAND",), ("ROTATE",), ("VERIFY",)),
-                  EXPAND=(6, 3), IMPROVE=(6, 3), VERIFY=(6, 3), ROTATE=(6, 3))
+        st = arms(WARMUP + (("ROTATE",), ("IMPROVE",),
+                            ("EXPAND",), ("ROTATE",)),
+                  EXPAND=(6, 3), IMPROVE=(6, 3), ROTATE=(6, 3))
         lane, _ = sp.draw_lane(st, ALL_FULL)
         self.assertEqual(lane, "EXPAND")
 
@@ -117,19 +117,19 @@ class SittingTests(unittest.TestCase):
         self.assertNotEqual(lane, "EXPAND")
 
     def test_staleness_window_is_sittings_not_observations(self):
-        # One huge sitting cannot age VERIFY out of the window on its own.
-        base = dict(EXPAND=(2, 2), IMPROVE=(2, 2), VERIFY=(2, 2), ROTATE=(2, 2))
-        # A twenty-iteration EXPAND sitting is ONE sitting, so VERIFY is still inside
+        # One huge sitting cannot age a lane out of the window on its own.
+        base = dict(EXPAND=(2, 2), IMPROVE=(2, 2), ROTATE=(2, 2))
+        # A twenty-iteration EXPAND sitting is ONE sitting, so ROTATE is still inside
         # a two-sitting window. Under the old observation-counting it was long gone.
-        st = arms(WARMUP + (("VERIFY",), ("EXPAND",) * 20), **base)
+        st = arms(WARMUP + (("ROTATE",), ("EXPAND",) * 20), **base)
         lane, _ = sp.draw_lane(st, ALL_FULL, stale_after=2)
-        self.assertNotEqual(lane, "VERIFY")
+        self.assertNotEqual(lane, "ROTATE")
         # Three more sittings and it has genuinely aged out. (stale_after=3 so that
-        # VERIFY is the ONLY stale lane; with a 2-window EXPAND is stale too and wins
+        # ROTATE is the ONLY stale lane; with a 2-window EXPAND is stale too and wins
         # on lane order, which would prove nothing about the unit under test.)
-        st = arms(WARMUP + (("VERIFY",), ("EXPAND",), ("IMPROVE",), ("ROTATE",)), **base)
+        st = arms(WARMUP + (("ROTATE",), ("EXPAND",), ("IMPROVE",), ("EXPAND",)), **base)
         lane, reason = sp.draw_lane(st, ALL_FULL, stale_after=3)
-        self.assertEqual(lane, "VERIFY")
+        self.assertEqual(lane, "ROTATE")
         self.assertIn("staleness", reason)
 
     def test_legacy_rows_without_a_session_fall_back_to_the_date(self):
@@ -153,7 +153,7 @@ class ResetEpochTests(unittest.TestCase):
         st = {"arms": {}, "pending": None,
               "arms_reset": {"date": "2026-07-31"},
               "history": [{"date": "2026-07-29", "lane": ln, "outcome": "hit"}
-                          for ln in ("EXPAND", "IMPROVE", "VERIFY", "ROTATE")] * 3}
+                          for ln in ("EXPAND", "IMPROVE", "ROTATE")] * 3}
         lane, reason = sp.draw_lane(st, ALL_FULL)
         self.assertIn("bootstrap", reason)
 
@@ -197,7 +197,7 @@ class PendingGuardTests(unittest.TestCase):
 
     def test_record_stamps_the_sitting(self):
         st = sp.record({"arms": {}, "history": [], "pending": None},
-                       "VERIFY", "miss", session=124, today="2026-07-31")
+                       "IMPROVE", "miss", session=124, today="2026-07-31")
         self.assertEqual(st["history"][-1]["session"], 124)
 
 
@@ -349,12 +349,12 @@ class ImproveSplitTests(unittest.TestCase):
         st = sp.record(self._st(), "IMPROVE", "hit", today="2026-08-02",
                        sourced=13, corroborated=8)
         self.assertEqual(st["history"][-1]["split"],
-                         {"sourced": 13, "corroborated": 8})
+                         {"sourced": 13, "corroborated": 8, "verified": 0})
 
     def test_one_half_alone_is_enough_and_the_other_defaults_to_zero(self):
         st = sp.record(self._st(), "IMPROVE", "miss", today="2026-08-02", sourced=4)
         self.assertEqual(st["history"][-1]["split"],
-                         {"sourced": 4, "corroborated": 0})
+                         {"sourced": 4, "corroborated": 0, "verified": 0})
 
     def test_zero_corroborated_is_RECORDED_not_dropped(self):
         """An explicit 0 is the #128 signal itself -- it must survive, not vanish
@@ -414,6 +414,75 @@ class ImproveSplitTests(unittest.TestCase):
         st["history"] = [{"date": "2026-08-02", "lane": "VERIFY", "outcome": "hit",
                           "split": {"sourced": 99, "corroborated": 99}}]
         self.assertIsNone(sp.last_improve_split(st))
+
+
+class LaneCollapseTests(unittest.TestCase):
+    """** deferred 39 + 40 (operator-directed, 02 AUG 2026): VERIFY collapsed into
+    IMPROVE, asymmetrically. **
+
+    40 measured that the two lanes drew from mostly the same people (694 in both).
+    39 measured that VERIFY's edge pool was keyed on a SELF-ASSIGNED mark covering
+    3.2% of edges, and could not see ANY of the 8 children carrying an unexplained
+    PARENT-GEN MISMATCH.
+
+    The load-bearing part is the ASYMMETRY: PID liveness must not become a scoring
+    unit, or the cheapest action in the system satisfies a floor that sourcing has
+    never met.
+    """
+
+    def test_VERIFY_is_no_longer_a_lane(self):
+        self.assertNotIn("VERIFY", sp.LANES)
+        self.assertEqual(sp.LANES, ("EXPAND", "IMPROVE", "ROTATE"))
+
+    def test_recording_VERIFY_is_REJECTED_not_silently_accepted(self):
+        """A stale prompt or a habit must fail loudly, not write an orphan arm."""
+        with self.assertRaises(SystemExit):
+            sp.record({"arms": {}, "history": []}, "VERIFY", "hit",
+                      today="2026-08-02")
+
+    def test_verified_is_a_THIRD_split_slot_not_a_replacement(self):
+        st = sp.record({"arms": {}, "history": [], "pending": None}, "IMPROVE",
+                       "hit", today="2026-08-02",
+                       sourced=3, corroborated=2, verified=6)
+        self.assertEqual(st["history"][-1]["split"],
+                         {"sourced": 3, "corroborated": 2, "verified": 6})
+
+    def test_an_ALL_DEFECT_draw_is_recordable_and_visible(self):
+        """A draw spent adjudicating edges must not read as 'achieved nothing'."""
+        st = sp.record({"arms": {}, "history": [], "pending": None}, "IMPROVE",
+                       "hit", today="2026-08-02", verified=21)
+        sp_split = st["history"][-1]["split"]
+        self.assertEqual(sp_split["verified"], 21)
+        self.assertEqual((sp_split["sourced"], sp_split["corroborated"]), (0, 0))
+
+    def test_the_split_still_does_NOT_change_the_arithmetic(self):
+        """NEGATIVE CONTROL, inherited from deferred 34: reporting is not scoring.
+        Adding `verified` must leave the bandit byte-identical."""
+        a = sp.record({"arms": {}, "history": [], "pending": None}, "IMPROVE",
+                      "hit", today="2026-08-02")
+        b = sp.record({"arms": {}, "history": [], "pending": None}, "IMPROVE",
+                      "hit", today="2026-08-02", sourced=1, corroborated=1,
+                      verified=99)
+        self.assertEqual(a["arms"], b["arms"])
+
+    def test_verified_is_IMPROVE_only(self):
+        with self.assertRaises(SystemExit):
+            sp.record({"arms": {}, "history": [], "pending": None}, "EXPAND",
+                      "hit", today="2026-08-02", verified=1)
+
+    def test_pid_staleness_is_NOT_one_of_the_scoring_slots(self):
+        """The asymmetry, pinned. There is deliberately no --probed/--pid slot: a
+        PID confirmation is step 0 of prompt 25 and scores nothing at all."""
+        st = sp.record({"arms": {}, "history": [], "pending": None}, "IMPROVE",
+                       "hit", today="2026-08-02", verified=1)
+        self.assertEqual(set(st["history"][-1]["split"]),
+                         {"sourced", "corroborated", "verified"})
+
+    def test_IMPROVE_unit_text_says_a_PID_CHECK_SCORES_NOTHING(self):
+        """The prompt and the plan must state the same rule; this is the plan half."""
+        unit = sp.LANE_UNITS["IMPROVE"]
+        self.assertIn("SCORES NOTHING", unit.upper())
+        self.assertIn("DEFECT", unit.upper())
 
 
 if __name__ == "__main__":
