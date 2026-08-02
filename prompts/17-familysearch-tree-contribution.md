@@ -159,20 +159,51 @@ replace before a run.
 
    a. **Navigate** (Claude in Chrome) to `https://www.familysearch.org/en/tree/person/sources/{PID}`.
 
-   b. **Enable Detail View, then extract record ARKs.** The 1:1 record ARKs are NOT in the DOM until Detail View is on. Use a self-polling JS snippet (poll for the toggle since the SPA renders the source list after navigation):
+   b. **Enable Detail View, then extract record locators FROM `href` ATTRIBUTES.** The record ARKs are NOT in the DOM until Detail View is on. ⚠ **Never regex `innerText` for locators** — a source's citation string embeds ARKs that belong to no attached source, so a text scrape returns GHOST locators (prompt 19 measured 3 in the text against 2 in the hrefs, 1 ghost). Walk each source row and read its links. Use a self-polling snippet, since the SPA renders the list after navigation:
 
       ```js
       (()=>{const s=ms=>new Promise(r=>setTimeout(r,ms));
-        const gA=()=>{const a=new Set();const re=/ark:\/61903\/(1:1:[A-Z0-9-]+)/g;let m;
-          const b=document.body.innerText;while((m=re.exec(b))!==null)a.add(m[1]);return a;};
-        return(async()=>{let cb=null;for(let i=0;i<25;i++){cb=document.querySelector('input[name=detailView]');if(cb)break;await s(250);}
-          if(cb&&!cb.checked)cb.click();await s(900);
-          const c=(document.body.innerText.match(/Sources\s*\((\d+)\)/)||[])[1]||'?';const a=[...gA()];
-          return JSON.stringify({pid:'{PID}',sourceCount:c,arkCount:a.length,arks:a.slice(0,24)});})();})()
+        // Classify a link into (host, locator). Add hosts here as lines reach new archives.
+        const CLASSIFY=u=>{let m;
+          if((m=u.match(/ark:\/61903\/((?:1:1|3:1):[A-Z0-9-]+)/i)))   return ['fs',m[1]];
+          if((m=u.match(/ark:\/12657\/([^\s"'<>?#]+)/i)))             return ['antenati','ark:/12657/'+m[1]];
+          if((m=u.match(/ancestry\.[a-z.]+\/collections\/(\d+)\/records\/(\d+)/i)))
+                                                                      return ['anc',m[1]+':'+m[2]];
+          if((m=u.match(/discoveryui-content\/view\/(\d+):(\d+)/i))) return ['anc',m[2]+':'+m[1]];
+          if((m=u.match(/[?&]dbid=(\d+)[\s\S]*?[?&]h=(\d+)/i)))      return ['anc',m[1]+':'+m[2]];
+          if(/metryki\.genealodzy\.pl/i.test(u))                      return ['metryki',u];
+          if(/szukajwarchiwach/i.test(u))                              return ['szukajwarchiwach',u];
+          if(/agad\./i.test(u))                                       return ['agad',u];
+          if(/discovery\.nationalarchives/i.test(u))                   return ['tna',u];
+          return [null,u];};
+        return(async()=>{
+          let cb=null;for(let i=0;i<25;i++){cb=document.querySelector('input[name=detailView]');if(cb)break;await s(250);}
+          if(cb&&!cb.checked)cb.click();await s(1200);
+          const rows=[...document.querySelectorAll('div[class*=cssSourceBody]')];
+          const hits={},skipped={};let noLink=0;
+          for(const b of rows){const o=b.parentElement.parentElement;
+            const hrefs=[...o.querySelectorAll('a[href]')].map(a=>a.getAttribute('href')).filter(h=>h&&/^https?:/i.test(h));
+            if(!hrefs.length){noLink++;continue;}
+            let matched=false;
+            for(const h of hrefs){const[host,loc]=CLASSIFY(h);
+              if(host){(hits[host]=hits[host]||new Set()).add(loc);matched=true;}}
+            if(!matched)for(const h of hrefs){try{const d=new URL(h,location.origin).hostname.replace(/^www\./,'');
+              skipped[d]=(skipped[d]||0)+1;}catch(e){}}}
+          const c=(document.body.innerText.match(/Sources\s*\((\d+)\)/)||[])[1]||'?';
+          const loc={};for(const k in hits)loc[k]=[...hits[k]];
+          return JSON.stringify({pid:location.pathname.split('/').pop(),sourceCount:c,
+            sourceRows:rows.length, rowsWithNoLink:noLink,
+            byHost:Object.fromEntries(Object.entries(loc).map(([k,v])=>[k,v.length])),
+            locators:loc, UNRECOGNISED_HOSTS:skipped});})();})()
       ```
 
       - Batch up to ~5 profiles per `browser_batch` as `[navigate, js]` pairs; the self-poller tolerates the per-profile render delay. Do NOT fire navigations faster than the poller can keep up (a too-fast batch returns `sourceCount:"?"`/0 — re-run those).
-      - Only `ark:/61903/1:1:XXXX-XXX` **record** ARKs count for Rule 8. A `3:1:…` **image / Web Page** link (e.g. an Antenati atto attached as a "Web Page" source) is NOT counted by `harvest_sources.py`; if that is the profile's only source, the bullet should say so explicitly (see d).
+      - **BOTH `1:1:` (indexed) and `3:1:` (image/browse) FS ARKs count** for Rule 8, and so do the non-FS hosts above. ⚠ **A previous version of this note claimed `3:1:` was NOT counted by `harvest_sources.py`. That was wrong** — the script has counted image ARKs since 02 JUN 2026, and a profile whose only locator is a `3:1:` is classified with 1 record, not 0 (verified on a live entry 01 AUG 2026). Do not skip them.
+      - ⭐ **`UNRECOGNISED_HOSTS` IS THE POINT OF THE SHAPE, NOT A DEBUG FIELD.** It names every domain that appeared as a source link and matched no known host, with a count. Before this, a profile that was 60% Ancestry-attached harvested as a thin FS-only result **with no sign anything had been missed** — the silence was the defect (deferred_decisions 30). **If `UNRECOGNISED_HOSTS` is non-empty, say so in the bullet or the log**, and add the host to `CLASSIFY` if it is a real record host.
+      - `rowsWithNoLink` counts sources carrying no link at all — book, journal and tree citations. A high number there is the honest signal that a profile is bibliographically rich and record-poor, which is exactly what `BOOK_SOURCED` describes.
+      - **A record on two hosts is ONE record with TWO locators**, never two records — cite it on one sub-bullet (`… — fs:1:1:AAAA-AAA, anc:1234:56789`).
+      - **VERIFIED LIVE 01 AUG 2026** against the very profile that raised deferred_decisions 30. It returns `sourceRows 10, rowsWithNoLink 1, byHost {fs:4}, UNRECOGNISED_HOSTS {search.ancestry.com:4, legacy.com:1}` — reconciling exactly with that item's hand count of *"10 attached sources, of which only 4 are FS ARKs"*. The Ancestry form in the wild is `search.ancestry.com/collections/<collection>/records/<record>`, which maps onto the vault's existing `anc:<collection>:<record>`. ⚠ Do NOT match "ancestry" loosely: FamilySearch serves a partner-access interstitial at `familysearch.org/en/access/ancestry/` that is not a record.
+      - ⏭ **`legacy.com` is an OPEN host question, deliberately left unclassified.** Obituaries COUNT as records (policy (f), operator ruling 01 AUG 2026), but no `legacy` host id is registered, and inventing one here would put an uncoordinated host into the census. It surfaces in `UNRECOGNISED_HOSTS`, which is the correct behaviour — visible rather than silently dropped.
 
    c. **Write the "Sources" bullet** into the person's narrative entry (Rule 8 / Spec 03 record-locator format): one sub-bullet per RECORD, each with `host:locator` pairs (`fs:1:1:…` indexed, `fs:3:1:…` image; `anc:`/`wt:`/`antenati:` for other hosts). A record cited on several hosts lists several locators on one line.
       ```
