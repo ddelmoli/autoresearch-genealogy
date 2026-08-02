@@ -81,7 +81,9 @@ DEFAULTS = {
     # "ark" when the host mints ARKs (self-describing via the NAAN), else "url"/"id".
     # Seeded with the hosts harvest_sources.py recognizes today.
     "hosts": {
-        "familysearch":     {"label": "FamilySearch",        "ark_naan": "61903", "locator_kind": "ark"},
+        # `short` is the prefix emitted in a locator token when it differs from the
+        # registry key. FamilySearch is the only one; everything else emits its key.
+        "familysearch":     {"label": "FamilySearch", "short": "fs", "ark_naan": "61903", "locator_kind": "ark"},
         "antenati":         {"label": "Portale Antenati",    "ark_naan": "12657", "locator_kind": "ark"},
         "metryki":          {"label": "Metryki (genealodzy.pl)", "url_pattern": "metryki.genealodzy.pl",  "locator_kind": "url"},
         "szukajwarchiwach": {"label": "Szukaj w Archiwach",  "url_pattern": "szukajwarchiwach.gov.pl",     "locator_kind": "url"},
@@ -99,6 +101,31 @@ DEFAULTS = {
         # -- both verified to count -- and keep the human-readable reference in the
         # sub-bullet description, which is where a reader wants it anyway.
         "tna":              {"label": "The National Archives (UK)", "url_pattern": "discovery.nationalarchives.gov.uk", "locator_kind": "id"},
+
+        # ** anc / wt WERE ALREADY COUNTED AND WERE NEVER REGISTERED (fixed 02 AUG 2026). **
+        # `harvest_sources.EMITTED_HOST_IDS` carried them as a hard-coded literal while
+        # this registry did not list them, so the two sources of truth for "what is a
+        # host" disagreed. They are added here to close that, NOT to change behaviour:
+        # this vault already cites 86 `anc:` locators.
+        "anc":              {"label": "Ancestry",               "url_pattern": "ancestry.com",            "locator_kind": "id"},
+        "wt":               {"label": "WikiTree",               "url_pattern": "wikitree.com",            "locator_kind": "id"},
+
+        # --- added 02 AUG 2026 (session #130, operator-directed), all on the
+        # deferred-17 precedent: a stable resolvable identifier for a REAL primary
+        # record is a locator, even when the image sits behind a login.
+        # ** SPELLING: a locator token is a NON-SPACE run** (see the TNA note above) --
+        # write `nycdoris:D-B-1921-0002748`, never with spaces.
+        "fold3":            {"label": "Fold3",                  "url_pattern": "fold3.com",               "locator_kind": "id"},
+        "nycdoris":         {"label": "NYC Historical Vital Records (DORIS)", "url_pattern": "a860-historicalvitalrecords.nyc.gov", "locator_kind": "id"},
+        "jri":              {"label": "JRI-Poland",             "url_pattern": "jri-poland.org",          "locator_kind": "id"},
+        "geshergalicia":    {"label": "Gesher Galicia All-Galicia Database", "url_pattern": "gesher-galicia.org", "locator_kind": "id"},
+        # ⚠ JOWBR IS DELIBERATELY *NOT* REGISTERED. It is a burial index, and the
+        # 01 AUG 2026 memorial ruling keeps burial evidence OFF the ARK coverage metric
+        # ("Burial evidence credits the BIOGRAPHY instead" -- the bio_completeness
+        # `burial` facet, plus a `- **Burial evidence**` bullet). Registering it would
+        # fold exactly the class that ruling excluded back into the census, by the back
+        # door. JOWBR stays allowlisted in `is_memorial_collection` (it is not the
+        # EXCLUDED class either) -- it is simply not a RECORD host.
     },
 
     # --- optional person-record model (spec/optional-person-model) ---

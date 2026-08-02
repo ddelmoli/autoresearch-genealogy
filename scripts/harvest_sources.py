@@ -156,14 +156,76 @@ ARK_PATTERNS = [
 # It suppresses that ONE locator; an unmarked locator on the same line still counts.
 # Suppression is implemented by blanking the negated span BEFORE any pattern runs, so
 # every counter inherits it and none can drift.
+# The SHORT host ids the migration emits as `host:` prefixes. Detection keys on
+# these (not full words like "FamilySearch") so a prose "FamilySearch: the site"
+# is never mistaken for a locator line. Includes hosts with no legacy pattern
+# (anc/wt/etc.) whose locators only ever appear host-prefixed.
+#
+# ** DERIVED FROM THE VAULT'S `hosts` REGISTRY SINCE 02 AUG 2026 (session #130). **
+# This was a hard-coded literal while `vault_config.DEFAULTS["hosts"]` was a separate
+# registry, so the two disagreed in both directions: `anc`/`wt` were counted but not
+# registered, and registering a host did NOTHING because nothing read the registry.
+# "Register the host" (the deferred-17 remedy) was therefore a no-op for counting.
+# The registry is now the single source of truth, and a vault adds a host by adding
+# it to `.autoresearch.json` `hosts` -- no code change.
+#
+# `familysearch` is the one registry key whose emitted prefix differs (`fs`), so a
+# host may declare `short`. Everything else emits under its own key.
+#
+# ⚠ SORTED LONGEST-FIRST. These are joined into a regex alternation, and Python's `|`
+# is first-match-wins: with `agad` before `agadd2` the longer id could never match.
+_FALLBACK_HOST_IDS = ["fs", "anc", "wt", "antenati", "metryki", "szukajwarchiwach",
+                      "agad", "tna"]
+
+
+def _emitted_host_ids():
+    """Short host ids from the vault registry; the literal above if unavailable.
+
+    Import-time config reads must never be fatal: `resolve_vault()` is strict by
+    design and raises when no vault is selected, and a module that cannot be imported
+    without a vault would break every `--help` and every unit test."""
+    try:
+        import vault_config
+        hosts = vault_config.get_hosts(vault_config.resolve_vault())
+        ids = {(spec or {}).get("short") or key for key, spec in (hosts or {}).items()}
+        ids.discard("familysearch")          # emitted as its `short`, "fs"
+        if ids:
+            return sorted(ids, key=lambda s: (-len(s), s))
+    except BaseException:
+        # ⚠ BaseException, not Exception: `resolve_vault()` signals "no vault" with
+        # SystemExit, which does NOT inherit from Exception. An `except Exception`
+        # here let it escape and made importing this module fatal whenever
+        # AUTORESEARCH_VAULT was unset -- caught by test_host_registry.
+        pass
+    return sorted(_FALLBACK_HOST_IDS, key=lambda s: (-len(s), s))
+
+
+EMITTED_HOST_IDS = _emitted_host_ids()
+
+
+#
+# ** THE FIRST ALTERNATIVE IS A GENERIC `~<registered-host>:<token>` FORM, ADDED
+# 02 AUG 2026 (session #130), AND WITHOUT IT NEGATION SILENTLY DID NOT WORK FOR
+# HALF THE HOSTS. ** The list below enumerates locator SHAPES (ark paths, `1:1:`
+# ids, archive URLs). Those cover FamilySearch, Antenati, metryki and
+# szukajwarchiwach — but an `id`-kind host has no distinctive shape, so
+# `~anc:2704:14165620` and `~tna:C1/548/65` matched NOTHING and kept counting.
+# Measured when found: every one of the 69 `~fs:` exclusions in the corpus worked,
+# and the single `~anc:` one did not. That is deferred_decisions 28's own failure
+# mode ("documenting an exclusion used to create one") surviving for the hosts it
+# was never tested against, and it would have hit all four hosts registered today.
+# Built from EMITTED_HOST_IDS so a newly registered host is negatable immediately.
 NEGATED_LOCATOR_RE = re.compile(
-    r"~\s*(?:[A-Za-z]{2,8}:)?(?:"
+    r"~\s*(?:"
+    r"(?:" + "|".join(EMITTED_HOST_IDS) + r"):[^\s,;)\]]+"
+    r"|(?:[A-Za-z]{2,8}:)?(?:"
     r"ark:/\d+/[\w.:\-]+"
     r"|[13]:1:[A-Z0-9][A-Z0-9\-]*"
     r"|(?:Family[Ss]earch\s+)?ARK\s+[A-Z0-9]{3,}-[A-Z0-9]{3,}"
     r"|metryki\.genealodzy\.pl/[^\s)\]]+"
     r"|szukajwarchiwach\.(?:gov\.pl|pl)/[^\s)\]]+"
     r"|PL(?:_\d+){3,4}\.jpg"
+    r")"
     r")",
     re.IGNORECASE,
 )
@@ -278,12 +340,6 @@ HOST_LOCATOR_PATTERNS = [
     (re.compile(r"\b(PL(?:_\d+){3,4}\.jpg)\b", re.IGNORECASE), "agad", "image"),
 ]
 
-# The SHORT host ids the migration emits as `host:` prefixes. Detection keys on
-# these (not full words like "FamilySearch") so a prose "FamilySearch: the site"
-# is never mistaken for a locator line. Includes hosts with no legacy pattern
-# (anc/wt/etc.) whose locators only ever appear host-prefixed.
-EMITTED_HOST_IDS = ["fs", "anc", "wt", "antenati", "metryki", "szukajwarchiwach",
-                    "agad", "tna"]
 # A host-prefixed locator token: a short host id, a colon, then a non-space run.
 # PREFIX detector only — it says "a locator starts here", not "this cites a record".
 # The census must not count on it alone (a prose `fs:1:1:` matches); use
