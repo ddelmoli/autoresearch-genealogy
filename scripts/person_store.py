@@ -461,6 +461,77 @@ def _parse_meta_block(line):
     return out
 
 
+def set_meta_key(line, key, value):
+    """Set `key` on a `- meta:` line, REPLACING it in place if already present.
+
+    ** THE WRITER-SIDE HALF OF deferred 25 (02 AUG 2026). ** The gate
+    (`gen_person_index.duplicate_meta_keys`) DETECTS a duplicated key after the
+    fact; this stops one being written. A meta block is valid YAML flow mapping
+    and LAST WINS, so prepending `fs: <pid>` to a line that already carries
+    `fs: TBD` silently discards the new value and leaves every gate green — which
+    is exactly what happened once, and was caught only because two lanes
+    contradicted each other.
+
+    Anything banking an external id (`fs`, `wt`, `anc`) into a meta block should
+    go through here rather than splicing text. Returns the new line; the input is
+    not mutated. A non-meta line, or the legacy `;` form, is returned UNCHANGED —
+    this deliberately does not invent a flow mapping where none exists.
+
+    New keys are inserted before `flags:` when present (kept last by convention),
+    else before the closing brace, matching `build_edges.upsert_edges`.
+    """
+    m = _META.match(line)
+    if not m:
+        return line
+    raw = m.group(1).strip()
+    if not raw.startswith("{"):
+        return line                       # legacy `;` form: not ours to rewrite
+    val = "" if value is None else str(value)
+    items = _flow_split(raw)
+    out, replaced = [], False
+    for part in items:
+        k, sep, _ = part.partition(":")
+        if sep and k.strip().lower() == key.lower():
+            if replaced:
+                continue                  # collapse a PRE-EXISTING duplicate
+            out.append(f"{k.strip()}: {val}")
+            replaced = True
+        else:
+            out.append(part.strip())
+    if not replaced:
+        idx = next((i for i, p in enumerate(out)
+                    if p.split(":", 1)[0].strip().lower() == "flags"), len(out))
+        out.insert(idx, f"{key}: {val}")
+    return line[:m.start(1)] + "{" + ", ".join(out) + "}" + \
+        line[m.start(1) + len(m.group(1)):]
+
+
+def _flow_split(s):
+    """Top-level comma split of a flow mapping body (quote- and bracket-aware)."""
+    s = s.strip()
+    if s.startswith("{") and s.endswith("}"):
+        s = s[1:-1]
+    out, buf, depth, inq = [], "", 0, None
+    for ch in s:
+        if inq:
+            buf += ch
+            if ch == inq:
+                inq = None
+        elif ch in "'\"":
+            inq = ch; buf += ch
+        elif ch in "[{":
+            depth += 1; buf += ch
+        elif ch in "]}":
+            depth -= 1; buf += ch
+        elif ch == "," and depth == 0:
+            out.append(buf); buf = ""
+        else:
+            buf += ch
+    if buf.strip():
+        out.append(buf)
+    return [p for p in out if p.strip()]
+
+
 def _flow_mapping_fallback(s):
     """Dependency-free `{k: v, ...}` parser (comma-split respecting quotes/brackets)."""
     s = s.strip()

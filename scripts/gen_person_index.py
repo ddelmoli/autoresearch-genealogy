@@ -104,24 +104,22 @@ def is_person_entry(name, paren):
                 or DATE_SIG.search(paren) or KIN_SIG.search(paren))
 
 
-def _parse_flow_mapping(s):
-    """Parse a YAML flow-mapping `{k: v, k: v}` to a dict, zero-dependency.
+def _split_flow_items(s):
+    """Split a YAML flow mapping body into its TOP-LEVEL `k: v` items.
 
-    The v3 meta block is a VALID YAML flow-mapping (so any YAML tool / merge-back
-    reads it), but the local tooling must not hard-depend on PyYAML. If PyYAML is
-    present we use it; otherwise this small reader handles the simple subset we
-    emit (flat scalar values, optional quoting, ints). Values never contain an
-    unquoted comma/brace (the emitter quotes any that would)."""
+    Comma-splits while respecting quotes AND brackets, so `parents: '[P-A, P-B]'`
+    is ONE item and a quoted value containing a comma is not torn in half.
+
+    ** SHARED ON PURPOSE (02 AUG 2026). ** `_parse_flow_mapping` (which reads the
+    record) and `duplicate_meta_keys` (which polices it) must agree on where one
+    key ends and the next begins, or the gate can miss a duplicate the reader
+    acts on -- two readers, one entry. This is that one computation.
+    """
     s = s.strip()
-    try:
-        import yaml  # optional; used if installed
-        return {str(k).lower(): v for k, v in (yaml.safe_load(s) or {}).items()}
-    except ImportError:
-        pass
     if s.startswith("{") and s.endswith("}"):
         s = s[1:-1]
     out, buf, depth, inq = [], "", 0, None
-    for ch in s:                      # comma-split respecting quotes/brackets
+    for ch in s:
         if inq:
             buf += ch
             if ch == inq:
@@ -138,6 +136,24 @@ def _parse_flow_mapping(s):
             buf += ch
     if buf.strip():
         out.append(buf)
+    return out
+
+
+def _parse_flow_mapping(s):
+    """Parse a YAML flow-mapping `{k: v, k: v}` to a dict, zero-dependency.
+
+    The v3 meta block is a VALID YAML flow-mapping (so any YAML tool / merge-back
+    reads it), but the local tooling must not hard-depend on PyYAML. If PyYAML is
+    present we use it; otherwise this small reader handles the simple subset we
+    emit (flat scalar values, optional quoting, ints). Values never contain an
+    unquoted comma/brace (the emitter quotes any that would)."""
+    s = s.strip()
+    try:
+        import yaml  # optional; used if installed
+        return {str(k).lower(): v for k, v in (yaml.safe_load(s) or {}).items()}
+    except ImportError:
+        pass
+    out = _split_flow_items(s)
     d = {}
     for part in out:
         k, _, v = part.partition(":")
@@ -169,6 +185,43 @@ def parse_meta(block):
         if k and v:
             out[k] = v
     return out
+
+
+def duplicate_meta_keys(block):
+    """Keys appearing MORE THAN ONCE in a `- meta:` flow mapping. (deferred 25)
+
+    ** WHY THIS IS A GATE AND NOT A NOTE. ** `{id: P-0XAMP1, fs: VVVV-VVV, ...,
+    fs: TBD}` is VALID YAML flow-mapping syntax and the LAST value wins, so the
+    entry advertised a banked FS PID while every reader saw `TBD`. Nothing
+    objected: integrity (0 HARD), build_edges --validate (structural 0),
+    prose_audit (0/0/0), entry_boundary (0) and the pre-commit hook were all
+    green with a discarded value sitting in the machine record.
+
+    It surfaced only because TWO LANES CONTRADICTED EACH OTHER — a ROTATE draw
+    listed as an EXISTENCE_PROBE a person whose FS profile the VERIFY iteration
+    had just read and cited. That is not a detection mechanism.
+
+    Uses `_split_flow_items`, the SAME splitter `_parse_flow_mapping` reads with,
+    so the gate and the reader cannot disagree about where one key ends. Returns a
+    sorted list of duplicated key names; [] when clean or not a flow mapping.
+    """
+    m = META.search(block)
+    if not m:
+        return []
+    raw = m.group(1).strip()
+    if not raw.startswith("{"):
+        return []                      # legacy `;` form: not a flow mapping
+    parts = _split_flow_items(raw)
+    seen, dups = set(), set()
+    for p in parts:
+        k, sep, _ = p.partition(":")
+        if not sep:
+            continue
+        k = k.strip().lower()
+        if not k:
+            continue
+        (dups if k in seen else seen).add(k)
+    return sorted(dups)
 
 
 def parse_vitals(paren):
@@ -351,6 +404,12 @@ def integrity_check(entries, args):
                        the primary key and must be unique / never reused).
       MISSING_ID     — entry has no internal id (HARD; every person needs one —
                        run mint_ids.py --apply).
+      DUP_META_KEY   — a key appears TWICE in one `- meta:` flow mapping (HARD,
+                       added 02 AUG 2026, deferred 25; baseline 0). Valid YAML,
+                       LAST WINS, so a banked value is silently discarded and
+                       every gate stays green. It is a machine-vs-machine
+                       contradiction inside the machine record, which is this
+                       vault's stated bar for BLOCKING. See duplicate_meta_keys().
       DUP_FS_PID     — one FS PID on two entries (ADVISORY only: FS PID is now an
                        external attribute, not the identity key, so FS conflation/
                        merge can legitimately point two distinct ids at one PID;
@@ -370,7 +429,7 @@ def integrity_check(entries, args):
                        decision, not a cleanup. What this check is for is stopping
                        the drift GROWING. `mint_ids.py` already emits conforming ids;
                        every violation is hand-authored.
-    Exit 1 only on a HARD violation (DUP_ID or MISSING_ID)."""
+    Exit 1 only on a HARD violation (DUP_ID, MISSING_ID or DUP_META_KEY)."""
     from collections import Counter
     import re as _re
     _ID_GRAMMAR = _re.compile(r"^P-[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{6}$")
@@ -389,11 +448,15 @@ def integrity_check(entries, args):
     needs_meta = [e for e in entries
                   if not (e["id"] and e["gen"] is not None)]
     odd_ids = [e for e in entries if e["id"] and not _ID_GRAMMAR.match(e["id"])]
+    dup_keys = [(e, duplicate_meta_keys(e.get("block") or ""))
+                for e in entries]
+    dup_keys = [(e, d) for e, d in dup_keys if d]
 
     print(f"narrative canonical entries: {len(entries)}")
     print("\n=== NARRATIVE INTEGRITY (post-Person_Index retirement) ===")
     print(f"  DUP_ID (same id on >1 entry):        {len(dup_ids)}   [HARD]")
     print(f"  MISSING_ID (entry has no id):        {len(noid)}   [HARD]")
+    print(f"  DUP_META_KEY (key twice in one meta):  {len(dup_keys)}   [HARD; last-wins silently discards a value]")
     print(f"  DUP_FS_PID (1 FS PID, >1 entry):     {len(dup_pids)}   [advisory; compare vs your .autoresearch.json baseline]")
     print(f"  NEEDS_META (no id or no generation): {len(needs_meta)}   [advisory]")
     print(f"  ID_GRAMMAR (id not P- + 6 Crockford):  {len(odd_ids)}   [advisory; hand-authored, see docstring]")
@@ -401,6 +464,8 @@ def integrity_check(entries, args):
         print(f"    DUP_ID {i} x{c}")
     for e in noid[:args.limit]:
         print(f"    MISSING_ID {e['file']:<34} {e['name'][:34]}")
+    for e, d in dup_keys[:args.limit]:
+        print(f"    DUP_META_KEY {e['file']:<34} {e['name'][:30]:<30} repeated: {', '.join(d)}")
     for p, ids in list(dup_pids.items())[:args.limit]:
         print(f"    DUP_FS_PID {p}: {', '.join(sorted(ids))}")
     for e in needs_meta[:args.limit]:
@@ -408,8 +473,8 @@ def integrity_check(entries, args):
         print(f"    NEEDS_META {e['file']:<34} {e['name'][:34]:<34} missing {','.join(miss)}")
     for e in odd_ids[:args.limit]:
         print(f"    ID_GRAMMAR {e['id']:<10} {e['file']:<34} {e['name'][:34]}")
-    hard = len(dup_ids) + len(noid)
-    print(f"\n  HARD violations (DUP_ID + MISSING_ID): {hard}")
+    hard = len(dup_ids) + len(noid) + len(dup_keys)
+    print(f"\n  HARD violations (DUP_ID + MISSING_ID + DUP_META_KEY): {hard}")
     return 1 if hard else 0
 
 
