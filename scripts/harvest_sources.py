@@ -591,6 +591,14 @@ def parse_person_index() -> Dict[str, dict]:
     return out
 
 
+# ** THE ONE DEFINITION OF A STRUCTURAL BREAK (02 AUG 2026). **
+# `entry_boundary_audit` used to keep its own copy of this pattern with a comment
+# saying "the same structural breaks the census honours" -- and the moment the census
+# gained `### Generation N`, the two disagreed and the HARD entry-boundary gate went
+# from 0 to 80 findings. Two readers, one entry: the gate now IMPORTS this.
+BREAK_LINE = re.compile(r"^(?:---\s*|##\s.*|#{1,4}\s+Generation\s+\d+.*)$", re.I)
+
+
 def truncate_at_break(body: str) -> str:
     """Cut an entry body at the first structural break (`---` rule or `## ` heading)
     after its header line.
@@ -600,10 +608,29 @@ def truncate_at_break(body: str) -> str:
     prose, and any PID named in that prose inherits the entry's records — a
     false-credit bug fixed 02 JUL 2026 and preserved here across the move to
     meta-anchored detection.
+
+    ** `### Generation N` JOINED THE BREAK SET 02 AUG 2026 (deferred 36, measured). **
+    A Generation heading is a STRUCTURAL boundary — the last entry of one generation
+    was absorbing the start of the next. Measured effect: exactly 2 entries, 3
+    records, both verified true by reading: one entry was absorbing a titled
+    `### Generation 8: <Line>` heading, another a bare `### Generation 29` whose record
+    sits after the heading and belongs to the next section. The old `##\\s` alternative
+    could not match it, because `###` puts a third `#` where that pattern wants space.
+
+    ⚠ **AND NOTHING ELSE WAS ADDED, WHICH IS THE POINT.** Two other candidate signals
+    were measured and REJECTED, both because they delete real evidence:
+      - a line-start **bold** header — 3 entries change and ONE IS A FALSE POSITIVE:
+        one entry's block is cut by `**Read the prior work before researching him
+        again** — …`, which is bold PROSE, and its only record sits below it. A regex
+        cannot tell a bold section header from a sentence opening with a bold phrase.
+      - a GENERIC `###` sub-heading — same false positive, because an entry legitimately
+        contains narrative sub-headings (`### What the 02 AUG 2026 sweep actually added`).
+    A genuine non-entry section that is NOT introduced by a Generation heading is closed
+    by writing an explicit `---` above it, which this function already honours.
     """
     lines = body.splitlines()
     for i, ln in enumerate(lines[1:], start=1):
-        if re.match(r"^(?:---\s*|##\s.*)$", ln):
+        if BREAK_LINE.match(ln):
             return "\n".join(lines[:i])
     return body
 

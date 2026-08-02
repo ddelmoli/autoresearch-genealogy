@@ -86,9 +86,11 @@ import vault_config
 SOURCES_BULLET = re.compile(
     r"^\s*[-*]\s*\*\*(?:Sources|FS-attached sources)\*\*", re.IGNORECASE)
 
-# The same structural breaks the census honours (`harvest_sources.truncate_at_break`):
-# a horizontal rule or a section heading ends the current entry body.
-BREAK_LINE = re.compile(r"^(?:---\s*|##\s.*)$")
+# The same structural breaks the census honours — IMPORTED, not re-declared. This
+# was a duplicated regex with a comment CLAIMING they matched; when the census added
+# `### Generation N` (deferred 36) the copies diverged and this HARD gate reported 80
+# spurious findings. One definition, two readers.
+from harvest_sources import BREAK_LINE  # noqa: E402
 
 
 BOLD_LINE = re.compile(r"^[\-\*\s]*\*\*(.+?)\*\*")
