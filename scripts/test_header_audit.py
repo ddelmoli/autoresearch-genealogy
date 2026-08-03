@@ -37,14 +37,16 @@ def check(cond, label):
 class Rec:
     """Minimal stand-in for a PersonRecord: violations() reads only these."""
 
-    def __init__(self, paren, date_keys=(), id="P-FIXTR"):
+    def __init__(self, paren, date_keys=(), id="P-FIXTR", born=None, died=None):
         self.id = id
         self.source_file = "Family_Tree_Fixture.md"
+        self.born = born
+        self.died = died
         self.raw = {"header_paren": paren, "meta_date_keys": tuple(date_keys)}
 
 
-def rules(paren, date_keys=("born",), id="P-FIXTR"):
-    return sorted({r for r, _ in H.violations(Rec(paren, date_keys, id))})
+def rules(paren, date_keys=("born",), id="P-FIXTR", born=None, died=None):
+    return sorted({r for r, _ in H.violations(Rec(paren, date_keys, id, born, died))})
 
 
 BOTH = ("born", "died")
@@ -272,6 +274,38 @@ def main():
     # through `except Exception`. That silently turned this documented skip into
     # a hard failure on any machine without a vault (i.e. every fresh clone).
     import vault_config
+    # --- deferred 22c: R4 must NOT fire on a floruit restated as bounds -------
+    # `born: BEF 1714` + `died: AFT 1714` is ONE fact ("alive in 1714") written
+    # twice, and it is tautological. The header grammar keeps a floruit as PROSE
+    # and forbids converting one into a vital field, so obeying R4 here would
+    # manufacture a birth claim. Two rules, opposite instructions; the data was
+    # right both times.
+    print("\n--- R4 vs the floruit rule (deferred 22c) ---")
+    check(rules("fl. 1714, Anytown, Anyshire, Scotland", BOTH,
+                born="BEF 1714", died="AFT 1714") == [],
+          "a floruit with BEF Y / AFT Y bounds is NOT an R4 violation")
+    check(rules("alive 1852 Villagio, profession Lavoratore", BOTH,
+                born="BEF 1852", died="AFT 1852") == [],
+          "the `alive <year>` spelling is treated the same -- it is the META that decides")
+    check(rules("(Villagio Alta)", BOTH,
+                born="BEF 1819", died="AFT 1819") == [],
+          "and a header with NO floruit WORD is exempt too: the test keys on the meta, "
+          "never on free prose")
+
+    # NEGATIVE CONTROLS -- the exemption must stay narrow, or R4 stops working.
+    check(rules("~b.1810 Villagio; alive 1850-1860", BOTH,
+                born="ABT 1810", died="AFT 1860") == ["R4"],
+          "NEGATIVE CONTROL: DIFFERENT years are a real estimate + a real bound, "
+          "so R4 still fires")
+    check(rules("1743; 1743; FS PID XXXX-XXX", BOTH,
+                born="1743", died="1743") == ["R4"],
+          "NEGATIVE CONTROL: plain equal years are NOT floruit bounds -- R4 fires")
+    check(rules("fl. 1714, Anytown", BOTH,
+                born="BEF 1714", died="AFT 1720") == ["R4"],
+          "NEGATIVE CONTROL: BEF/AFT with MISMATCHED years is not a floruit")
+    check(rules("fl. 1714, Anytown", ("born",), born="BEF 1714") == ["R4"],
+          "NEGATIVE CONTROL: a lone BEF with no matching AFT is not a floruit")
+
     vault = vault_config.resolve_vault_optional()
     if not vault:
         print("  skip (no vault resolvable)")

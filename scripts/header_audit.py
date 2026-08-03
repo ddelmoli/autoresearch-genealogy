@@ -165,6 +165,27 @@ def violations(record):
     meta_keys = record.raw.get("meta_date_keys", ())
     # R4 keys on the DATE fields only -- a lone `born_phrase` is not a date.
     has_record_date = any(k in meta_keys for k in ("born", "died"))
+    # ** NARROWED 03 AUG 2026 (deferred 22c), and the reason is a RULE CONFLICT,
+    # not a backlog. ** A FLORUIT restated as bounds -- `born: BEF 1714` with
+    # `died: AFT 1714`, the SAME year -- is not two dates. It is the single fact
+    # "alive in 1714" written twice, and it is TAUTOLOGICAL: alive in Y implies
+    # born before Y and died after Y, for everyone, always.
+    #
+    # R4 demanded such a header "expose a vital field", but the header grammar
+    # says the opposite in as many words: a floruit stays FREE PROSE, and
+    # "do NOT 'helpfully' convert a floruit or a document number into a vital
+    # field -- those exact values are what the old positional guessing turned into
+    # births." Obeying R4 here would write `b. BEF 1714` and manufacture a birth
+    # claim out of an attestation. Two rules, opposite instructions, and the data
+    # was right both times.
+    #
+    # Measured across the whole vault: 24 entries carry this signature, 20 of them
+    # were R4 findings, and 19 of those 20 say `fl.` or `alive` in the header --
+    # i.e. the corpus agrees this is one coherent class. The test keys on the META
+    # signature rather than the header wording, because the header is free prose
+    # BY DESIGN and a check that depends on the author's word choice is fragile.
+    if has_record_date and _is_floruit_bounds(record):
+        return []
 
     found = []
     if not paren.strip():
@@ -205,6 +226,26 @@ def violations(record):
     if not saw_vital and has_record_date:
         found.append(("R4", "record has dates, header has no marked vital field"))
     return found
+
+
+_FLOR_B = re.compile(r"^BEF\s+(\d{3,4})$", re.I)
+_FLOR_D = re.compile(r"^AFT\s+(\d{3,4})$", re.I)
+
+
+def _is_floruit_bounds(record):
+    """True when born/died are the SAME year as BEF/AFT -- a floruit, not two dates.
+
+    `born: BEF 1714` + `died: AFT 1714` says only "alive in 1714". It is a
+    restatement of a floruit, and the header grammar keeps a floruit as prose. See
+    the R4 narrowing note in check_header for the measurement and the rule conflict.
+
+    ⚠ DELIBERATELY NARROW. Different years are NOT this class: `born: ABT 1810`
+    with `died: AFT 1860` is a real birth estimate plus a real lower bound on the
+    death, and R4 should still ask that header to mark its vitals.
+    """
+    b = _FLOR_B.match(str(getattr(record, "born", "") or "").strip())
+    d = _FLOR_D.match(str(getattr(record, "died", "") or "").strip())
+    return bool(b and d and b.group(1) == d.group(1))
 
 
 def oracle(record):
