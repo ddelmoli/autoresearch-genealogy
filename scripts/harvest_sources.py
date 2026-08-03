@@ -1020,6 +1020,43 @@ def is_structural(pid: Optional[str], gen: Optional[int], region: Optional[str])
     return False
 
 
+def fold_matches(matches):
+    """Fold a person's crediting blocks into ONE (fname, name, records, len, per_host, scholarly).
+
+    ** deferred 35 (operator, 03 AUG 2026, option 1): RECORDS take the MAX over
+    blocks, HOSTS take the UNION. They answer different questions. **
+
+    MAX is right for "how many records": the same record cited in two blocks must
+    not double-count, which is what Spec 05 settled and is unchanged here. But
+    taking the winning block's `per_host` WHOLESALE also discarded every host cited
+    in the OTHER blocks -- so a person genuinely documented by two repositories
+    could read `hosts 1, SINGLE_SOURCED` with no error anywhere. The split across
+    blocks is the SANCTIONED inline-collateral convention (Spec 05), not a defect
+    in the data, so the population is not one entry.
+
+    This bites exactly the metric the 01 AUG biography ruling is about: a session
+    can corroborate correctly and watch MULTI_SOURCED refuse to move. Measured when
+    raised, only ONE person was affected -- so it is a TRAP rather than a live
+    distortion, and it scales with the goal, since every future corroboration of
+    someone whose records sit inline in a relative's entry lands in it silently.
+
+    Per-host COUNTS take the max per host, not the sum, for the same
+    anti-double-counting reason. Only the KEY COUNT feeds SINGLE_SOURCED /
+    MULTI_SOURCED (`"hosts": len(per_host)` in gather_records).
+
+    ONE home for the rule so the census and its test cannot drift apart.
+    """
+    best = max(matches, key=lambda m: m[2])
+    if len(matches) == 1:
+        return best
+    fname, narr_name, ark_count, body_len, _per_host, scholarly = best
+    unioned = {}
+    for m in matches:
+        for host, n in (m[4] or {}).items():
+            unioned[host] = max(unioned.get(host, 0), n)
+    return (fname, narr_name, ark_count, body_len, unioned, scholarly)
+
+
 def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, include_structural=False):
     """Build the per-PID coverage records (shared by the report and the heartbeat)."""
     pi = parse_person_index()
@@ -1040,9 +1077,7 @@ def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, inclu
         if not matches:
             category, ark_count, per_host, fname, narr_name = "NO_NARRATIVE", 0, {}, "", ""
         else:
-            # Use the match with the most records (best-cited entry).
-            best = max(matches, key=lambda m: m[2])
-            fname, narr_name, ark_count, body_len, per_host, scholarly = best
+            fname, narr_name, ark_count, body_len, per_host, scholarly = fold_matches(matches)
             category = classify(ark_count)
             if (category == "SOURCE_GAP" and not include_structural
                     and is_structural(pid, info["gen"], info["region"])):
