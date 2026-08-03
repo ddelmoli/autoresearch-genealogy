@@ -130,6 +130,30 @@ DEFAULT_CADENCE = 20
 CADENCE_FRACTION = DEFAULT_SAMPLE_PERCENT / 100.0
 # At least one entry from EVERY arm, every session. The anti-assumption device.
 EXPLORATION_FLOOR = 1
+
+# deferred 42 (operator, 03 AUG 2026) — OPPORTUNISTIC AUDIT, not a campaign.
+# A raw locator list overstates a person's OWN records because limbs (g) and (h)
+# (children's and siblings' records) are most of a typical FS Sources tab; measured
+# inflation ran 4x-23x across five people. The backlog is deliberately NOT swept.
+# But a drawn row is different: the poll opens the Sources tab regardless, and the
+# event descriptor sits in the same citation string as the collection title — so
+# the regrouping costs nothing WHILE THE PAGE IS OPEN and is unrecoverable after
+# (a bare ARK already in the vault carries no descriptor at all).
+#
+# 4 is the WELL_SOURCED threshold itself: below it there is nothing to inflate.
+AUDIT_ARK_FLOOR = 4
+
+
+def needs_ark_grouping_audit(pid, ark_count):
+    """Should this DRAWN row have its locators re-grouped by event while open?
+
+    ONE home for the predicate so the printed draw, the `--json` payload and the
+    test cannot drift apart. Two conditions, and both are load-bearing:
+      * a live PID  -- no Sources tab to open without one, so nothing to audit;
+      * >= AUDIT_ARK_FLOOR cited ARKs -- below the WELL_SOURCED threshold there is
+        no count worth inflating.
+    """
+    return bool(pid) and (ark_count or 0) >= AUDIT_ARK_FLOOR
 # No exploitation on a tiny sample: an arm with fewer than this many COMPLETED
 # polls is filled by exploration (least-sampled first), never by its hit-rate.
 # The code-side enforcement of the protocol's "do not tune on n<=3" rule.
@@ -486,6 +510,11 @@ def build_candidates(vault, gen_lo=None, gen_hi=None, confidence=None, region=No
                              str(ext.get("fs") or "absent").lower())),
             "has_wt": bool(ext.get("wt") or ext.get("wikitree")),
             "has_anc": bool(ext.get("anc") or ext.get("ancestry")),
+            # deferred 42 (operator, 03 AUG 2026): the WELL_SOURCED backlog is NOT
+            # audited as a campaign -- but a row DRAWN here is audited on the spot,
+            # because the poll opens the Sources tab anyway and the event descriptors
+            # are free only while it is open. A bare ARK in the vault carries none.
+            "audit_ark_grouping": needs_ark_grouping_audit(rec.get("pid"), rec["ark_count"]),
         })
     return out
 
@@ -585,6 +614,12 @@ def print_draw(result, clamp_note=None, rate=None):
         print(f"{i:>3}. [{c['arm']}] {ident:<10} {str(c['name'])[:42]:<42} "
               f"Gen {str(c['gen']):>3}  {c['region']}")
         print(f"      draw: {c['draw_reason']}; prior: {why}; cooldown: {c['_why']}")
+        if c.get("audit_ark_grouping"):
+            print(f"      ** AUDIT ({c['ark_count']} ARKs): re-group by EVENT before trusting the count "
+                  f"(deferred 42) **")
+            print("         limbs (g)+(h) — children's and siblings' records — are most of a typical")
+            print("         Sources tab; measured inflation ran 4x-23x. You are opening this profile")
+            print("         anyway, which is the only moment the event descriptors are free.")
         if c.get("probes"):
             print("      probe: " + "; ".join(f"{p} ({w})" for p, w in c["probes"]))
     print()

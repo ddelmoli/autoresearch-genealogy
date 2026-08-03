@@ -527,6 +527,27 @@ def test_census_excludes_living():
             sys.modules.pop(mod, None)
 
 
+def test_drawn_high_ark_rows_are_flagged_for_the_grouping_audit():
+    """deferred 42 (operator, 03 AUG 2026): the WELL_SOURCED backlog is NOT swept,
+    but a row DRAWN by ROTATE is audited on the spot -- the poll opens the Sources
+    tab anyway, and the event descriptors are free only while it is open.
+
+    Calls the REAL predicate, not a copy of it: a duplicated rule in the test would
+    keep passing while the shipped one broke.
+    """
+    f = PR.needs_ark_grouping_audit
+    check(f("XXXX-XXX", 30), "a 30-ARK drawn row is flagged for the grouping audit")
+    check(f("XXXX-XXX", PR.AUDIT_ARK_FLOOR),
+          "a row exactly AT the WELL_SOURCED threshold is flagged")
+    check(not f("XXXX-XXX", 2),
+          "NEGATIVE CONTROL: a 2-ARK row is not flagged (nothing to inflate)")
+    check(not f("XXXX-XXX", 0), "NEGATIVE CONTROL: a 0-ARK row is not flagged")
+    check(not f(None, 99),
+          "NEGATIVE CONTROL: a PID-less row is not flagged (no Sources tab to open)")
+    check(PR.AUDIT_ARK_FLOOR == 4,
+          "the audit floor IS the WELL_SOURCED threshold, not a second magic number")
+
+
 def main():
     test_exploration_floor()
     test_floor_negative_control()
@@ -546,6 +567,7 @@ def main():
     test_research_privacy_gate()
     test_json_stdout_stays_machine_readable()
     test_census_excludes_living()
+    test_drawn_high_ark_rows_are_flagged_for_the_grouping_audit()
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)
 
