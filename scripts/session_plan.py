@@ -595,6 +595,7 @@ def lane_defects(vault, include_adjudicated=False):
     a declared row would be the "never bulk-declare to reach 0" failure in reverse.
     """
     rows, seen = [], set()
+    tracked = open_question_ids(vault)
     # 1. Gate findings first -- these are the ones nothing has ever drawn.
     try:
         import build_edges as be
@@ -605,23 +606,39 @@ def lane_defects(vault, include_adjudicated=False):
                 continue
             seen.add(cid)
             r = info.get(cid, {})
-            rows.append({"id": cid, "name": r.get("name") or "?", "gen": cg,
-                         "file": r.get("file") or "",
-                         "_defect": "gate",
-                         "why": f"GATE: parent gen {pg}, expected {cg + 1} — an "
-                                f"UNEXPLAINED generation mismatch on a named edge "
-                                f"(not declared collapse). Resolve it, or declare it "
-                                f"in `known_gen_collapse` with a note."})
+            base = (f"GATE: parent gen {pg}, expected {cg + 1} — an UNEXPLAINED "
+                    f"generation mismatch on a named edge (not declared collapse).")
+            if cid in tracked:
+                # deferred 44: already characterised as an Open_Question, so the only
+                # honest disposition has been taken and re-noticing it counts for
+                # nothing (prompt 22: a question counts ONCE). Demoted, never removed.
+                rows.append({"id": cid, "name": r.get("name") or "?", "gen": cg,
+                             "file": r.get("file") or "",
+                             "_defect": "gate-tracked",
+                             "why": base + " ⚠ ALREADY TRACKED in Open_Questions — "
+                                    "re-noticing it disposes of nothing; it needs the "
+                                    "resolver named there, not another sighting."})
+            else:
+                rows.append({"id": cid, "name": r.get("name") or "?", "gen": cg,
+                             "file": r.get("file") or "",
+                             "_defect": "gate",
+                             "why": base + " Resolve it, or declare it in "
+                                    "`known_gen_collapse` with a note."})
     except Exception as e:                         # never silently drop the population
         print(f"session_plan: WARNING - gate findings unavailable for the IMPROVE "
               f"defect pool ({type(e).__name__}: {e}). `?` edges still offered.",
               file=sys.stderr)
     # 2. Then the `?` edges, as ONE input rather than the whole lane.
+    # ! PRESERVE an incoming `_defect`. lane_verify ranks its FS-GAP RE-CHECK rows LAST
+    # on purpose ("a settled edge worth a second look must never outrank an edge nobody
+    # has looked at") by tagging them `revisit` and appending them. Overwriting that tag
+    # with "edge" here silently undid it: measured 03 AUG 2026, all 4 re-check rows came
+    # back at rank 1 and, being Gen 6, sorted AHEAD of every genuinely open edge.
     for r in lane_verify(vault, include_adjudicated=include_adjudicated):
         if r["id"] in seen:
             continue
         seen.add(r["id"])
-        rows.append({**r, "_defect": "edge"})
+        rows.append({**r, "_defect": r.get("_defect") or "edge"})
     # 3. Then UNMARKED edges -- the 96.8% nothing has ever re-examined (39-residual).
     for r in lane_edge_audit(vault):
         if r["id"] in seen:
@@ -635,7 +652,47 @@ def lane_defects(vault, include_adjudicated=False):
 
 # gate = machine-found evidence of a problem; edge = the vault's own `?` mark;
 # audit = NO signal at all, sampled because nothing else ever looks (39-residual).
-_DEFECT_RANK = {"gate": 0, "edge": 1, "audit": 2}
+# Lower ranks are offered first. The two DEMOTED kinds are work that has already been
+# looked at: `gate-tracked` is a gate finding already characterised as an Open_Question
+# (deferred 44), and `revisit` is a settled fs-gap adjudication worth a cheap second
+# look (deferred 38). Both must sit behind anything nobody has examined -- otherwise the
+# lane presents answered work as fresh work, which is what makes a worklist stop being
+# trusted. Neither is REMOVED: the lane size stays honest.
+_DEFECT_RANK = {"gate": 0, "edge": 1, "audit": 2, "gate-tracked": 3, "revisit": 4}
+
+
+def open_question_ids(vault):
+    """Vault ids named anywhere in the LIVE `Open_Questions.md`. (deferred 44)
+
+    ** WHY THE BUILDER READS THE REGISTER. ** The IMPROVE defect pool ranked a GATE
+    finding first whether or not anyone had already answered it. Measured 03 AUG 2026
+    (session #135): both of the vault's remaining PARENT-GEN mismatches were already
+    fully characterised in Q126 -- inversion warning and all -- yet the lane offered one
+    at rank 1. Prompt 22 is explicit that a question counts ONCE, for the sitting that
+    did the work, so the row was unworkable for credit and would have ranked first every
+    draw. `adjudicated` solved exactly this for `?` edges (deferred 32); the gate-finding
+    half of the population never got the equivalent.
+
+    ** THE REGISTER IS THE SOURCE OF TRUTH, so there is no second store to drift. **
+    A `gate_tracked:` meta key was the alternative and was NOT taken (operator, 03 AUG
+    2026): it would need its own staleness check, exactly as `ADJUDICATED_STALE` does,
+    and a stale marker HIDES a real candidate. Reading the register cannot go stale.
+
+    ⚠ Deliberately COARSE: any `P-` id anywhere in the file counts, including one named
+    incidentally by a question about something else. That is an accepted false-positive
+    cost because the consequence is a RANKING change, never a removal -- a wrongly
+    demoted row is still offered, just later. Resolved questions live in
+    `Open_Questions_Resolved.md` and are NOT read here: a resolved question should stop
+    suppressing its row.
+    """
+    import os
+    import re
+    p = os.path.join(vault, "Open_Questions.md")
+    try:
+        with open(p, encoding="utf-8") as fh:
+            return set(re.findall(r"P-[0-9A-Za-z]{5,7}", fh.read()))
+    except OSError:
+        return set()          # no register -> nothing is tracked; never a hard failure
 
 
 def edge_audit_coverage(vault):
