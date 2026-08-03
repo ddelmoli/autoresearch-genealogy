@@ -431,18 +431,58 @@ def lane_verify(vault, include_adjudicated=False):
     import gen_person_index as g
     edge_re = re.compile(r"(parents|spouse):\s*'\[([^\]]*)\]'")
     adj_re = re.compile(r"adjudicated:\s*'\[([^\]]*)\]'")
+    why_re = re.compile(r"adjudicated_why:\s*([a-z\-]+)")
     id_re = re.compile(r"P-[0-9A-Za-z]{5,7}")
     living_re = re.compile(r"life_status:\s*(living|unknown)")
-    rows = []
+
+    # ** WHICH ADJUDICATIONS COME BACK, AND WHY MOST DO NOT (deferred 38, measured). **
+    # The item asked for a blanket expiry clock on `adjudicated`. Measured over 47 rows,
+    # a clock helps SEVEN of them, and would re-offer 41 whose re-check a clock cannot
+    # trigger:
+    #   fs-gap 24 | contradicted 7 | hedge 6 | unstated 12
+    # A HEDGE expires when the named resolver is READ, and a CONTRADICTION when the
+    # sources are adjudicated -- both EVENTS, already tracked as Open_Questions. And of
+    # the fs-gap rows, only 7 have a real PID at the far end; the other 28 end at
+    # `fs: none`/`TBD`, where re-checking means a full existence probe with identifier
+    # rejection (an FS tree search never returns zero). Re-offering those annually would
+    # re-run the expensive work the adjudication exists to record -- the "same edge
+    # walked in three sittings" failure deferred 32 was written to stop.
+    # So ONLY `fs-gap` WITH A REAL FAR-END PID is re-offered: a contributor linking two
+    # profiles that both exist is exactly the change a cheap re-read catches. They are
+    # ranked LAST so they never crowd genuinely open work, and the existing offer
+    # cooldown spaces them -- no new clock, no new date key.
+    fs_of = {}
+    for p in g.parse_narrative():
+        if p.get("id"):
+            fs_of[p["id"]] = str(g.parse_meta(p.get("block") or "").get("fs") or "")
+    recheckable = lambda tid: fs_of.get(tid, "") not in ("", "TBD", "none")
+
+    rows, revisits = [], []
     for p in g.parse_narrative():
         meta = p.get("block") or ""
         if living_re.search(meta):
             continue  # privacy: a `?` here is unclearable by web research
         adj = set()
+        why = (why_re.search(meta) or [None, ""])[1] if why_re.search(meta) else ""
         if not include_adjudicated:
             m = adj_re.search(meta)
             if m:
                 adj = set(id_re.findall(m.group(1)))
+                if why == "fs-gap":
+                    # Re-offer the cheaply re-checkable ones as their OWN row. The ids
+                    # stay in `adj` deliberately: they are SETTLED, and letting them fall
+                    # through as ordinary `?` rows would present adjudicated work as work
+                    # nobody has looked at -- the exact misreporting `adjudicated` removed.
+                    back = sorted(t for t in adj if recheckable(t))
+                    if back:
+                        revisits.append({
+                            "id": p.get("id"), "name": p.get("name") or "?",
+                            "gen": p.get("gen"), "file": p.get("file") or "?",
+                            "_defect": "revisit",
+                            "why": f"RE-CHECK an FS-GAP adjudication ({len(back)} edge(s)) — "
+                                   f"both ends carry a live FS PID, so a contributor may have "
+                                   f"linked them since. Cheap: reload the family panel. If still "
+                                   f"unlinked, leave the `?` and the adjudication as they are."})
         marked, settled = [], 0
         for kind, ids in edge_re.findall(meta):
             # Count only `?` tokens whose TARGET id is not already adjudicated.
@@ -466,7 +506,12 @@ def lane_verify(vault, include_adjudicated=False):
                          "gen": p.get("gen"), "file": p.get("file") or "?",
                          "why": why})
     rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0))
-    return rows
+    # Re-checks go LAST: a settled edge worth a second look must never outrank an edge
+    # nobody has looked at. A row already in `rows` (it has other open `?` edges) is not
+    # duplicated.
+    have = {r["id"] for r in rows}
+    revisits.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0))
+    return rows + [r for r in revisits if r["id"] not in have]
 
 
 def verify_stale_pids(vault):

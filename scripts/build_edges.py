@@ -167,6 +167,7 @@ def validate_edges(limit=20):
     spouses = defaultdict(set)        # id -> {spouse_id}
     malformed = []                    # (id, key, raw_token)
     adj_stale = []                    # (id, adjudicated_id) — see below
+    adj_unexplained = []              # ids whose adjudication states no reason
     for r in rows:
         if not r["id"]:
             continue
@@ -189,6 +190,13 @@ def validate_edges(limit=20):
         for aid in edge_tokens(meta.get("adjudicated")):
             if aid not in unverified:
                 adj_stale.append((r["id"], aid))
+        # ADJUDICATED_UNEXPLAINED (deferred 38): the entry says an edge was walked and
+        # judged, but not WHY. The reason is what decides whether the judgement can ever
+        # go stale -- an FS-GAP can be overtaken by a contributor, a SCHOLARLY HEDGE only
+        # by reading the named source, PRIVACY never -- so without it nothing can tell a
+        # permanent stop from an unread article. Measured 02 AUG 2026: 12 of 47.
+        if meta.get("adjudicated") and not meta.get("adjudicated_why"):
+            adj_unexplained.append(r["id"])
 
     collapse_pairs, collapse_notes = vault_config.get_known_gen_collapse(VAULT) if VAULT else (set(), {})
     dangling, selfedge, recip, gen_bad, gen_declared = [], [], [], [], []
@@ -228,6 +236,9 @@ def validate_edges(limit=20):
     print(f"  PARENT-GEN MISMATCH (parent != child gen+1): {len(gen_bad)}   [unexplained; gen-backlog signal, not necessarily an edge bug]")
     print(f"  GEN_COLLAPSE (declared in .autoresearch.json): {len(gen_declared)}   [expected; pedigree collapse, every edge correct]")
     print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real IMPROVE defect candidate]")
+    print(f"  ADJUDICATED_UNEXPLAINED (no `adjudicated_why`): {len(adj_unexplained)}   [advisory; the reason decides whether the judgement can ever go stale]")
+    for c in adj_unexplained[:limit]:
+        print(f"    ADJ_WHY? {nm(c)} ({c}) adjudicated, but no reason recorded")
     for c, aid in adj_stale[:limit]:
         print(f"    ADJ_STALE {nm(c)} ({c}) adjudicated -> {aid} (no `?` edge to it)")
     for c, k, t in malformed[:limit]:
