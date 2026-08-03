@@ -74,6 +74,7 @@ from datetime import date, timedelta
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import privacy_gate
 import vault_config
+import person_store
 
 SNAPSHOT_FILE = "profile_review_snapshots.json"
 MAINTENANCE_FILE = ".maintenance.json"
@@ -476,8 +477,13 @@ def build_candidates(vault, gen_lo=None, gen_hi=None, confidence=None, region=No
             "confidence": rec["confidence"],
             "arm": arm,
             "open_question": q,
+            # deferred 41: a `~`-prefixed PID is a REJECTED profile, reported as
+            # its own state so an EXISTENCE_PROBE row says "already looked, and
+            # declined" rather than the "tbd"/"absent" that invites a re-search.
             "fs_state": ("pid" if rec.get("pid")
-                         else str(ext.get("fs") or "absent").lower()),
+                         else {"rejected": "rejected", "unknown": "tbd"}.get(
+                             person_store.external_id_state(ext.get("fs")),
+                             str(ext.get("fs") or "absent").lower())),
             "has_wt": bool(ext.get("wt") or ext.get("wikitree")),
             "has_anc": bool(ext.get("anc") or ext.get("ancestry")),
         })

@@ -440,6 +440,67 @@ _GEN_HDR = re.compile(r"^#{1,4}\s+Generation\s+(\d+)", re.I)
 _SECTION_HDR = re.compile(r"^#{1,2}\s+\S")
 
 
+EXTERNAL_ID_SENTINELS = {"TBD", "NONE", "-", ""}
+
+
+def external_id_state(value):
+    """Classify an external-id field (`fs`, `wt`, `anc`) into ONE of four states.
+
+    ** deferred_decisions 41 (02 AUG 2026), option 2. ** `fs: none` was carrying
+    two situations with OPPOSITE consequences:
+
+      ABSENT   -- searched, nothing is there. Creating the person on that
+                  platform is the CORRECT next action.
+      REJECTED -- something IS there and the vault declined it (a conflicting
+                  profile, an unreliable structure, the wrong man). Creating is
+                  exactly WRONG: it would push a duplicate onto a shared tree.
+
+    Nothing in the data separated them. The distinction survived only in prose,
+    in a header bullet, in two entries out of the whole vault -- and a
+    create-and-attach write-back was proposed on the strength of the bare
+    `none` and withdrawn only because someone happened to read the entry.
+
+    A REJECTED profile is now written as the PID with a `~` prefix
+    (`fs: ~XXXX-XXX`), reusing the convention `~locator` already established for
+    sources: **a thing you have deliberately declined is RECORDED, not erased.**
+    The PID is what makes the rejection re-checkable; a rejection with no
+    identifier decays into an unfalsifiable claim.
+
+    Returns "live" | "rejected" | "unknown" | "absent".
+      live      a real PID a harvest/walk can be run against
+      rejected  a real PID that was examined and declined -- NOT harvestable,
+                NOT re-checkable, and NOT a reason to create anything
+      unknown   `TBD` -- not yet searched
+      absent    `none` / empty -- searched, genuinely nothing there
+    """
+    v = ("" if value is None else str(value)).strip()
+    if v.startswith("~"):
+        return "rejected" if v[1:].strip() else "absent"
+    return "unknown" if v.upper() == "TBD" else (
+        "absent" if v.upper() in EXTERNAL_ID_SENTINELS else "live")
+
+
+def live_external_id(value):
+    """The PID string only when it is LIVE; otherwise None.
+
+    Use this anywhere a PID is about to be fetched, harvested or walked. A
+    `~`-prefixed (rejected) PID deliberately returns None -- it is recorded so a
+    human can re-check it, never so a tool can act on it.
+    """
+    v = ("" if value is None else str(value)).strip()
+    return v if external_id_state(v) == "live" else None
+
+
+def rejected_external_id(value):
+    """The bare PID of a REJECTED profile (no `~`), else None.
+
+    For the reader that genuinely wants the declined id -- a report, a
+    re-check worklist, a duplicate audit.
+    """
+    v = ("" if value is None else str(value)).strip()
+    return v[1:].strip() if external_id_state(v) == "rejected" else None
+
+
 def _parse_meta_block(line):
     """Parse a `- meta:` line's mapping. Handles the v3 YAML flow-mapping
     `{k: v, ...}` and the legacy `;`-delimited form."""

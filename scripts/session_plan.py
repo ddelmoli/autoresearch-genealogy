@@ -104,6 +104,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import vault_config  # noqa: E402
+import person_store  # noqa: E402
 
 SNAPSHOT_FILE = "session_plan_snapshots.json"
 CONFIG_KEY = "session_plan"
@@ -263,9 +264,13 @@ def lane_expand(vault):
 
 
 def harvestable_pid(pid):
-    """A PID a Recipe-S harvest can actually be run against."""
-    p = (pid or "").strip()
-    return bool(p) and p.upper() not in ("TBD", "NONE", "-")
+    """A PID a Recipe-S harvest can actually be run against.
+
+    Delegates to `person_store.live_external_id` so TBD/none AND a `~`-prefixed
+    REJECTED profile (deferred 41) are screened in ONE place rather than by a
+    literal tuple that has to be kept in step here.
+    """
+    return person_store.live_external_id(pid) is not None
 
 
 # ** WHERE TO GO WHEN FAMILYSEARCH IS NOT THE ANSWER (01 AUG 2026, operator-directed).
@@ -455,7 +460,10 @@ def lane_verify(vault, include_adjudicated=False):
     for p in g.parse_narrative():
         if p.get("id"):
             fs_of[p["id"]] = str(g.parse_meta(p.get("block") or "").get("fs") or "")
-    recheckable = lambda tid: fs_of.get(tid, "") not in ("", "TBD", "none")
+    # deferred 41: a REJECTED profile (`fs: ~PID`) is NOT re-checkable. It is a
+    # real PID, so a naive "not in (TBD, none)" test called it live and would
+    # have re-offered an fs-gap row whose far end the vault has already declined.
+    recheckable = lambda tid: person_store.live_external_id(fs_of.get(tid, "")) is not None
 
     rows, revisits = [], []
     for p in g.parse_narrative():

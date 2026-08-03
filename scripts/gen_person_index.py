@@ -279,7 +279,10 @@ def parse_narrative():
     import person_store as PS
     rows_all = []
     for r in PS.iter_people(VAULT):
-        pid = r.external_ids.get("fs")
+        # `live_external_id` is the ONE place that decides a PID is actionable
+        # (deferred 41): it screens TBD/none AND a `~`-prefixed REJECTED profile,
+        # so a declined PID is never displayed or walked as though it were ours.
+        pid = PS.live_external_id(r.external_ids.get("fs"))
         if pid in SENTINEL or (pid and not PID_RE.fullmatch(str(pid))):
             pid = None
         rows_all.append(dict(
