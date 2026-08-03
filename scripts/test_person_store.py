@@ -237,6 +237,35 @@ def make_dates_file_vault():
     return d
 
 
+def test_set_meta_key_quotes_values_that_need_it():
+    """deferred 23: banking `EST 1795` must produce born: 'EST 1795', not born: EST 1795.
+
+    Both parse -- a plain scalar with a space is legal YAML -- so NO GATE COULD SEE
+    the difference, and 51 rows were written unquoted before a grep for the quoted
+    form returned 4 instead of 51. The corpus quotes dates; the writer must too.
+    """
+    L = "- meta: {id: P-0XAMP1, generation: 8}"
+    out = ps.set_meta_key(L, "born", "EST 1795")
+    check("born: 'EST 1795'" in out, "a value with a space is single-quoted")
+    check("born: EST 1795" not in out.replace("born: 'EST 1795'", ""),
+          "and is NOT left bare")
+
+    # NEGATIVE CONTROLS -- bare tokens stay bare, which is how the corpus writes them.
+    check("fs: TBD" in ps.set_meta_key(L, "fs", "TBD"),
+          "NEGATIVE CONTROL: a bare token is not quoted")
+    check("fs: XXXX-XXX" in ps.set_meta_key(L, "fs", "XXXX-XXX"),
+          "NEGATIVE CONTROL: a PID is not quoted")
+    check("generation: 9" in ps.set_meta_key(L, "generation", "9"),
+          "NEGATIVE CONTROL: an integer is not quoted")
+    # already-quoted input is passed through, never double-wrapped
+    check("born: 'EST 1795'" in ps.set_meta_key(L, "born", "'EST 1795'"),
+          "NEGATIVE CONTROL: pre-quoted input is not double-wrapped")
+    # a list value keeps its quoting
+    got = ps.set_meta_key(L, "parents", "[P-AAAAAA, P-BBBBBB]")
+    check("parents: '[P-AAAAAA, P-BBBBBB]'" in got,
+          "a bracketed list is quoted, as the flow-mapping rule requires")
+
+
 def main():
     # ---- 1. FileBackend iter_people -------------------------------------- #
     v = make_vault()  # no person_model key -> defaults to "file"
@@ -619,6 +648,8 @@ def main():
     for dd in (vn2, v2, d1, d2, vp, clean, vs):
         shutil.rmtree(dd)
     shutil.rmtree(v); shutil.rmtree(vn)
+    test_set_meta_key_quotes_values_that_need_it()
+
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)
 

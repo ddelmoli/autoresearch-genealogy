@@ -547,7 +547,7 @@ def set_meta_key(line, key, value):
     raw = m.group(1).strip()
     if not raw.startswith("{"):
         return line                       # legacy `;` form: not ours to rewrite
-    val = "" if value is None else str(value)
+    val = _flow_quote("" if value is None else str(value))
     items = _flow_split(raw)
     out, replaced = [], False
     for part in items:
@@ -565,6 +565,27 @@ def set_meta_key(line, key, value):
         out.insert(idx, f"{key}: {val}")
     return line[:m.start(1)] + "{" + ", ".join(out) + "}" + \
         line[m.start(1) + len(m.group(1)):]
+
+
+def _flow_quote(v):
+    """Single-quote a flow-mapping value when the vault's convention wants it.
+
+    ** ADDED 03 AUG 2026 (deferred 23). ** `set_meta_key` wrote the value RAW, so
+    banking `EST 1795` produced `born: EST 1795` where every hand-written date in
+    the corpus reads `born: 'EST 1795'`. Both parse -- a plain scalar with a space
+    is legal YAML -- so no gate could see it, and 51 rows were written that way
+    before a `grep` for the quoted form came back with 4 instead of 51.
+
+    Quote when the value contains a SPACE, a comma or a bracket. A bare token
+    (`TBD`, `none`, a PID, an integer) stays unquoted, which is how the corpus
+    writes those. Already-quoted input is passed through untouched so callers that
+    quote for themselves are not double-wrapped.
+    """
+    if not v:
+        return v
+    if (v.startswith("'") and v.endswith("'")) or (v.startswith('"') and v.endswith('"')):
+        return v
+    return f"'{v}'" if re.search(r"[\s,\[\]{}]", v) else v
 
 
 def _flow_split(s):
