@@ -98,6 +98,7 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 from datetime import date
@@ -621,9 +622,124 @@ def lane_defects(vault, include_adjudicated=False):
             continue
         seen.add(r["id"])
         rows.append({**r, "_defect": "edge"})
-    rows.sort(key=lambda r: (r.get("_defect") != "gate",
+    # 3. Then UNMARKED edges -- the 96.8% nothing has ever re-examined (39-residual).
+    for r in lane_edge_audit(vault):
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        rows.append(r)
+    rows.sort(key=lambda r: (_DEFECT_RANK.get(r.get("_defect"), 9),
                              r["gen"] is None, r["gen"] or 0))
     return rows
+
+
+# gate = machine-found evidence of a problem; edge = the vault's own `?` mark;
+# audit = NO signal at all, sampled because nothing else ever looks (39-residual).
+_DEFECT_RANK = {"gate": 0, "edge": 1, "audit": 2}
+
+
+def edge_audit_coverage(vault):
+    """(total edge tokens, tokens carrying `?`, people with unmarked edges NOT offered).
+
+    Exists so the plan can PRINT the uncovered remainder. deferred 39's whole
+    complaint was that finishing the `?` work reads as "verification is done" while
+    96.8% of edges have never been examined -- so the number that is NOT covered has
+    to be on screen, not inferred.
+    """
+    import gen_person_index as g
+    import harvest_sources as H
+    try:
+        cov = {r.get("id"): r for r in H.gather_records()}
+    except Exception:
+        cov = {}
+    tot = q = 0
+    offered, unmarked_people = set(), set()
+    for r in g.parse_narrative():
+        rid = r.get("id")
+        if not rid:
+            continue
+        meta = g.parse_meta(r.get("block") or "")
+        toks = [t for k in ("parents", "spouse")
+                for t in re.findall(r"P-[0-9A-Za-z]+\??", str(meta.get(k) or ""))]
+        tot += len(toks)
+        q += sum(1 for t in toks if t.endswith("?"))
+        if any(not t.endswith("?") for t in toks):
+            unmarked_people.add(rid)
+            tier = str(meta.get("evidence_tier") or "")
+            cat = (cov.get(rid) or {}).get("category", "")
+            if tier == "speculative" or cat in ("UNCITED", "SOURCE_GAP"):
+                offered.add(rid)
+    return tot, q, len(unmarked_people - offered)
+
+
+def lane_edge_audit(vault):
+    """People whose parent/spouse edges carry NO mark, RANKED BY RISK. (39-residual)
+
+    ** THE GAP THIS CLOSES. ** Measured 02 AUG and unchanged 03 AUG: of 2,393 edge
+    tokens only 76 (3.2%) carry a `?`; the other 2,317 across 1,171 people are
+    re-examined by NOTHING. An edge is marked once, cleared once, and never looked
+    at again -- and an edge that was never marked in the first place is invisible
+    for ever. Deferred 39 routed the GATE findings in and left this half open.
+
+    ** WHY THIS IS RISK-RANKED AND NOT A UNIFORM SAMPLE, WHICH IS THE WHOLE POINT. **
+    Uniform sampling of 1,171 people inside IMPROVE's defect share is theatre: at
+    1-3 rows a draw it needs 195-585 sittings for ONE pass. Matching
+    profile_review's accepted cadence (~65 sittings per pass) would take ~18 rows a
+    draw -- effectively the whole lane.
+
+    So the population is CONCENTRATED on a real prior instead: an unmarked edge
+    asserted on an entry that cites NO records at all, or is explicitly
+    `speculative`, rests on nothing but the vault's own prior belief. Measured:
+    **167 of 1,171 (14%)**, which a small share sweeps in ~17-28 sittings.
+
+    ⚠ THE REMAINING ~1,004 ARE NOT OFFERED, AND THAT IS DECLARED RATHER THAN HIDDEN.
+    They are unmarked edges on WELL_SOURCED / BOOK_SOURCED / LOW_COVERAGE entries.
+    Sampling them uniformly would be a gesture, and pretending otherwise is what
+    "nobody mistakes 3.2%-of-edges for `the vault is verified`" was warning about.
+    `plan_summary` prints the number so the uncovered remainder stays visible.
+
+    ⚠ AND THESE ARE NOT DEFECTS. A row here carries no evidence of a problem -- it
+    is an AUDIT of an assertion nothing has tested. It ranks BEHIND every gate
+    finding and every `?` edge, so known defects are never displaced by sampling.
+    """
+    try:
+        import gen_person_index as g
+        import harvest_sources as H
+    except Exception as e:
+        print(f"session_plan: WARNING - edge-audit population unavailable "
+              f"({type(e).__name__}: {e}).", file=sys.stderr)
+        return []
+    cov = {}
+    try:
+        cov = {r.get("id"): r for r in H.gather_records()}
+    except Exception:
+        pass                      # risk ranking degrades to tier-only; never fatal
+    out = []
+    for r in g.parse_narrative():
+        rid = r.get("id")
+        if not rid:
+            continue
+        meta = g.parse_meta(r.get("block") or "")
+        unmarked = [t for k in ("parents", "spouse")
+                    for t in re.findall(r"P-[0-9A-Za-z]+\??", str(meta.get(k) or ""))
+                    if not t.endswith("?")]
+        if not unmarked:
+            continue
+        tier = str(meta.get("evidence_tier") or "")
+        cat = (cov.get(rid) or {}).get("category", "")
+        if tier != "speculative" and cat not in ("UNCITED", "SOURCE_GAP"):
+            continue              # low-risk remainder: declared, not offered
+        why = ("speculative tier" if tier == "speculative"
+               else f"entry cites NO records ({cat})")
+        out.append({
+            "id": rid, "name": r.get("name") or "?", "gen": r.get("generation"),
+            "file": r.get("file") or "", "_defect": "audit",
+            "why": f"AUDIT ({len(unmarked)} unmarked edge(s)) — nothing has ever "
+                   f"re-examined this edge, and {why}, so it rests on the vault's "
+                   f"own prior belief. NOT a known defect: confirm it from the "
+                   f"CHILD's page, and if it cannot be confirmed give it a `?`.",
+        })
+    return out
 
 
 def pid_stale_ids(vault):
@@ -1257,12 +1373,26 @@ def main(argv=None):
                   f"reachable here.")
         if pick == "IMPROVE":
             _ngate = sum(1 for r in i_defects if r.get("_defect") == "gate")
+            _nedge = sum(1 for r in i_defects if r.get("_defect") == "edge")
+            _naud = sum(1 for r in i_defects if r.get("_defect") == "audit")
             print(f"    IMPROVE holds THREE populations: {len(i_defects)} DEFECT "
-                  f"({_ngate} gate finding(s) + {len(i_defects) - _ngate} `?` edges), "
-                  f"{len(i_gaps)} with NO source,")
+                  f"({_ngate} gate finding(s) + {_nedge} `?` edges + {_naud} "
+                  f"unmarked-edge AUDIT rows), {len(i_gaps)} with NO source,")
             print(f"    {len(i_corrob)} documented by ONE host only. This draw reserves "
                   f"{i_dq} for defects first, then {i_gq} unsourced + {i_cq} "
                   f"corroboration.")
+            # 39-residual: the uncovered remainder is PRINTED, never implied away.
+            # "Nobody should mistake 3.2%-of-edges for `the vault is verified`."
+            try:
+                _tot, _q, _lowrisk = edge_audit_coverage(vault)
+                print(f"    ⚠ EDGE COVERAGE: {_q} of {_tot} edge tokens carry a `?`; the "
+                      f"AUDIT tier offers the {_naud} highest-risk unmarked rows")
+                print(f"      (no cited records, or speculative). {_lowrisk} people with "
+                      f"unmarked edges are NOT offered — uniform sampling")
+                print("      of them would need ~200-600 sittings for one pass. The vault "
+                      "is NOT 'verified'; this is a risk-ranked audit.")
+            except Exception:
+                pass
             print("    FamilySearch is the SYNC point, not the evidence base — each")
             print("    sourcing row names a non-FS route to try.")
             print(f"    ⚠ {len(stale_pids)} drawn-or-not entries have an UNCONFIRMED FS "
