@@ -443,6 +443,79 @@ _SECTION_HDR = re.compile(r"^#{1,2}\s+\S")
 EXTERNAL_ID_SENTINELS = {"TBD", "NONE", "-", ""}
 
 
+#: Hosts a banked parent-pair can have been read from. Same short ids as the
+#: `hosts` registry; kept small deliberately -- this is a provenance note, not a
+#: locator.
+BANKED_HOSTS = ("fs", "wt", "anc")
+
+
+def banked_parents_host(record_or_line):
+    """Return the host a BANKED-BUT-UNWIRED parent pair was read from, or None.
+
+    ** THE MECHANISM (operator-directed, 04 AUG 2026). ** An EXPAND draw regularly
+    finds that a frontier row's parents ARE named on FamilySearch, and the standing
+    rule is not to wire them: an FS couple is a TREE ASSERTION, not a source, and
+    wiring it would grow the vault on somebody else's conclusion. So the row is
+    DECLARED with both parent PIDs banked in its prose and no edge minted.
+
+    That was the right call and it created a hole. The row now counts as DECLARED,
+    so `extension_frontier` reads it as closed and EXPAND never offers it again --
+    while the work is real, located, and cheap to finish (find one record naming
+    the parents, then wire with a `?`). Measured 04 AUG 2026: **11 rows, 7 from
+    session #138 and 4 from #139, holding ~22 parent PIDs, none of those parents
+    present in the vault.** It grew 7 -> 11 in two sittings with nothing drawing it
+    -- the same shape as the FS write-back queue.
+
+    ** WHY A META KEY AND NOT A PROSE MATCH. ** The obvious detector is a grep for
+    the declaration wording. This vault has already ruled against exactly that: when
+    rule 8 limb (g) was added, making the bullet NAME load-bearing in code was
+    "considered and NOT taken -- it would make bullet TEXT a failure surface, where a
+    typo silently starts counting". A prose detector also double-counts, because
+    `route_digest` blockquotes entry text at the head of every lineage file -- the
+    first count taken while designing this read 27 declarations where the true
+    number was 11, the identical trap the `? edge` grep documents.
+
+    ** WHY A SCALAR AND NOT A LIST OF PIDs. ** The lane needs to SELECT the row; the
+    researcher needs the PIDs, and those are already in the entry prose where they
+    are read. Storing them twice would create a second copy to drift. The value is
+    the HOST, so the key generalises past FamilySearch without a grammar change.
+
+    ** WHY IT IS SAFE AS AN UNMODELED KEY. ** `_record_to_meta` preserves "any
+    UNMODELED keys the original block carried (so a write never silently drops a
+    field the seam doesn't model)", the file backend's frontmatter write is likewise
+    surgical, and `build_edges.upsert_edges` splices `parents:`/`spouse:` without
+    disturbing sibling keys -- the same three guarantees that make `adjudicated`
+    safe. So this needs no change to `PersonRecord`, and a `narrative <-> file`
+    conversion round-trips it.
+
+    Accepts a PersonRecord (reads the meta line out of `raw`) or a raw meta line.
+    Returns one of BANKED_HOSTS, or None when the key is absent or malformed.
+
+    ⚠ The narrative backend's `raw` carries `meta_line` as a line NUMBER and the
+    TEXT as `line`; picking by name alone got an int here and raised. Take the
+    first value that is actually a meta line, so neither key name is load-bearing.
+    """
+    line = record_or_line
+    if not isinstance(line, str):
+        raw = getattr(record_or_line, "raw", None)
+        if not isinstance(raw, dict):
+            return None
+        line = next((v for v in (raw.get("line"), raw.get("meta_line"))
+                     if isinstance(v, str) and _META.match(v)), "")
+    m = _META.match(line or "")
+    if not m:
+        return None
+    body = m.group(1).strip()
+    if not body.startswith("{"):
+        return None                       # legacy `;` form carries no fields
+    for part in _flow_split(body):
+        k, sep, v = part.partition(":")
+        if sep and k.strip().lower() == "banked_parents":
+            v = v.strip().strip("'\"").lower()
+            return v if v in BANKED_HOSTS else None
+    return None
+
+
 def external_id_state(value):
     """Classify an external-id field (`fs`, `wt`, `anc`) into ONE of four states.
 

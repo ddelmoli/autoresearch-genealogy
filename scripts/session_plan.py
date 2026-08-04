@@ -639,7 +639,13 @@ def lane_defects(vault, include_adjudicated=False):
             continue
         seen.add(r["id"])
         rows.append({**r, "_defect": r.get("_defect") or "edge"})
-    # 3. Then UNMARKED edges -- the 96.8% nothing has ever re-examined (39-residual).
+    # 3. Then BANKED parent pairs -- located, declined, and drawn by NOTHING until now.
+    for r in lane_banked(vault):
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        rows.append(r)
+    # 4. Then UNMARKED edges -- the 96.8% nothing has ever re-examined (39-residual).
     for r in lane_edge_audit(vault):
         if r["id"] in seen:
             continue
@@ -651,6 +657,7 @@ def lane_defects(vault, include_adjudicated=False):
 
 
 # gate = machine-found evidence of a problem; edge = the vault's own `?` mark;
+# banked = a parent pair LOCATED on another tree and deliberately not adopted;
 # audit = NO signal at all, sampled because nothing else ever looks (39-residual).
 # Lower ranks are offered first. The two DEMOTED kinds are work that has already been
 # looked at: `gate-tracked` is a gate finding already characterised as an Open_Question
@@ -658,7 +665,67 @@ def lane_defects(vault, include_adjudicated=False):
 # look (deferred 38). Both must sit behind anything nobody has examined -- otherwise the
 # lane presents answered work as fresh work, which is what makes a worklist stop being
 # trusted. Neither is REMOVED: the lane size stays honest.
-_DEFECT_RANK = {"gate": 0, "edge": 1, "audit": 2, "gate-tracked": 3, "revisit": 4}
+#
+# ** `banked` sits ABOVE `audit` and BELOW `edge` (operator-directed, 04 AUG 2026). **
+# Above audit because it is the most SPECIFIC work in the pool -- the parents are named,
+# dated and PID'd, so the task is "find one record", not "go and look". Below edge
+# because a `?` edge is an edge the vault has ALREADY adopted and left unverified,
+# which is a live claim in the tree, whereas a banked pair claims nothing yet.
+_DEFECT_RANK = {"gate": 0, "edge": 1, "banked": 2, "audit": 3,
+                "gate-tracked": 4, "revisit": 5}
+
+
+def lane_banked(vault):
+    """Frontier rows whose parents were LOCATED on another tree and NOT adopted.
+
+    ** THE HOLE THIS FILLS (operator-directed, 04 AUG 2026). ** An EXPAND draw that
+    finds a row's parents named on FamilySearch correctly declines to wire them --
+    an FS couple is a tree ASSERTION, not a source. The row is then DECLARED, which
+    means `extension_frontier` counts it as closed and **EXPAND never offers it
+    again**. The work is real, located and cheap to finish, and nothing drew it.
+
+    Measured at adoption: **11 rows (7 from session #138, 4 from #139)** holding
+    ~22 parent PIDs, **none of those parents present in the vault**, growing 7 -> 11
+    in two sittings. Same shape as the FS write-back queue: found work with no lane.
+
+    ⚠ **A BANKED ROW IS NOT A DEFECT**, exactly as the `audit` tier is not. Nothing
+    about it is wrong -- the declaration was the correct call. It sits in the defect
+    POOL because that pool is "edge work the sourcing populations would swamp", and
+    because its disposition is the defect unit (`--verified`): find a record naming
+    the parents, then wire with a `?`, or record why the pair still cannot be
+    adopted.
+
+    ⚠ **AND IT IS SELECTED FROM THE DATA, NEVER FROM THE DECLARATION PROSE** -- see
+    `person_store.banked_parents_host` for why (limb (g)'s ruling against
+    text-as-failure-surface, and the `route_digest` blockquote double-count that
+    made a first prose scan read 27 where the truth was 11).
+
+    A row LEAVES this population by being wired: the `parents` edge is the exit
+    test, so a wired row is not offered even if the key is left behind. That
+    residue is reported separately as `BANKED_STALE` by `build_edges --validate`.
+    """
+    import person_store as ps
+    rows = []
+    for rec in ps.iter_people(vault):
+        host = ps.banked_parents_host(rec)
+        if not host:
+            continue
+        if getattr(rec, "parents", None):
+            continue                      # wired since it was banked: done, not work
+        rows.append({
+            "id": rec.id,
+            "name": rec.name or "?",
+            "gen": rec.generation,
+            "file": os.path.basename(str(getattr(rec, "source_file", "") or "")),
+            "_defect": "banked",
+            "why": (f"BANKED parents on `{host}` — located, PIDs in this entry's frontier "
+                    f"declaration, deliberately NOT wired. ⚠ Do NOT wire as-is: an "
+                    f"{host.upper()} couple is a tree assertion. ⏭ Find ONE record "
+                    f"naming them, then mint + wire with `?`; a documented negative "
+                    f"also disposes of the row."),
+        })
+    rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0, r["name"] or ""))
+    return rows
 
 
 def open_question_ids(vault):
@@ -1432,9 +1499,11 @@ def main(argv=None):
             _ngate = sum(1 for r in i_defects if r.get("_defect") == "gate")
             _nedge = sum(1 for r in i_defects if r.get("_defect") == "edge")
             _naud = sum(1 for r in i_defects if r.get("_defect") == "audit")
+            _nbank = sum(1 for r in i_defects if r.get("_defect") == "banked")
             print(f"    IMPROVE holds THREE populations: {len(i_defects)} DEFECT "
-                  f"({_ngate} gate finding(s) + {_nedge} `?` edges + {_naud} "
-                  f"unmarked-edge AUDIT rows), {len(i_gaps)} with NO source,")
+                  f"({_ngate} gate finding(s) + {_nedge} `?` edges + {_nbank} BANKED "
+                  f"parent pairs + {_naud} unmarked-edge AUDIT rows), "
+                  f"{len(i_gaps)} with NO source,")
             print(f"    {len(i_corrob)} documented by ONE host only. This draw reserves "
                   f"{i_dq} for defects first, then {i_gq} unsourced + {i_cq} "
                   f"corroboration.")

@@ -168,6 +168,7 @@ def validate_edges(limit=20):
     malformed = []                    # (id, key, raw_token)
     adj_stale = []                    # (id, adjudicated_id) — see below
     adj_unexplained = []              # ids whose adjudication states no reason
+    banked_stale = []                 # ids banked-not-wired that are NOW wired
     for r in rows:
         if not r["id"]:
             continue
@@ -197,6 +198,14 @@ def validate_edges(limit=20):
         # permanent stop from an unread article. Measured 02 AUG 2026: 12 of 47.
         if meta.get("adjudicated") and not meta.get("adjudicated_why"):
             adj_unexplained.append(r["id"])
+        # BANKED_STALE (04 AUG 2026): `banked_parents` says a parent pair was located
+        # on another tree and deliberately NOT wired -- so once the entry HAS a parents
+        # edge, the note has been overtaken and should have gone with the wiring.
+        # `lane_banked` already excludes wired rows, so a stale key cannot resurrect
+        # finished work; it is reported because a key nobody prunes stops meaning
+        # anything, which is how `adjudicated` acquired its own stale check.
+        if meta.get("banked_parents") and edge_tokens(meta.get("parents")):
+            banked_stale.append(r["id"])
 
     collapse_pairs, collapse_notes = vault_config.get_known_gen_collapse(VAULT) if VAULT else (set(), {})
     dangling, selfedge, recip, gen_bad, gen_declared = [], [], [], [], []
@@ -237,6 +246,9 @@ def validate_edges(limit=20):
     print(f"  GEN_COLLAPSE (declared in .autoresearch.json): {len(gen_declared)}   [expected; pedigree collapse, every edge correct]")
     print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real IMPROVE defect candidate]")
     print(f"  ADJUDICATED_UNEXPLAINED (no `adjudicated_why`): {len(adj_unexplained)}   [advisory; the reason decides whether the judgement can ever go stale]")
+    print(f"  BANKED_STALE (`banked_parents` on an entry that is NOW wired): {len(banked_stale)}   [advisory; baseline 0 — prune the key when you wire the edge]")
+    for c in banked_stale[:limit]:
+        print(f"    BANKED_STALE {nm(c)} ({c}) has a parents edge; drop `banked_parents`")
     for c in adj_unexplained[:limit]:
         print(f"    ADJ_WHY? {nm(c)} ({c}) adjudicated, but no reason recorded")
     for c, aid in adj_stale[:limit]:
