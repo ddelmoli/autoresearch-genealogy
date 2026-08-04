@@ -299,6 +299,94 @@ def is_memorial_collection(title: str) -> bool:
     return any(m in t for m in MEMORIAL_COLLECTION_MARKERS)
 
 
+# ── policy (d): PUBLISHED BOOKS, JOURNALS AND COMPILED INDEXES ──────────────────
+#
+# ⚠ WHY THIS EXISTS AT ALL. Limb (e) has had `is_memorial_collection` since 02 AUG
+# 2026 and it demonstrably works. Limb (d) — "published-book / journal citations …
+# real but bibliographic" — had NOTHING: no function, no list, no test. And both
+# hosts serve books with RECORD-SHAPED LOCATORS, so nothing about the locator
+# betrays them:
+#   * Ancestry sells `Colonial Families of the USA`, `Mayflower Births and Deaths`,
+#     `The Great Migration`, `Millennium File`, `A book of Strattons` as
+#     "collections" with `anc:<collection>:<record>` ids.
+#   * ⭐ FamilySearch serves DIGITISED BOOKS as `3:1:` IMAGE ARKs — the same form
+#     rule 8 limb (a2) describes as the "View the original document" REGISTER image
+#     and counts unconditionally. Two of Anne Plummer's three "record ARKs" were a
+#     compiled marriage abstract (Torrey's) and a printed town genealogy.
+#
+# Measured on ONE 21-row ROTATE slice, 03 AUG 2026: twelve entries were credited
+# with records that are not records, including two classified WELL_SOURCED on zero
+# and one own-life record, and a Magna Carta surety dead in 1219 carried on a Find
+# a Grave. Raised and settled as deferred_decisions 48.
+#
+# ⚠ MATCHED ON THE COLLECTION TITLE, NEVER ON THE LOCATOR — same rule as (e), same
+# reason: there cannot be a locator-shaped test.
+#
+# ⚠⚠ THIS LIST IS A FLOOR, NEVER A TOTAL. It cannot enumerate every compiled work,
+# and it is not meant to: the CAUSE of the twelve bad entries was that every one of
+# them was a BARE LOCATOR LIST with no record description, which is the thing rule 8
+# already requires and that ran at 4% adoption. Name the record; this is the net for
+# what slips through.
+BOOK_COLLECTION_MARKERS = (
+    # compiled genealogies, lineage-society and reference works served as "records"
+    "great migration",
+    "mayflower births and deaths",
+    "mayflower increasings",
+    "colonial families",
+    "family histories",
+    "genealogical history",
+    "millennium file",
+    "family group record",
+    "american genealogical-biographical index",
+    "american genealogical biographical index",
+    "royal descents",
+    "the complete peerage",
+    "new england marriages prior to",   # Torrey's — an abstract INDEX, not the register
+    "u.s. and international marriage records",
+    "sons of the american revolution",
+    "daughters of the american revolution",
+    # aggregated user trees sold as collections (limb (e)-adjacent, same treatment)
+    "family trees",
+    "community trees",
+    "geneanet",
+    "myheritage",
+    "rootsfinder",
+    "onegreatfamily",
+)
+
+# Titles that CONTAIN a book marker but ARE a record collection. Kept for the same
+# reason as the memorial allowlist: a brand ban that catches the wrong thing is worse
+# than no test. `Town and Vital Records` and the like are transcribed REGISTERS.
+BOOK_ALLOWLIST_MARKERS = (
+    "town and vital records",
+    "town clerk, vital and town records",
+    "vital records to 1850",
+    "parish registers",
+    "church records",
+    "extracted church of england",
+)
+
+
+def is_book_collection(title: str) -> bool:
+    """Does this collection title name a policy-(d) BOOK / journal / compiled index?
+
+    Call it at HARVEST time with the collection title, exactly as for
+    `is_memorial_collection`, and negate a positive with the `~` prefix so the
+    locator is documented without being counted. A `- **Sources**` sub-bullet whose
+    description names the work is what makes this checkable at all.
+
+    ⚠ Returns the CLASS, not a verdict on worth. A book can be excellent evidence and
+    still not be a RECORD: rule 8 limb (b) deliberately credits scholarly apparatus
+    to `profile_status`, and deliberately keeps it OFF the ARK coverage metric so
+    coverage cannot inflate on bibliography. Cite Cawley, the Complete Peerage or a
+    TAG article in prose with page refs — just not as a record locator.
+    """
+    t = (title or "").casefold()
+    if any(m in t for m in BOOK_ALLOWLIST_MARKERS):
+        return False
+    return any(m in t for m in BOOK_COLLECTION_MARKERS)
+
+
 def extract_arks(text: str) -> set:
     """Extract all source-record-IDs from vault narrative text, normalized.
 
@@ -399,23 +487,44 @@ def per_host_locators(text: str) -> "Dict[str, int]":
     text = strip_negated_locators(text)
     counts: Dict[str, int] = defaultdict(int)
     seen = set()
+    # Pass 1: the legacy bare-token patterns. Record the SPANS they consume, not
+    # just the hosts they belong to — see the note on pass 2.
+    consumed: "list[tuple[int, int]]" = []
     for pat, host, _kind in HOST_LOCATOR_PATTERNS:
         for m in pat.finditer(text):
+            consumed.append(m.span())
             key = (host, m.group(1))
             if key not in seen:
                 seen.add(key)
                 counts[host] += 1
-    # Host-prefixed locators whose host has NO legacy pattern (anc:dbid=..., wt:...).
-    legacy_hosts = {h for _p, h, _k in HOST_LOCATOR_PATTERNS}
+    # Pass 2: host-PREFIXED locators (`anc:1234:56`, `agad:300/872/31-1865`, `wt:…`).
+    #
+    # ⚠ THIS USED TO SKIP BY HOST — `if host in legacy_hosts: continue` — on the
+    # assumption that a host owning a legacy pattern had already been tallied in
+    # pass 1. That is only true when the legacy pattern ACTUALLY MATCHED THIS
+    # TOKEN. `agad`'s legacy pattern matches only the scan-filename form
+    # (`PL_1_300_875_0066.jpg`), so an AGAD locator written as an ARCHIVAL
+    # REFERENCE (`agad:300/872/31-1865`) matched neither pass and was attributed
+    # to NO host at all — while still counting as a record, so nothing looked
+    # wrong. The record count stayed right and the HOST silently vanished, which
+    # matters because SINGLE_SOURCED / MULTI_SOURCED are computed from hosts.
+    # AGAD's own `locator_kind` in the registry is `id`, so the archival form is
+    # arguably the intended one. Found 03 AUG 2026 (deferred_decisions 47).
+    #
+    # The fix skips on SPAN OVERLAP instead: a prefixed token is dropped only if a
+    # legacy pattern really did consume it (e.g. `fs:1:1:X` contains `1:1:X`;
+    # `antenati:ark:/12657/…` contains `ark:/12657/…`). This fixes the CLASS, so
+    # the trap is not left armed for the next host that gains a legacy pattern.
     for m in re.finditer(
             r"\b(" + "|".join(EMITTED_HOST_IDS) + r"):([0-9A-Za-z][^\s,;)\]]*)",
             text, re.IGNORECASE):
         if not is_record_locator(m.group(0)):
             continue  # a locator CLASS named in prose ("attach as anc: ids"), not a citation
+        s, e = m.span()
+        if any(cs < e and s < ce for cs, ce in consumed):
+            continue  # a legacy pattern already tallied THIS token
         host = m.group(1).lower()
         host = {"fs": "familysearch"}.get(host, host)
-        if host in legacy_hosts:
-            continue  # already tallied via its legacy pattern
         key = (host, m.group(2))
         if key not in seen:
             seen.add(key)
