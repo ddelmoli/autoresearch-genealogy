@@ -254,10 +254,36 @@ the vault's `session_plan_snapshots.json`.
 - **A pending draw belongs to the iteration that consumes it.** It is not an
   unrecorded outcome from the previous session, and re-running the plan does not
   replace it.
-- **EXPAND is expected to move SILENT the "wrong" way.** Every frontier row
-  closed adds the parents it names, which are themselves parentless: net-positive
-  SILENT is the shape of a working EXPAND iteration, not a failure. Count the
-  people added, which is what the lane target asks for.
+- **EXPAND is expected to move SILENT the "wrong" way, AND SO IS IMPROVE'S BANKED
+  TIER.** Every frontier row closed adds the parents it names, which are themselves
+  parentless: net-positive SILENT is the shape of a working extension iteration, not
+  a failure. Count the people added, which is what the lane target asks for.
+  - ⚠ **THE GUARD IS PER-EFFECT, NOT PER-LANE.** It named EXPAND alone until 04 AUG
+    2026, when `banked_parents` made the same work drawable from **IMPROVE** — so a
+    lane whose own metric is SOURCE_GAP now routinely pushes SILENT up, and nothing
+    said that was expected. Given the standing rule that a non-zero gate is a
+    REGRESSION rather than a backlog, that reads as damage and would be
+    "investigated" by a future session at real cost.
+  - ⭐ **WIRING A BANKED PAIR MOVES THREE COUNTS THE WRONG WAY AT ONCE, and all three
+    are honest.** Measured on the 11-row backlog at adoption, each naming exactly 2
+    parents, none already in the vault:
+
+    | count | direction | why |
+    |---|---|---|
+    | DECLARED | **-11** | a wired row is no longer parentless, so it leaves the frontier population entirely |
+    | SILENT | **+22** | its two parents arrive, themselves parentless |
+    | SOURCE_GAP | **up to +22** | a record naming the parents documents the CHILD — limb (g) `Named-in`, off the census — so each parent arrives at 0 own records |
+    | `?` edge tokens | **+22** | every new edge is wired unverified, as it must be |
+
+    ⭐ The minted parents land in the exact shape of the canonical limb-(g) case:
+    present only because a child's record names them, and correctly `SOURCE_GAP`.
+  - ⛔ **DO NOT pre-declare the minted parents to keep SILENT flat.** That is
+    "never bulk-declare to reach 0" in its purest form — a declaration inherits the
+    correctness of its REASON, and there is no reason yet.
+  - ⚠ **AND THIS IS A CROSS-LANE EFFECT THE BANDIT DOES NOT MODEL.** An IMPROVE draw
+    scoring a legitimate hit inflates EXPAND's backlog. The lanes are a small
+    economy, not independent arms; record the outcome on what the lane DISPOSED OF,
+    and let the frontier count move.
 - **Read the entry before stripping a `?`** — FS-GAP, SCHOLARLY HEDGE and
   PRIVACY are all legitimate survivals, and only the remainder is actionable.
 - **Outward mutations are queued, never performed.** FS attaches, merges, edits
