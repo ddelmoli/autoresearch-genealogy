@@ -240,7 +240,7 @@ backlogs (SILENT, SOURCE_GAP, `?` tokens) those iterations draw from.
 the draw reason names sittings, not observations, for the two floors);
 the owning tool's heartbeat at the end of the iteration
 (`extension_frontier.py --heartbeat`, `harvest_sources.py --heartbeat`,
-`grep -rhoE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | wc -l`,
+`grep -rhE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | grep -v "^>" | grep -oE "P-[0-9A-Z]{6}\?" | wc -l`,
 `profile_review.py --heartbeat`); one `history` observation per worked iteration in
 the vault's `session_plan_snapshots.json`.
 

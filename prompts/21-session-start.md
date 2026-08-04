@@ -66,7 +66,14 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
      in it, so run them:
        python3 scripts/harvest_sources.py --heartbeat        # SOURCE_GAP (IMPROVE)
        python3 scripts/keystone_report.py --summary          # keystones (report, no longer a lane)
-       grep -rhoE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | wc -l   # ? edges
+       grep -rhE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | grep -v "^>" | grep -oE "P-[0-9A-Z]{6}\?" | wc -l
+   # ⚠ THE `grep -v "^>"` IS REQUIRED as of 03 AUG 2026: `route_digest.py`
+   # BLOCKQUOTES entry text at the head of every Family_Tree file, so a naive
+   # grep double-counts every `?` token it quotes (measured: 98 vs the true 88).
+   # ⚠ This count is still LOOSE -- it counts `?`-marked ids in PROSE as well as
+   # in `parents:`/`spouse:` lists. Restricting to `^- meta:` lines gives 75, not
+   # 88. NOT adopted here, because changing the definition would silently move a
+   # tracked baseline; recorded so the next person knows which number is which.   # ? edges
      Phase 3 compares against these four, and a session that never wrote down a
      "before" cannot honestly report movement.
 

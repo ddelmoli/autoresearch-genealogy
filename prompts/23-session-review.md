@@ -43,7 +43,7 @@ do NOT perform any FamilySearch write.
    captured in phase 1:
      python3 scripts/extension_frontier.py --heartbeat     # SILENT / DECLARED
      python3 scripts/keystone_report.py --summary          # keystone count
-     grep -rhoE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | wc -l   # ? edges
+     grep -rhE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | grep -v "^>" | grep -oE "P-[0-9A-Z]{6}\?" | wc -l   # ? edges
      python3 scripts/profile_review.py --heartbeat         # rotation clock
    - ! Confirm each recorded hit/miss is STILL TRUE against these numbers. A
      recorded hit the heartbeat contradicts is corrected IN PLACE now (edit the
