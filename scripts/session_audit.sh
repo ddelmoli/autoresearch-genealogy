@@ -360,9 +360,30 @@ parts = [
 # session, the single largest context cost of the whole suite). Superseded blocks
 # now live in .audit_baseline_history.txt; as a guard against the history creeping
 # back, this hook injects only the content ABOVE the first `----` divider line,
-# and hard-caps the injected baseline at 4000 chars (with an explicit truncation
-# note, never silently).
+# and hard-caps the injected baseline (with an explicit truncation note).
+#
+# ** THE CAP WAS RAISED 4000 -> 6000 ON 04 AUG 2026, AND A HEADROOM LINE ADDED,
+# because the cap kept firing on the WRONG failure (operator: "we keep running
+# into that 4000 character limit"). ** Three things were wrong with it:
+#   1. It was written to catch HISTORY CREEPING BACK -- a 712-line, unmistakable
+#      regression -- but what actually tripped it was CURRENT, legitimate content
+#      growing by ~200 chars. The cap cannot tell those apart. The `----` divider
+#      above is the guard that actually stops the history case, and it works: the
+#      history file sits at ~64 KB and never reaches context.
+#   2. ** WHAT IT DROPPED WAS POSITIONAL, NOT BY IMPORTANCE. ** Truncating at a
+#      byte offset kills whatever is LAST in the file, and this vault had put its
+#      CONTEXT RULES block -- the most operationally load-bearing lines in it --
+#      at the very end. The least expendable content was structurally first to go.
+#      (Fixed on the vault side too: CONTEXT RULES moved to the TOP of the file.)
+#   3. ** NOTHING REPORTED THE SIZE UNTIL IT WAS ALREADY TOO LATE. ** The only
+#      signal was the truncation note itself, i.e. after content had been lost.
+#      The `baseline ->` part now prints chars/cap and the headroom EVERY session,
+#      so growth is visible while there is still room to act on it.
+# The baseline is ~half of an ~8 KB banner, so the extra 2 KB is a small price for
+# not amputating the tail; the divider, not the cap, is what bounds the real risk.
+BASELINE_CAP = 6000
 _bp = VAULT / ".audit_baseline.txt"
+_bl_note = ""
 if _bp.exists():
     baseline = _bp.read_text(encoding="utf-8")
     _kept = []
@@ -372,9 +393,19 @@ if _bp.exists():
             break
         _kept.append(_ln)
     baseline = "\n".join(_kept).strip()
-    if len(baseline) > 4000:
-        baseline = baseline[:4000] + " [baseline truncated at 4000 chars — trim .audit_baseline.txt to CURRENT only]"
+    _bl_chars = len(baseline)
+    if _bl_chars > BASELINE_CAP:
+        baseline = baseline[:BASELINE_CAP] + (
+            f" [!! BASELINE TRUNCATED at {BASELINE_CAP} chars -- {_bl_chars - BASELINE_CAP} chars of the"
+            " TAIL of .audit_baseline.txt were DROPPED and you are not seeing them. Trim the file to"
+            " CURRENT state only; move superseded blocks below a `----` divider.]")
+        _bl_note = (f"baseline -> !! TRUNCATED: {_bl_chars}/{BASELINE_CAP} chars, "
+                    f"{_bl_chars - BASELINE_CAP} DROPPED from the tail -- trim .audit_baseline.txt")
+    else:
+        _bl_note = (f"baseline -> {_bl_chars}/{BASELINE_CAP} chars "
+                    f"(headroom {BASELINE_CAP - _bl_chars}; injected every session, keep it CURRENT-only)")
 else:
+    _bl_note = "baseline -> no .audit_baseline.txt in this vault (neutral reminder injected instead)"
     baseline = ("Compare against your project's known baseline; investigate anything above it "
                 "before new vault work. The pre-commit hook enforces gen_person_index --integrity "
                 "(HARD: unique id + complete meta) on every vault commit; prose_audit + header_xref "
@@ -396,7 +427,7 @@ else:
               f"to switch: bash scripts/session_audit.sh --set-vault /path/to/other-vault. "
               f"Prefix your own commands: {_prefix}")
 ctx = (f"VAULT AUDIT SUITE (SessionStart hook, scripts/session_audit.sh): {_vline} || "
-       + " || ".join(parts) + ". " + baseline)
+       + " || ".join(parts + [_bl_note]) + ". " + baseline)
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
                                           "additionalContext": ctx}}))
 PY
