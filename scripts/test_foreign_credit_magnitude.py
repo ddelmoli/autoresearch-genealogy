@@ -215,8 +215,22 @@ def main():
           "the wife gets the 2 locators on her own bullet, not the entry's 6")
     check(i.get("Poor Wife", ("", 0))[0] == "LOW_COVERAGE",
           "...LOW_COVERAGE, not WELL_SOURCED off her husband's deeds")
-    check(i.get("Rich Husband", ("", 0))[1] == 6,
-          "the husband's own count still includes every record in his body")
+    # ** SUPERSEDED BY deferred_decisions 49 (04 AUG 2026). ** This asserted 6 —
+    # the husband keeping every record in his body, the wife's inline-collateral
+    # baptism and burial included. That was deliberate when deferred 29 landed:
+    # that fix scoped only the FOREIGN path and left the own-person path crediting
+    # count_records(body).
+    #
+    # It is now 4. The two locators on the wife's own bullet are HERS, and
+    # crediting them to him as well was the mirror image of the defect this very
+    # file exists to pin — "neither does a documented one inherit the whole entry"
+    # applied in one direction only. On the reference vault the asymmetry credited
+    # 12 entries with 226 records that were not theirs; the worst read 95 where its
+    # own Sources bullet says "13 record ARKs".
+    check(i.get("Rich Husband", ("", 0))[1] == 4,
+          "the husband keeps his OWN 4 records — the wife's 2 are hers (deferred 49)")
+    check(i.get("Rich Husband", ("", 0))[0] == "WELL_SOURCED",
+          "...and 4 still reads WELL_SOURCED, so the scoping did not over-correct")
 
     print("\n== negative control: the convention must be BREAKABLE ==")
     with whole_body_credit():

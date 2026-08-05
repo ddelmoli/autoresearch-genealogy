@@ -800,18 +800,30 @@ def entry_blocks_with_ids(vault: "Optional[str]" = None):
     return dict(out)
 
 
-def _attributed_region(lines: "List[str]", i: int) -> str:
-    """The line at `i` plus its more-indented continuation lines (a bullet and its
-    sub-bullets). The unit a citation is attributed to."""
+def _attributed_region_indices(lines: "List[str]", i: int) -> "set":
+    """The LINE INDICES of the region at `i`: that line plus its more-indented
+    continuation lines (a bullet and its sub-bullets).
+
+    Indices rather than text because `own_region` has to SUBTRACT regions and
+    therefore needs to know which lines they occupy. Both crediting paths derive
+    their region from this one function, so the entry's own text and a foreign
+    pid's attributed text can never disagree about where a region ends.
+    """
     def indent(s: str) -> int:
         return len(s) - len(s.lstrip())
     base = indent(lines[i])
-    out = [lines[i]]
+    out = {i}
     for j in range(i + 1, len(lines)):
         if not lines[j].strip() or indent(lines[j]) <= base:
             break
-        out.append(lines[j])
-    return "\n".join(out)
+        out.add(j)
+    return out
+
+
+def _attributed_region(lines: "List[str]", i: int) -> str:
+    """The line at `i` plus its more-indented continuation lines (a bullet and its
+    sub-bullets). The unit a citation is attributed to."""
+    return "\n".join(lines[j] for j in sorted(_attributed_region_indices(lines, i)))
 
 
 _META_LINE_RE = re.compile(r"^\s*-\s*meta:\s*\{")
@@ -930,6 +942,110 @@ def attributed_region_for_pid(body: str, pid: str) -> str:
                      for i, line in enumerate(lines) if pid in line)
 
 
+# A DEDICATED relative-sources bullet: a TOP-LEVEL bullet whose head NAMES A TARGET
+# — "sources" immediately followed by `for` / `of` / a dash. Matches the documented
+# forms —
+#   - **FS-attached sources for wife <Name>** (<PID>, inline collateral; …): …
+#   - **FS-attached sources — <Name> <PID>** (Recipe-S harvest …): …
+#   - **Ancestry sources for <Name>** …
+#
+# and deliberately NOT:
+#   * a narrative line citing a shared act — "- Married **X** (FS <PID>) … marriage
+#     atto — <ARK>" — which documents the entry's own person too; and
+#   * ⚠ THE ENTRY'S OWN `- **Sources**` BULLET, even when its parenthetical mentions
+#     a relative's PID. That is not hypothetical: one entry's own bullet reads
+#     "- **Sources** (Recipe-S harvest …; many co-attach with husband <Name> <PID>)",
+#     and a rule keyed on the bare word "sources" deleted her whole Sources block,
+#     taking her from 26 records to 0. Requiring a for/of/dash TARGET after the word
+#     is what separates "sources FOR someone else" from "this entry's Sources".
+#
+# Anchored at indent 0, so a SUB-bullet inside the entry's own Sources block can
+# never itself trigger a subtraction.
+_SOURCES_BULLET_RE = re.compile(
+    r"^-\s+.{0,120}?\bsources\b\s*(?:for\b|of\b|[—–]|-\s)", re.IGNORECASE)
+
+
+def own_region(body: str, owners: "set", pid_to_id: "Dict[str, str]") -> str:
+    """The text of this entry that documents the entry's OWN person: the body MINUS
+    every region attributed to a documented FOREIGN pid.
+
+    ** THE OTHER HALF OF DEFERRED 29 (deferred_decisions 49, 04 AUG 2026). **
+    `attributed_region_for_pid` scoped the credit of a FOREIGN pid to the region
+    that documents it. The entry's OWN person kept being credited
+    `count_records(body)` — the whole body — so the sanctioned inline-collateral
+    convention inflated its HOST. The code comment stating the principle ("neither
+    does a documented one inherit the whole entry") sat directly above the line
+    that violated it, on the other path.
+
+    Measured on the reference vault the day it was found: 66 entries, 1,151 records
+    credited where 834 were genuinely the owner's, i.e. 317 phantom records. The
+    worked case: an entry carrying
+    `- **FS-attached sources for son <Name>** (<PID>, inline collateral): <21 locators>`
+    read as 26 records against 6 FS attachments. The independent confirmation
+    needed no tooling — the worst row's own `- **Sources**` bullet SAYS "13 record
+    ARKs" while the census credited it 95.
+
+    ** THE DISCRIMINATOR IS `pid_to_id`, AND THAT IS LOAD-BEARING, NOT INCIDENTAL. **
+    A region is excluded only when the foreign pid RESOLVES to an entry in the
+    roster. `PID_RE` matches the 4-3/4-4 shape, which is also the shape of an ARK
+    SUFFIX, so a bare `- fs:1:1:WWWW-111` sub-bullet scans as a line "naming a pid".
+    Requiring the roster lookup defeats that collision by construction — an ARK
+    suffix owns no entry — and it is the same test step (2) already applies.
+
+    ⚠ A first measurement of this defect, written WITHOUT the roster test, reported
+    545 entries and 5,096 records. It was reading entries' own bare-locator Sources
+    bullets as foreign-attributed and deleting them: one entry's own 24 locators
+    became "24 foreign pids" and it reported as having 0 records of its own. The
+    5,096 figure measured the measuring script. `test_own_region_ark_suffix_collision`
+    is the negative control that pins this.
+
+    ** AND IT SUBTRACTS ONLY A DEDICATED RELATIVE-SOURCES BULLET, WHICH IS NARROWER
+    THAN "ANY LINE NAMING A RELATIVE". ** The first implementation subtracted every
+    region naming a documented foreign pid, and `test_foreign_credit_magnitude`
+    caught it: its MARRIAGE_NARRATIVE fixture is
+
+        - Married **Poor Wife** (FS <PID>), m. 17 JAN 1883 — marriage atto no 2 — <ARK>
+
+    A marriage act documents BOTH spouses, so subtracting it from the husband is
+    simply wrong. The shape is live in this vault, not hypothetical: one entry's
+    numbered wife-list cites his own 1883 marriage atto on the line naming the
+    wife, and the over-eager rule took 27 records off him.
+
+    So the discriminator is the convention Spec 05 actually defines — *"put them on
+    that relative's OWN bullet"* — detected as a top-level bullet whose head line
+    carries the word "sources" together with a resolvable foreign pid.
+
+    ⚠ THIS MAKES BULLET TEXT LOAD-BEARING, WHICH rule 8 limb (g) DELIBERATELY
+    DECLINED, so the difference is worth stating. There, text would have decided
+    whether to START counting, and a typo would silently inflate. Here text decides
+    whether to STOP counting, so a typo silently leaves the pre-existing
+    over-credit — it **fails open, to the status quo**, never toward destroying a
+    real record. Given that the alternative demonstrably deletes genuine
+    shared-event records, that is the correct direction to fail in.
+
+    Overlapping regions are safe: lines are collected into a set of indices.
+    """
+    lines = body.splitlines()
+    drop: "set" = set()
+    for i, line in enumerate(lines):
+        if not _SOURCES_BULLET_RE.match(line):
+            continue                     # not a dedicated relative-sources bullet
+        region_idx = _attributed_region_indices(lines, i)
+        region = "\n".join(lines[j] for j in sorted(region_idx))
+        # The pid is looked for across the WHOLE REGION, not just the head line:
+        # a real bullet reads "- **FS-attached sources for the 3 emigrant sons**
+        # (Recipe-S harvest …):" and carries the sons' pids in its SUB-bullets.
+        # A head-only test missed it and left that entry credited 95 where its own
+        # bullet says 13. Safe to widen because the HEAD test has already
+        # established this is a sources-for-someone-else bullet — which is what
+        # keeps an entry's own `- **Sources**` block out, wherever its pids sit.
+        foreign = [p for p in PID_RE.findall(region)
+                   if p not in owners and p in pid_to_id]
+        if foreign and count_records(region):
+            drop |= region_idx
+    return "\n".join(l for i, l in enumerate(lines) if i not in drop)
+
+
 def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict[str, List[Tuple[str, str, int, int, dict]]]:
     """Return vault-id -> list of (filename, name, record_count, body_length, per_host, scholarly).
 
@@ -973,16 +1089,28 @@ def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict
             # the 4-3/4-4 shape with profile PIDs but appear in a `1:1:`/"ARK"
             # context the patterns require, so they do not overlap the profile
             # PID; don't subtract pids_in_entry (that once zeroed genuine IDs).
-            record_count = count_records(body)
-            per_host = per_host_locators(body)
-            scholarly = has_scholarly_citation(body)
             owners = own_pids(body)
 
             # (1) THE ENTRY'S OWN PERSON, keyed on the meta id. No PID needed —
-            # this is the path that used to not exist. The entry's own scholarly
-            # citation documents its own person, so it applies here unconditionally.
+            # this is the path that used to not exist.
+            #
+            # ** SCOPED TO THE ENTRY'S OWN TEXT (deferred 49, 04 AUG 2026). ** This
+            # was `count_records(body)` — the WHOLE body — so a sanctioned
+            # inline-collateral bullet ("- **FS-attached sources for son <Name>**
+            # (<PID>, inline collateral): <locators>") credited its records to the
+            # HOST as well as to the son. That is the exact mirror of the defect
+            # step (2) exists to prevent, and it survived deferred 29 because that
+            # fix only ever touched the foreign path. See `own_region`.
+            own = own_region(body, owners, pid_to_id)
+            record_count = count_records(own)
+            per_host = per_host_locators(own)
+            # Scholarly likewise: a Cawley/Richardson cite inside a relative's
+            # inline bullet documents the RELATIVE. Scoping it keeps the
+            # BOOK_SOURCED / UNCITED split honest for the same reason the record
+            # count is scoped, and matches what step (2) already asserts.
+            scholarly = has_scholarly_citation(own)
             for eid in entry_ids:
-                out[eid].append((fname, name, record_count, len(body), per_host, scholarly))
+                out[eid].append((fname, name, record_count, len(own), per_host, scholarly))
 
             # (2) INLINE COLLATERAL: a FOREIGN pid credited only under the Spec 05
             # locator test, attributed to the entry that owns that pid.
