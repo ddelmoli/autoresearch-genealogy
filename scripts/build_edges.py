@@ -169,6 +169,7 @@ def validate_edges(limit=20):
     adj_stale = []                    # (id, adjudicated_id) — see below
     adj_unexplained = []              # ids whose adjudication states no reason
     banked_stale = []                 # ids banked-not-wired that are NOW wired
+    half_wired = []                   # (id, adjudicated_why) — exactly ONE parent edge
     for r in rows:
         if not r["id"]:
             continue
@@ -206,6 +207,30 @@ def validate_edges(limit=20):
         # anything, which is how `adjudicated` acquired its own stale check.
         if meta.get("banked_parents") and edge_tokens(meta.get("parents")):
             banked_stale.append(r["id"])
+        # HALF_WIRED_PARENT (deferred_decisions 50, operator chose option 2 on
+        # 04 AUG 2026): the entry names exactly ONE parent.
+        #
+        # ** WHY IT NEEDED A COUNTER OF ITS OWN. ** `extension_frontier` defines the
+        # EXPAND frontier as "no parents edge", so a one-parent row is not SILENT,
+        # not DECLARED, and drawable by NO lane -- including the one whose entire job
+        # is missing parents. It surfaced when the operator asked why Charlemagne's
+        # queen was absent: she had been named in PROSE on two entries for seven
+        # weeks while her son's edge carried his father alone, and nothing anywhere
+        # was looking for her.
+        #
+        # ⚠ ADVISORY, AND THE BASELINE IS NOT 0. A single parent is often CORRECT --
+        # an unnamed mistress, an unrecorded mother, a foundling. Bernard King of
+        # Italy is the model: Cawley styles him a natural son "by an unnamed
+        # mistress" and his entry says so. This counts the SHAPE; only reading the
+        # entry decides whether it is a gap.
+        #
+        # DELIBERATELY NOT folded into SILENT/DECLARED (option 1), which would have
+        # moved the frontier gate by up to 75 in one commit before anyone knew how
+        # many rows were Bernard-shaped. The vault's own rule is that a declaration
+        # inherits the correctness of its REASON, so triage precedes the metric.
+        pkids = edge_tokens(meta.get("parents"))
+        if len(pkids) == 1:
+            half_wired.append((r["id"], meta.get("adjudicated_why") or ""))
 
     collapse_pairs, collapse_notes = vault_config.get_known_gen_collapse(VAULT) if VAULT else (set(), {})
     dangling, selfedge, recip, gen_bad, gen_declared = [], [], [], [], []
@@ -247,6 +272,8 @@ def validate_edges(limit=20):
     print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real IMPROVE defect candidate]")
     print(f"  ADJUDICATED_UNEXPLAINED (no `adjudicated_why`): {len(adj_unexplained)}   [advisory; the reason decides whether the judgement can ever go stale]")
     print(f"  BANKED_STALE (`banked_parents` on an entry that is NOW wired): {len(banked_stale)}   [advisory; baseline 0 — prune the key when you wire the edge]")
+    hw_unexplained = [i for i, why in half_wired if not why]
+    print(f"  HALF_WIRED_PARENT (entry names exactly ONE parent): {len(half_wired)}   [advisory; baseline is NOT 0 — a single parent is often CORRECT (unnamed mistress, unrecorded mother). Of these, {len(hw_unexplained)} state no `adjudicated_why`. NOT counted by SILENT/DECLARED: `extension_frontier` keys on \"no parents edge\", so these rows are drawable by no lane — deferred 50]")
     for c in banked_stale[:limit]:
         print(f"    BANKED_STALE {nm(c)} ({c}) has a parents edge; drop `banked_parents`")
     for c in adj_unexplained[:limit]:
