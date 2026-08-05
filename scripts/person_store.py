@@ -448,6 +448,68 @@ EXTERNAL_ID_SENTINELS = {"TBD", "NONE", "-", ""}
 #: locator.
 BANKED_HOSTS = ("fs", "wt", "anc")
 
+# The closed vocabulary of `adjudicated_why`. The first four say why a `?` EDGE
+# survives adjudication (deferred 38). `no-second-parent` says why an entry names
+# only ONE parent (deferred 50, operator-directed 04 AUG 2026) — a different kind
+# of statement, about an ABSENCE rather than about an edge.
+ADJUDICATED_WHY = ("fs-gap", "hedge", "contradicted", "privacy", "no-second-parent")
+
+
+def adjudicated_why_values(record_or_line):
+    """Return `adjudicated_why` as a LIST of reasons (possibly empty).
+
+    ** WHY A LIST, WHEN THE KEY SHIPPED AS A SCALAR (deferred 50, 04 AUG 2026). **
+    `no-second-parent` had to share the key with the existing edge reasons, and on
+    the reference vault **14 of the 109 half-wired rows already carried one**
+    (`fs-gap`, `hedge`, `contradicted`) with a real `adjudicated` list beside it.
+    A scalar could not hold both, and silently overwriting an `fs-gap` would have
+    switched off that row's re-check (see `session_plan.lane_defects`).
+
+    ⚠⚠ AND THE OBVIOUS FIX IS A TRAP THIS FUNCTION EXISTS TO CLOSE. Writing
+    `adjudicated_why: fs-gap, no-second-parent` is invalid: the meta block is a YAML
+    flow-mapping, so a value containing a comma MUST be single-quoted — and the
+    reader that had consumed this key used `adjudicated_why:\\s*([a-z\\-]+)`, which a
+    leading quote does not match AT ALL. The row would have parsed as having NO
+    reason, silently disabling the `fs-gap` re-check while the entry advertised it.
+    That is the same shape as the `?`-suffix data loss that made `adjudicated` a
+    sibling key rather than a token suffix.
+
+    So the accepted forms are, and a conforming reader takes BOTH:
+      * bare scalar, the legacy form   — `adjudicated_why: fs-gap`
+      * single-quoted flow list        — `adjudicated_why: '[fs-gap, no-second-parent]'`
+
+    Existing entries are NOT migrated: the bare form stays valid and is what all 46
+    current rows use. Only a row that genuinely needs two reasons takes the list.
+
+    Unrecognised tokens are DROPPED rather than returned, so a typo cannot invent a
+    reason — but note the asymmetry with `banked_parents`: there an unknown value
+    means "absent", here it means one reason of several may be silently ignored.
+    `ADJUDICATED_UNEXPLAINED` is what surfaces the resulting empty case.
+
+    Accepts a PersonRecord (reads the meta line out of `raw`) or a raw meta line.
+    """
+    line = record_or_line
+    if not isinstance(line, str):
+        raw = getattr(record_or_line, "raw", None)
+        if not isinstance(raw, dict):
+            return []
+        line = next((v for v in (raw.get("line"), raw.get("meta_line"))
+                     if isinstance(v, str) and _META.match(v)), "")
+    m = _META.match(line or "")
+    if not m:
+        return []
+    body = m.group(1).strip()
+    if not body.startswith("{"):
+        return []
+    for part in _flow_split(body):
+        k, sep, v = part.partition(":")
+        if sep and k.strip().lower() == "adjudicated_why":
+            v = v.strip().strip("'\"").strip()
+            v = v.lstrip("[").rstrip("]")
+            vals = [t.strip().lower() for t in v.split(",") if t.strip()]
+            return [t for t in vals if t in ADJUDICATED_WHY]
+    return []
+
 
 def banked_parents_host(record_or_line):
     """Return the host a BANKED-BUT-UNWIRED parent pair was read from, or None.

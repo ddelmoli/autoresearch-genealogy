@@ -437,7 +437,11 @@ def lane_verify(vault, include_adjudicated=False):
     import gen_person_index as g
     edge_re = re.compile(r"(parents|spouse):\s*'\[([^\]]*)\]'")
     adj_re = re.compile(r"adjudicated:\s*'\[([^\]]*)\]'")
-    why_re = re.compile(r"adjudicated_why:\s*([a-z\-]+)")
+    # ⚠ NOT a local regex any more (deferred 50): `adjudicated_why` may now be a
+    # single-quoted LIST, and the old `[a-z\-]+` pattern does not match a leading
+    # quote -- it would have read a two-reason row as having NO reason and silently
+    # switched off its fs-gap re-check. One reader, in person_store.
+    why_of_line = person_store.adjudicated_why_values
     id_re = re.compile(r"P-[0-9A-Za-z]{5,7}")
     living_re = re.compile(r"life_status:\s*(living|unknown)")
 
@@ -472,12 +476,13 @@ def lane_verify(vault, include_adjudicated=False):
         if living_re.search(meta):
             continue  # privacy: a `?` here is unclearable by web research
         adj = set()
-        why = (why_re.search(meta) or [None, ""])[1] if why_re.search(meta) else ""
+        _mline = next((l for l in meta.split("\n") if l.lstrip().startswith("- meta:")), "")
+        whys = why_of_line(_mline)          # a LIST now — see person_store (deferred 50)
         if not include_adjudicated:
             m = adj_re.search(meta)
             if m:
                 adj = set(id_re.findall(m.group(1)))
-                if why == "fs-gap":
+                if "fs-gap" in whys:
                     # Re-offer the cheaply re-checkable ones as their OWN row. The ids
                     # stay in `adj` deliberately: they are SETTLED, and letting them fall
                     # through as ordinary `?` rows would present adjudicated work as work

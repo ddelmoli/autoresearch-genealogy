@@ -30,6 +30,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 import gen_person_index as G
 import vault_config
+import person_store
 VAULT = vault_config.resolve_vault_optional()  # None => no vault; main() re-raises
 # GEDCOM filename is a per-vault constant (vault/.autoresearch.json -> "gedcom";
 # falls back to the single *.ged in the vault). See vault_config.py.
@@ -197,7 +198,8 @@ def validate_edges(limit=20):
         # go stale -- an FS-GAP can be overtaken by a contributor, a SCHOLARLY HEDGE only
         # by reading the named source, PRIVACY never -- so without it nothing can tell a
         # permanent stop from an unread article. Measured 02 AUG 2026: 12 of 47.
-        if meta.get("adjudicated") and not meta.get("adjudicated_why"):
+        _mline = next((l for l in r["block"].split("\n") if l.lstrip().startswith("- meta:")), "")
+        if meta.get("adjudicated") and not person_store.adjudicated_why_values(_mline):
             adj_unexplained.append(r["id"])
         # BANKED_STALE (04 AUG 2026): `banked_parents` says a parent pair was located
         # on another tree and deliberately NOT wired -- so once the entry HAS a parents
@@ -230,7 +232,10 @@ def validate_edges(limit=20):
         # inherits the correctness of its REASON, so triage precedes the metric.
         pkids = edge_tokens(meta.get("parents"))
         if len(pkids) == 1:
-            half_wired.append((r["id"], meta.get("adjudicated_why") or ""))
+            why = person_store.adjudicated_why_values(r["block"].split("\n")[0]
+                    if r["block"].lstrip().startswith("- meta:") else
+                    next((l for l in r["block"].split("\n") if l.lstrip().startswith("- meta:")), ""))
+            half_wired.append((r["id"], "no-second-parent" in why))
 
     collapse_pairs, collapse_notes = vault_config.get_known_gen_collapse(VAULT) if VAULT else (set(), {})
     dangling, selfedge, recip, gen_bad, gen_declared = [], [], [], [], []
@@ -272,8 +277,8 @@ def validate_edges(limit=20):
     print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real IMPROVE defect candidate]")
     print(f"  ADJUDICATED_UNEXPLAINED (no `adjudicated_why`): {len(adj_unexplained)}   [advisory; the reason decides whether the judgement can ever go stale]")
     print(f"  BANKED_STALE (`banked_parents` on an entry that is NOW wired): {len(banked_stale)}   [advisory; baseline 0 — prune the key when you wire the edge]")
-    hw_unexplained = [i for i, why in half_wired if not why]
-    print(f"  HALF_WIRED_PARENT (entry names exactly ONE parent): {len(half_wired)}   [advisory; baseline is NOT 0 — a single parent is often CORRECT (unnamed mistress, unrecorded mother). Of these, {len(hw_unexplained)} state no `adjudicated_why`. NOT counted by SILENT/DECLARED: `extension_frontier` keys on \"no parents edge\", so these rows are drawable by no lane — deferred 50]")
+    hw_declared = [i for i, d in half_wired if d]
+    print(f"  HALF_WIRED_PARENT (entry names exactly ONE parent): {len(half_wired)}   [advisory; baseline is NOT 0 — one parent is often CORRECT. {len(hw_declared)} DECLARED via `adjudicated_why: no-second-parent`, {len(half_wired)-len(hw_declared)} undeclared = the worklist. NOT counted by SILENT/DECLARED — deferred 50]")
     for c in banked_stale[:limit]:
         print(f"    BANKED_STALE {nm(c)} ({c}) has a parents edge; drop `banked_parents`")
     for c in adj_unexplained[:limit]:
