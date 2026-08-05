@@ -299,10 +299,18 @@ def is_memorial_collection(title: str) -> bool:
     return any(m in t for m in MEMORIAL_COLLECTION_MARKERS)
 
 
-# ── policy (d): PUBLISHED BOOKS, JOURNALS AND COMPILED INDEXES ──────────────────
+# ── policy (c): PUBLISHED BOOKS, JOURNALS AND COMPILED INDEXES ──────────────────
+#
+# ⚠ THE LIMB LETTERS HERE WERE OFF BY ONE UNTIL 05 AUG 2026. This block and the
+# `is_book_collection` docstring called books "policy (d)" while CLAUDE.method.md
+# rule 8 — the authority — has always had (c) books, (d) user trees, (e) memorials,
+# and even points AT this function as "limb (c)". Nothing computed changed; the
+# labels did. It surfaced while implementing Q182, whose whole ruling is expressed
+# as "(c) or (d)?", which is unreadable against a file that disagrees about which
+# is which. Comments naming a rule are part of the rule.
 #
 # ⚠ WHY THIS EXISTS AT ALL. Limb (e) has had `is_memorial_collection` since 02 AUG
-# 2026 and it demonstrably works. Limb (d) — "published-book / journal citations …
+# 2026 and it demonstrably works. Limb (c) — "published-book / journal citations …
 # real but bibliographic" — had NOTHING: no function, no list, no test. And both
 # hosts serve books with RECORD-SHAPED LOCATORS, so nothing about the locator
 # betrays them:
@@ -345,7 +353,7 @@ BOOK_COLLECTION_MARKERS = (
     "u.s. and international marriage records",
     "sons of the american revolution",
     "daughters of the american revolution",
-    # aggregated user trees sold as collections (limb (e)-adjacent, same treatment)
+    # aggregated user trees sold as collections (limb (d), same treatment)
     "family trees",
     "community trees",
     "geneanet",
@@ -368,7 +376,7 @@ BOOK_ALLOWLIST_MARKERS = (
 
 
 def is_book_collection(title: str) -> bool:
-    """Does this collection title name a policy-(d) BOOK / journal / compiled index?
+    """Does this collection title name a policy-(c) BOOK / journal / compiled index?
 
     Call it at HARVEST time with the collection title, exactly as for
     `is_memorial_collection`, and negate a positive with the `~` prefix so the
@@ -385,6 +393,84 @@ def is_book_collection(title: str) -> bool:
     if any(m in t for m in BOOK_ALLOWLIST_MARKERS):
         return False
     return any(m in t for m in BOOK_COLLECTION_MARKERS)
+
+
+# ── policy (c)/(d) SPLIT: ENCYCLOPEDIAS, WIKIS AND REFERENCE WEBSITES ───────────
+#
+# ⚠ WHY A THIRD CLASSIFIER AND NOT A LONGER BOOK LIST. Rule 8 enumerates (c)
+# published books/journals and (d) user-tree citations. FamilySearch attaches a
+# third thing that is NEITHER: Wikipedia, Quora, Encyclopaedia Britannica,
+# BritRoyals, the International Genealogical Index and the "Directory of Royal
+# Genealogical Data". They match no book keyword and no tree keyword, so a title
+# classifier files them in the RECORD bucket — which is exactly what happened in
+# session #144: **"27 records" was reported for HENRY I, a man dead in 1135**,
+# before the titles were read. Measured that sitting, on two English royal/baronial
+# rows: 48 attachments of which ~10 were this class and **0** were records; and
+# 28 / 3 / **0**.
+#
+# ⭐ OPERATOR RULING 05 AUG 2026 (Open_Questions Q182): the class SPLITS, because
+# its members are not alike.
+#   * limb (d) — WIKIPEDIA, QUORA, BRITROYALS and the like: tertiary, USER-EDITABLE
+#     and with no fixed citation. Worth what a copied tree is worth: nothing.
+#     Negate with `~`, and **a deep entry must never reach `profile_status:
+#     complete` on Wikipedia**.
+#   * limb (c) — BRITANNICA, the IGI, named encyclopaedias: edited and citable,
+#     so bibliographic rather than worthless — off the ARK metric, and may stand
+#     beside real apparatus the way a book does.
+# The ARK census treats both identically (neither is a record). The limb decides
+# what the citation may SUPPORT, which is a write-time judgement.
+#
+# ⚠ MATCHED ON THE COLLECTION TITLE, NEVER ON THE LOCATOR — same rule as (c) and
+# (e), same reason: there cannot be a locator-shaped test.
+#
+# ⚠⚠ NO BARE "IGI". `igi` is a substring of `original`, `digital` and `digitized`,
+# which appear in a large share of legitimate record-collection titles. The marker
+# is the spelled-out name, and `test_reference_works.py` pins the negative control.
+REFERENCE_WORK_LIMB_D_MARKERS = (      # tertiary + user-editable: worth nothing
+    "wikipedia",
+    "wikimedia",
+    "quora",
+    "britroyals",
+    "brit royals",
+    "directory of royal genealogical data",
+    "royal genealogical data",
+)
+
+REFERENCE_WORK_LIMB_C_MARKERS = (      # edited + citable: bibliographic, off-metric
+    "britannica",
+    "encyclopedia",
+    "encyclopaedia",
+    "international genealogical index",
+)
+
+
+def reference_work_limb(title: str):
+    """Which rule-8 limb does this reference-work title fall under — 'c', 'd' or None.
+
+    `None` means "not this class"; it does NOT mean "this is a record" — screen a
+    title with `is_memorial_collection` and `is_book_collection` too.
+
+    Limb (d) is checked FIRST and deliberately: a page titled "Wikipedia:
+    Encyclopedia of ..." is user-editable whatever else it calls itself, and the
+    stricter reading is the safe one for a class that must never support
+    `profile_status: complete`.
+    """
+    t = (title or "").casefold()
+    if any(m in t for m in REFERENCE_WORK_LIMB_D_MARKERS):
+        return "d"
+    if any(m in t for m in REFERENCE_WORK_LIMB_C_MARKERS):
+        return "c"
+    return None
+
+
+def is_reference_work(title: str) -> bool:
+    """Is this an encyclopedia / wiki / reference-website citation at all?
+
+    True for BOTH limbs, because the ARK census excludes both. Use
+    `reference_work_limb` when you need to know which one — that is the part the
+    operator's Q182 ruling turns on.
+    """
+    return reference_work_limb(title) is not None
 
 
 def extract_arks(text: str) -> set:
@@ -696,6 +782,10 @@ def parse_person_index() -> Dict[str, dict]:
                 # the gate fails closed, which is the intended reading of a person
                 # whose life status nobody has recorded.
                 "life_status": e.get("life_status"),
+                # Carried for the `before_year` structural criterion (Q157). Empty
+                # when the entry has no dated vitals, which that criterion treats
+                # as "not structural" rather than as a vacuous pass.
+                "years": vital_years(e.get("born"), e.get("died")),
             }
     return out
 
@@ -1234,20 +1324,67 @@ def is_single_sourced(rec) -> bool:
     return (rec.get("ark_count") or 0) > 0 and (rec.get("hosts") or 0) <= 1
 
 
-def is_structural(pid: Optional[str], gen: Optional[int], region: Optional[str]) -> bool:
+_VITAL_YEAR_RE = re.compile(r"\b(\d{3,4})\b")
+
+
+def vital_years(born: Optional[str], died: Optional[str]) -> tuple:
+    """Every 4-digit year appearing in a person's `born`/`died` DateValues.
+
+    Deliberately takes EVERY year rather than "the" year: a GEDCOM 7 DateValue may
+    be a range or a span (`BET 1816 AND 1823`, `BEF JAN 1866`), and the criterion
+    below asks whether the person's whole life sits before a cutoff — so the LATEST
+    year mentioned is the one that decides it, not a parsed single value.
+    """
+    out = []
+    for v in (born, died):
+        if v:
+            out += [int(y) for y in _VITAL_YEAR_RE.findall(str(v))]
+    return tuple(out)
+
+
+def is_structural(pid: Optional[str], gen: Optional[int], region: Optional[str],
+                  years: tuple = ()) -> bool:
     """A 0-ARK entry that can essentially never acquire an indexed-record ARK.
 
     `pid` may be None since the census stopped requiring one (26 JUL 2026). The
-    deep-generation test is PID-free and still applies; the region-scoped
-    allowlists are keyed on FS PIDs, so a PID-less entry simply cannot match them
-    — correctly, since those rules exist to name specific FS-profiled clusters."""
+    deep-generation test is PID-free and still applies; the enumerated allowlists
+    are keyed on FS PIDs, so a PID-less entry simply cannot match them — correctly,
+    since those rules exist to name specific FS-profiled clusters.
+
+    ⭐ `before_year` IS THE CRITERION; `pids`/`pid_prefixes` ARE ENUMERATIONS
+    (operator ruling 05 AUG 2026, Open_Questions Q157/Q144). A rule may carry a
+    `before_year` with a `region`, meaning: *all this person's dated vitals fall
+    before the year that region's civil registration begins, in a parish whose
+    registers are not online*. That is what the enumerated rules always MEANT, and
+    stating it as a criterion is what stops the drift — the reference vault's rule keyed
+    on the FS-PID prefixes `P6K`/`P97`, which carry no meaning at all, and by the
+    time the drift was measured it was missing 16 entries of the very cluster it
+    describes while two of its own members no longer qualified.
+
+    ⚠⚠ AN UNDATED ENTRY IS NOT STRUCTURAL, AND THIS GUARD IS LOAD-BEARING.
+    "All dated vitals before 1866" is VACUOUSLY TRUE of a person with no dates at
+    all — measured on the reference vault, 22 undated entries in that one region would have
+    been retired from the worklist by a naive reading, including one at Gen 13 whom
+    nobody has dated. So a `before_year` rule requires at least ONE dated vital.
+    An undated person is unevidenced, which is a reason to research them, not to
+    declare them unresearchable.
+
+    ⚠ It answers "were they alive before the registers start", NOT "is anything
+    findable". A person who dies in 1869 has a Stato Civile death record whatever
+    their birth year, so the LATEST year decides — see `vital_years`.
+    """
     if gen is not None and gen >= STRUCTURAL_GEN:
         return True
-    if not region or not pid:
+    if not region:
         return False
     for rule in _STRUCTURAL_RULES:
         rregion = rule.get("region")
         if rregion and rregion not in region:
+            continue
+        before = rule.get("before_year")
+        if before and years and max(years) < int(before):
+            return True
+        if not pid:
             continue
         prefixes = tuple(rule.get("pid_prefixes", []))
         if prefixes and pid.startswith(prefixes):
@@ -1317,7 +1454,8 @@ def gather_records(gen_lo=None, gen_hi=None, confidence=None, region=None, inclu
             fname, narr_name, ark_count, body_len, per_host, scholarly = fold_matches(matches)
             category = classify(ark_count)
             if (category == "SOURCE_GAP" and not include_structural
-                    and is_structural(pid, info["gen"], info["region"])):
+                    and is_structural(pid, info["gen"], info["region"],
+                                      info.get("years", ()))):
                 # Split (23 JUL 2026): documented-but-unharvestable vs genuinely
                 # unresearched. Both stay out of the actionable SOURCE_GAP count.
                 category = "BOOK_SOURCED" if scholarly else "UNCITED"

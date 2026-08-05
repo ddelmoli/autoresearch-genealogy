@@ -56,7 +56,11 @@ AUTORESEARCH_VAULT="[VAULT_PATH]".
         every locator, because that one string both becomes the record description
         below AND decides the policy-(e) memorial exclusion
         (`harvest_sources.is_memorial_collection` -- negate a positive with `~`,
-        never judge the brands by eye). Full rule in `19-fs-source-harvest` step 3.
+        never judge the brands by eye) AND the policy-(c)/(d) reference-work
+        exclusion (`harvest_sources.reference_work_limb` -- Wikipedia, Quora and
+        BritRoyals are limb (d), worth nothing; Britannica and the IGI are limb
+        (c), bibliographic. On deep British rows this class is the MAJORITY of
+        what FS attaches). Full rule in `19-fs-source-harvest` step 3.
       - **Research Help**: unattached record hints, possible duplicates, data
         problems, and prior not-a-match decisions. It does NOT render under
         automation (the driven tab is backgrounded), so fetch the four

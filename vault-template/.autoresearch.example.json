@@ -48,11 +48,12 @@
     "agad":             { "label": "AGAD (Fond 300)",        "url_pattern": "agadd2.home.net.pl",      "locator_kind": "id" }
   },
 
-  "_comment_structural_gap": "Entries that can essentially never acquire an indexed ARK (deep pre-registration lines). deep_gen_threshold: Gen >= this is peerage/visitation-documented. rules: region- or PID-scoped exemptions from the SOURCE_GAP to-do count.",
+  "_comment_structural_gap": "Entries that can essentially never acquire an indexed ARK (deep pre-registration lines). deep_gen_threshold: Gen >= this is peerage/visitation-documented. rules: exemptions from the SOURCE_GAP to-do count. PREFER before_year -- it states the CRITERION (every DATED vital falls before the year that region's civil registration begins) instead of enumerating opaque FS PIDs, so it does not drift as people are added. An entry with NO dated vitals never satisfies it: that condition is vacuously true of someone nobody has dated, and an undated person is unevidenced rather than unresearchable. Keep pids for the class a date cannot express -- people whose records exist and are simply not on FamilySearch.",
   "structural_gap": {
     "deep_gen_threshold": 16,
     "rules": [
-      { "label": "example: pre-1866 parish-resident line, registers not digitized online", "region": "Somewhere", "pid_prefixes": ["ABC"] }
+      { "label": "example (PREFERRED, a criterion): pre-1866 parish-resident line, registers not digitized online", "region": "Somewhere", "before_year": 1866 },
+      { "label": "example (an enumeration, for records that exist but are not on FamilySearch)", "pids": ["ABCD-123"] }
     ]
   },
 

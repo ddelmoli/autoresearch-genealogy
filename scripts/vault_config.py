@@ -37,7 +37,22 @@ DEFAULTS = {
     "gedcom": None,          # filename within the vault; None => auto-detect single *.ged
     "structural_gap": {
         "deep_gen_threshold": 16,   # Gen >= this is peerage/visitation-documented, never an indexed ARK
-        "rules": [],                # list of {label, region?, pid_prefixes?, pids?}
+        # list of {label, region?, before_year?, pid_prefixes?, pids?}
+        #
+        # ⭐ `before_year` IS THE CRITERION AND THE OTHER TWO ARE ENUMERATIONS
+        # (operator ruling 05 AUG 2026, Q157/Q144). With a `region` it reads: all
+        # this person's DATED vitals fall before the year that region's civil
+        # registration begins, in a parish whose registers are not online. That is
+        # what a `pid_prefixes` rule always MEANT, and a criterion does not drift
+        # the way a list does — the reference vault's one region-scoped rule keyed on the
+        # FS-PID prefixes `P6K`/`P97`, which carry no meaning whatever, and had
+        # silently fallen 16 entries short of the cluster it describes.
+        # ⚠ An entry with NO dated vitals is NOT structural: the condition is
+        # vacuously true of it, and an undated person is unevidenced rather than
+        # unresearchable. `harvest_sources.is_structural` enforces that guard.
+        # ⚠ Keep `pids` for the class a date CANNOT express: people whose records
+        # exist and are simply not on FamilySearch.
+        "rules": [],
     },
     "known_dup_fs_pids": {"count": 0, "note": ""},  # advisory baseline for the DUP_FS_PID display
     "dup_fs_pid_overrides": {},     # FS PID -> canonical vault id, for the ambiguous DUP_FS_PID pairs
