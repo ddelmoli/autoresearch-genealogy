@@ -50,7 +50,12 @@ CLAUDE.local.md
 # Operator-local config and the anonymization denylist (a list of the exact
 # private terms — the most sensitive file in the tree).
 .private/
-.claude/
+# NOTE: this must exclude the CONTENTS, not the directory. Git cannot re-include
+# anything beneath an excluded DIRECTORY, so a bare `.claude/` would make the
+# `!` below a silent no-op. settings.json and settings.local.json stay ignored
+# (hooks + the local AUTORESEARCH_VAULT path); only skills/ is framework material.
+.claude/*
+!.claude/skills/
 
 
 # --- 3. Personal design lanes ------------------------------------------------
