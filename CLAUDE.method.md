@@ -295,7 +295,7 @@ When adding or modifying person entries in any Family_Tree file:
 
      ```
      - **Named-in** (off the ARK coverage metric; each documents a CHILD and names him as the father):
-       - son Hyman's 1946 NYC death, naming "<Name>" as his father — ~fs:1:1:XXXX-XXX
+       - son <Son's name>'s 1946 death, naming "<Name>" as his father — ~fs:1:1:XXXX-XXX
      ```
 
      ⚠ **THE BULLET NAME DOES NOTHING MECHANICALLY — THE `~` IS WHAT SUPPRESSES, AND THAT WAS MEASURED, NOT ASSUMED.** The same locator unnegated inside a `Named-in` bullet counts 1; negated it counts 0. So **always write the `~`**; the bullet name supplies the MEANING a bare negation destroys. That distinction is the whole reason for the class: under plain `~` a negated Find a Grave page and a negated son's death certificate look identical, though one is worthless and the other may be the only independent witness to the man's name. *(Making the bullet name load-bearing in code was considered and NOT taken — it would make bullet TEXT a failure surface, where a typo silently starts counting.)*
@@ -305,7 +305,7 @@ When adding or modifying person entries in any Family_Tree file:
      ```
      - **Sibling records on the profile** (off the ARK coverage metric; each documents a
        SIBLING and attests nothing about her — rule 8 limb (h)):
-       - brother Nicholas's 1707 baptism, "and William Woodbery" (their father) — ~fs:1:1:XXXX-XXX
+       - brother <Brother's name>'s 1707 baptism, "and <Father's name>" (their father) — ~fs:1:1:XXXX-XXX
      ```
 
      ⚠ **WHY RECORD SOMETHING WORTH NOTHING.** The alternative is deletion, and a deleted locator is indistinguishable from one nobody looked at — so the next reader of that Sources tab re-derives the same judgement. **The `~` says "seen and dismissed"; absence says nothing.** This is the same argument as `~locator` generally and as the `~PID` in the `fs` field.
