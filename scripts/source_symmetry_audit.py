@@ -109,11 +109,42 @@ def collect(vault=None):
 
 
 def spouse_asymmetry(blocks, spouses):
-    """Marriage locators held by one spouse and not the other."""
+    """Marriage locators CITED by one spouse and not the other.
+
+    ** SCOPED TO THE `Sources` BULLET, AND THAT IS A POSITION RULE, NOT A KEYWORD
+    ONE (narrowed 06 AUG 2026 after the first 33 rows were worked). ** The first
+    cut read every line of an entry, and 8 of the 15 rows it still reported were
+    firing on NARRATIVE prose that merely contained a marriage word beside an
+    unrelated locator: a baptism, a christening, an 1891 census, a write-back
+    DETACH bullet, and a third party's certificate quoted as corroboration. None
+    was a citation, so none could be propagated, and every one had to be declined
+    by hand.
+
+    Restricting to `sources_bullet_text` is the same fix `harvest_sources` itself
+    adopted for deferred_decisions 19: "a line can hold a citation and a caveat at
+    once, so exclusion must key on WHERE a citation sits, not on what words
+    surround it." Measured: it removes all 8 prose rows and, against a control of
+    the 11 propagations made that day, loses NONE.
+
+    ** WHAT WAS CONSIDERED AND REJECTED, both on measurement. ** (1) Suppressing a
+    pair once the lacking spouse holds ANY marriage locator, to kill the
+    twice-married case: it dropped 0 rows, because those spouses hold no marriage
+    record at all. (2) Suppressing when the record description names a DIFFERENT
+    spouse: it dropped 13 of 15, but it is name matching, which this vault has
+    already rejected for log backlinks, and it would have suppressed a true
+    positive found the same day where the description read "his marriage to Ann
+    Right" and the wife's entry is "Anna Wright".
+
+    ** AND NO SUPPRESSION KEY WAS ADDED. ** An `adjudicated`-style marker was the
+    obvious move and is wrong here: after this narrowing, most of what remains is
+    either a real data defect (a third party's record cited as the holder's, which
+    also over-credits the census) or a genuinely correct asymmetry on a
+    twice-married person. A key would have memorialised check noise as settled
+    work, and a declaration inherits the correctness of its reason."""
     marriage_locs = {}
     for pid, (_name, _fn, body) in blocks.items():
         found = set()
-        for ln in body.splitlines():
+        for ln in harvest_sources.sources_bullet_text(body).splitlines():
             if MARRIAGE_RE.search(ln):
                 found |= _locators(ln)
         marriage_locs[pid] = found

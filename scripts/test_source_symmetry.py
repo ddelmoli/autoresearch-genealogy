@@ -72,7 +72,7 @@ print("\nSPOUSE_ASYMMETRY")
 
 blocks = {
     "P-H00000": ("Husband Placeholder", "Family_Tree_Example.md",
-                 "- marriage to Wife Placeholder, 1720 — anc:2495:111\n"),
+                 "- **Sources**:\n  - marriage to Wife Placeholder, 1720 — anc:2495:111\n"),
     "P-W00000": ("Wife Placeholder", "Family_Tree_Example.md",
                  "- She kept house at Anytown.\n"),
 }
@@ -84,7 +84,7 @@ check(len(rows) == 1 and rows[0][0] == "P-W00000",
 # NEGATIVE CONTROL: both spouses cite it -> silent.
 blocks_sym = dict(blocks)
 blocks_sym["P-W00000"] = ("Wife Placeholder", "Family_Tree_Example.md",
-                          "- marriage to Husband Placeholder, 1720 — anc:2495:111\n")
+                          "- **Sources**:\n  - marriage to Husband Placeholder, 1720 — anc:2495:111\n")
 check(S.spouse_asymmetry(blocks_sym, spouses) == [],
       "NEGATIVE CONTROL: silent when BOTH spouses cite the marriage")
 
@@ -100,7 +100,7 @@ check(S.spouse_asymmetry(blocks_none, spouses) == [],
 # one spouse only is ordinary, not a defect.
 blocks_census = {
     "P-H00000": ("Husband Placeholder", "Family_Tree_Example.md",
-                 "- 1850 census, Anytown — fs:1:1:XXXX-XXX\n"),
+                 "- **Sources**:\n  - 1850 census, Anytown — fs:1:1:XXXX-XXX\n"),
     "P-W00000": ("Wife Placeholder", "Family_Tree_Example.md", "- No sources yet.\n"),
 }
 check(S.spouse_asymmetry(blocks_census, spouses) == [],
@@ -109,11 +109,33 @@ check(S.spouse_asymmetry(blocks_census, spouses) == [],
 # A `~`-negated marriage locator is not a citation, so it cannot create asymmetry.
 blocks_neg = {
     "P-H00000": ("Husband Placeholder", "Family_Tree_Example.md",
-                 "- marriage record, rejected — ~anc:2495:111\n"),
+                 "- **Sources**:\n  - marriage record, rejected — ~anc:2495:111\n"),
     "P-W00000": ("Wife Placeholder", "Family_Tree_Example.md", "- No sources yet.\n"),
 }
 check(S.spouse_asymmetry(blocks_neg, spouses) == [],
       "NEGATIVE CONTROL: a negated marriage locator does not create asymmetry")
+
+# POSITION RULE: a marriage locator in NARRATIVE PROSE is not a citation and must
+# not create an asymmetry. This is the 06 AUG 2026 narrowing; before it, 8 of 15
+# live rows fired on prose lines that merely contained a marriage word.
+blocks_prose = {
+    "P-H00000": ("Husband Placeholder", "Family_Tree_Example.md",
+                 "- He was married at Anytown; his baptism image is fs:1:1:XXXX-XXX\n"),
+    "P-W00000": ("Wife Placeholder", "Family_Tree_Example.md", "- No sources yet.\n"),
+}
+check(S.spouse_asymmetry(blocks_prose, spouses) == [],
+      "POSITION: a marriage locator in prose, NOT in a Sources bullet, does not fire")
+
+# POSITIVE CONTROL for the same rule: the identical locator INSIDE a Sources
+# bullet must still fire. A position rule that suppresses everything is
+# indistinguishable from one that works.
+blocks_bullet = {
+    "P-H00000": ("Husband Placeholder", "Family_Tree_Example.md",
+                 "- **Sources**:\n  - marriage to Wife Placeholder, 1720 — fs:1:1:XXXX-XXX\n"),
+    "P-W00000": ("Wife Placeholder", "Family_Tree_Example.md", "- No sources yet.\n"),
+}
+check(len(S.spouse_asymmetry(blocks_bullet, spouses)) == 1,
+      "POSITIVE CONTROL: the same locator INSIDE a Sources bullet still fires")
 
 # The spouse edge may carry a trailing '?'; it must still resolve.
 spouses_q = {"P-H00000": ["P-W00000?"], "P-W00000": ["P-H00000?"]}
