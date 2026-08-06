@@ -35,7 +35,24 @@ says which, and why. Read it before treating a count as damage.
 `header_xref_audit.py`, `meta_presence_audit.py`, `dup_name_audit.py`,
 `gen_heading_audit.py`, `frontmatter_audit.py`, `build_edges.py --validate`
 (PARENT-GEN MISMATCH, GEN_COLLAPSE, ADJUDICATED_STALE, ADJUDICATED_UNEXPLAINED,
-BANKED_STALE), `handoff_lint.py`.
+BANKED_STALE), `handoff_lint.py`, `source_symmetry_audit.py`
+(SPOUSE_ASYMMETRY, DESCRIBED_NOT_NEGATED).
+
+**`source_symmetry_audit.py` finds sources the vault OWNS but has not APPLIED**, and
+is the one advisory check whose non-zero reading is expected rather than tolerated:
+
+- **SPOUSE_ASYMMETRY** — a marriage locator cited on one spouse and not the other. A
+  marriage documents both parties, so most rows are an **uncited opportunity**, not a
+  defect. Cite it on both, or record why not.
+- **DESCRIBED_NOT_NEGATED** — a locator the entry's own prose calls non-evidence,
+  left without the `~` that stops the census counting it. It found two real
+  over-credits on adoption, and it **cannot** tell "this caveat is about this
+  locator" from "this line holds a caveat and a real citation at once" — the same
+  limit `harvest_sources.sources_bullet_text` documents. **Read the line before
+  adding a `~`.**
+
+Run it after a source harvest and after citing any marriage. It is not in the
+SessionStart banner.
 
 ## Three things that go wrong when reading a gate
 
