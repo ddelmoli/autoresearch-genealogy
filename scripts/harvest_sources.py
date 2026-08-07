@@ -1334,11 +1334,45 @@ def vital_years(born: Optional[str], died: Optional[str]) -> tuple:
     be a range or a span (`BET 1816 AND 1823`, `BEF JAN 1866`), and the criterion
     below asks whether the person's whole life sits before a cutoff — so the LATEST
     year mentioned is the one that decides it, not a parsed single value.
+
+    ⚠⚠ `BEF` IS AN EXCLUSIVE BOUND AND ITS YEAR IS NOT A YEAR THE PERSON LIVED
+    (fixed 06 AUG 2026). Take a rule with `before_year: [YEAR]`. `BEF JAN [YEAR]`
+    means the event happened before 1 JAN [YEAR], so the latest year it can denote
+    is [YEAR] - 1 — yet this function returned [YEAR], and `is_structural` tests
+    `max(years) < before_year`, so a death recorded as *before January [YEAR]*
+    FAILED a rule that means "everything before [YEAR]". Off by exactly one year,
+    in the direction that keeps a structurally-unsourceable person on a worklist
+    whose route can never reach them. On the reference vault this wrongly excluded
+    THREE entries from a regional rule — two written `BEF JAN [YEAR]` and one
+    `BEF [YEAR]` — each independently verified to hold ZERO attachments at the
+    `tf/person/{PID}/entityref` endpoint, with a junk-PID control returning 404 in
+    the same pass. The docstring above even cited the `BEF JAN` form as a worked
+    example while the comparison treated the bound as inclusive.
+
+    So a `BEF`-qualified value contributes **year - 1**. The qualifier scopes to
+    the value it appears in (`born` and `died` are judged separately), which is
+    why the decrement is applied per value and not to the whole tuple.
+
+    ⚠ THE MIRROR CASE, `AFT`, IS DELIBERATELY LEFT ALONE and is a KNOWN
+    UNDER-STATEMENT. `AFT 1872` means the person was alive after 1872 and may
+    have died decades later, but this returns 1872 — which makes `max(years)`
+    too SMALL and can therefore declare someone structural who is not. Making it
+    safe means treating `AFT` as unbounded, which would REMOVE entries from the
+    existing regional rules and move the census. That is a separate decision and
+    was not taken here.
     """
     out = []
     for v in (born, died):
-        if v:
-            out += [int(y) for y in _VITAL_YEAR_RE.findall(str(v))]
+        if not v:
+            continue
+        s = str(v)
+        years = [int(y) for y in _VITAL_YEAR_RE.findall(s)]
+        if not years:
+            continue
+        # An exclusive upper bound: the named year is the first year EXCLUDED.
+        if re.search(r"\bBEF\b", s, re.IGNORECASE):
+            years = [y - 1 for y in years]
+        out += years
     return tuple(out)
 
 

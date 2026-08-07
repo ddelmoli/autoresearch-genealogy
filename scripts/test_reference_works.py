@@ -91,7 +91,11 @@ check("Wikipedia: reference yes, book no, memorial no",
 print("\nQ157 — vital_years takes EVERY year, so a span's LATEST year decides")
 check("plain years", H.vital_years("1799", "1866"), (1799, 1866))
 check("BET ... AND ...", H.vital_years("BET 1816 AND 1823", None), (1816, 1823))
-check("BEF JAN 1866", H.vital_years("ABT 1800", "BEF JAN 1866"), (1800, 1866))
+# ⚠ CHANGED 06 AUG 2026: this line asserted (1800, 1866) and was PINNING A DEFECT.
+# `BEF JAN 1866` is an EXCLUSIVE bound -- before 1 JAN 1866 -- so the latest year it
+# can denote is 1865, and returning 1866 made `max(years) < before_year` reject a
+# life that ended before the cutoff. See test_bef_exclusive_bound.py.
+check("BEF JAN 1866 (exclusive bound)", H.vital_years("ABT 1800", "BEF JAN 1866"), (1800, 1865))
 check("no dates at all", H.vital_years(None, None), ())
 
 print("\nQ157 — before_year retires a pre-registration life, and NOT the others")
