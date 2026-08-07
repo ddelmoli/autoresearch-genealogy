@@ -364,6 +364,104 @@ def obituary_postdates_death(title: str, event_year, died_year, grace: int = 1) 
     return ey > dy + grace
 
 
+_COLLECTION_RANGE_RE = re.compile(r"\b\d{4}\s*[-–—]\s*\d{4}\b")
+_LINE_YEAR_RE = re.compile(r"\b(1[6-9]\d{2}|20\d{2})\b")
+
+
+def obituary_years_in_line(text: str) -> tuple:
+    """EVENT years on a Sources line, with COLLECTION DATE RANGES removed first.
+
+    ⚠⚠ THIS STRIPPING IS THE WHOLE DIFFICULTY, and without it the check is worse
+    than useless. Obituary collection titles CARRY THEIR OWN SPAN — "GenealogyBank
+    Historical Newspaper Obituaries, **1815-2013**", "Obituary Records, **2014-2023**"
+    — so naive year extraction reads 2013 or 2023 as the event year and flags every
+    obituary ever cited, including a person's OWN. A screen that fires on everything
+    is indistinguishable from a broken one.
+
+    Ranges are removed as a SPAN, not as two years, so `1815-2013` contributes
+    nothing while a real `d. 1968 ... obituary 22 AUG 1968` keeps its 1968.
+    """
+    return tuple(int(y) for y in _LINE_YEAR_RE.findall(_COLLECTION_RANGE_RE.sub(" ", text or "")))
+
+
+def obituary_postdates_findings(vault=None):
+    """Credited obituaries dated AFTER the person they are credited to had died.
+
+    The automatic, vault-side half of the limb (f)/(g)/(h) check. Yields dicts with
+    `id`, `name`, `file`, `line`, `obit`, `died`.
+
+    ⚠⚠ IT SEES ONLY WHAT THE VAULT DESCRIBES, AND THAT IS THE POINT OF STATING IT.
+    A collection TITLE is what `is_obituary_collection` needs, and roughly 96% of
+    this vault's Sources sub-bullets are a BARE LOCATOR with no description — so a
+    bare `fs:1:1:XXXX-XXX` that happens to be an obituary is INVISIBLE here and
+    always will be. This check therefore reports a FLOOR, never a total, and the way
+    to raise the floor is the record-description rule Spec 03 already requires. The
+    FamilySearch endpoint sweep is the complementary half and sees the other 96%.
+
+    ⚠ NEGATED LOCATORS ARE SKIPPED. A `~`-marked locator is settled work — seen and
+    dismissed — and re-flagging it would make the count grow every time somebody
+    correctly files one, which is precisely backwards.
+
+    ⚠ A LINE WITH NO EVENT YEAR IS SKIPPED, not guessed. Unknown is neither innocent
+    nor guilty, the same guard `is_structural` and `obituary_postdates_death` apply.
+    """
+    import person_store
+    v = vault or VAULT
+    died = {}
+    for p in person_store.iter_people(v):
+        ys = _LINE_YEAR_RE.findall(str(p.died or ""))
+        if ys:
+            died[p.id] = max(int(y) for y in ys)
+    for path, rows in entry_blocks_with_ids().items():
+        for pid, name, _ln, body in rows:
+            dy = died.get(pid)
+            if dy is None:
+                continue
+            in_sources = False
+            src_indent = 0
+            for off, line in enumerate(str(body).split("\n")):
+                indent = len(line) - len(line.lstrip())
+                # ⚠⚠ ONLY SUB-BULLETS OF A `Sources` BULLET ARE JUDGED. Matching any
+                # line that mentions an obituary sweeps in ORDINARY NARRATIVE — a
+                # "(checked 03 JUN 2026)" status note, an emigration paragraph — which
+                # may legitimately discuss an obituary, carry a locator, and contain a
+                # year that is not an event date. Measured on the second draft: FOUR of
+                # six findings were prose of exactly that kind. A record claim lives in
+                # a Sources bullet; prose about a record does not.
+                if SOURCES_BULLET_RE.match(line):
+                    in_sources, src_indent = True, indent
+                    continue
+                if in_sources and line.strip() and indent <= src_indent:
+                    in_sources = False          # dedented out of the bullet
+                if not in_sources:
+                    continue
+                if not is_obituary_collection(line):
+                    continue
+                # Only an UNNEGATED locator credits anything. `extract_arks` is the
+                # canonical reader and applies `strip_negated_locators` itself, so a
+                # `~`-marked line yields the empty set here — never a hand-rolled
+                # regex, which starts matching inside locators and counts the very
+                # tokens it exists to exclude.
+                arks = extract_arks(line)
+                # ⚠⚠ EXACTLY ONE LOCATOR, i.e. a CONFORMANT Spec 03 record line.
+                # Without this the check is unusable, and the failure is not subtle:
+                # a legacy multi-locator bullet carries HARVEST METADATA in the same
+                # line ("Recipe-S harvest 29 MAY 2026", "checked 03 JUN 2026"), and
+                # the harvest YEAR then reads as the obituary's event year. Measured
+                # on the first draft: SEVEN of 17 findings were a session date, every
+                # one of them the current year, on lines holding 6 to 37 locators.
+                # A line with one record and one date is the only shape where "the
+                # year on this line" means "the year of this record" — which is the
+                # Spec 03 grammar, so conformance is what makes the audit possible.
+                if len(arks) != 1:
+                    continue
+                for y in obituary_years_in_line(line):
+                    if y > dy + 1:
+                        yield {"id": pid, "name": name, "file": str(path).split("/")[-1],
+                               "line": off, "obit": y, "died": dy}
+                        break
+
+
 def is_memorial_collection(title: str) -> bool:
     """Does this FS collection title name a policy-(e) memorial/headstone index?
 
@@ -1655,6 +1753,16 @@ def heartbeat():
     base += (f"; SINGLE_SOURCED {single} (documented by ONE host only), "
              f"MULTI_SOURCED {multi}")
 
+    # limb (f)/(g)/(h): obituaries credited to someone they postdate. Reported EVERY
+    # session, including at 0 — this is a gate, and the lesson this vault keeps
+    # relearning is that a count nobody prints is a count that rots. Baseline 0 as of
+    # 06 AUG 2026, after the Q209 ruling was applied.
+    _ob = len(list(obituary_postdates_findings()))
+    base += f"; OBITUARY_POSTDATES {_ob}"
+    if _ob:
+        base += (" [credited obituary dated AFTER this person's own death = a RELATIVE's,"
+                 " limb (g)/(h) — negate with `~`; detail: --obituary-audit]")
+
     # deferred_decisions 19: the strict/loose gap, reported every session so the
     # staged migration cannot quietly stall. Drops to 0 when the flip is safe.
     loose_t = strict_t = 0
@@ -1726,9 +1834,26 @@ def main():
                         help="Report the deferred_decisions-19 migration worklist: entries whose "
                              "records are cited OUTSIDE a `- **Sources**` bullet, and would stop "
                              "counting when strict crediting is switched on.")
+    parser.add_argument("--obituary-audit", action="store_true",
+                        help="List credited obituaries dated AFTER the person's own death "
+                             "(rule 8 limb (f)/(g)/(h)). A FLOOR, not a total: it can only see "
+                             "sub-bullets that DESCRIBE the source, and most are bare locators.")
     parser.add_argument("--heartbeat", action="store_true",
                         help="Print a one-line coverage + cadence status for the SessionStart audit suite (reads .maintenance.json `harvest`).")
     args = parser.parse_args()
+
+    if args.obituary_audit:
+        rows = list(obituary_postdates_findings())
+        print("=== OBITUARY_POSTDATES — a credited obituary dated after this person's own death ===")
+        print("    Rule 8 limb (f) counts a person's OWN obituary; limbs (g)/(h) put a RELATIVE's")
+        print("    off the metric (operator ruling 06 AUG 2026). Negate a positive with `~`.")
+        print("  ⚠ A FLOOR, NEVER A TOTAL: this reads the record DESCRIPTION, and most Sources")
+        print("    sub-bullets are a bare locator. The FS endpoint sweep sees the rest.")
+        for r in sorted(rows, key=lambda r: r["obit"] - r["died"], reverse=True):
+            print(f"  {r['id']}  {(r['name'] or '')[:30]:30s}  obituary {r['obit']} vs death "
+                  f"{r['died']}  (+{r['obit'] - r['died']} yr)  {r['file']}")
+        print(f"\nOBITUARY_POSTDATES: {len(rows)}  [baseline 0]")
+        raise SystemExit(0)
 
     if args.sources_conformance:
         loose = strict = 0
