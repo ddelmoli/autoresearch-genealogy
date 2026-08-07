@@ -217,6 +217,29 @@ Four rules, each of which exists because breaking it caused a real defect:
 3. **`EST`, not `ABT`, for a declarant-age-derived year.** That puts this vault's
    "declarant-age estimates are ESTIMATES, not facts" rule *in the data* instead of in
    a prose caveat.
+   - ⭐⭐ **THE DISCRIMINATOR IS "CALCULATED FROM OTHER DATA", NOT "HOW VAGUE THE INPUT WAS"**
+     (operator supplied the GEDCOM 7 definitions, 07 AUG 2026). Verbatim: **`ABT x`** = *exact
+     date unknown, but near x*; **`CAL x`** = *x is calculated from other data*; **`EST x`** =
+     *exact date unknown, but near x; **and** x is calculated from other data*. So **EST is
+     literally ABT + CAL**, and the test is a single question: **was `x` DERIVED?**
+
+     | the value was… | approximate | derived from other data | use |
+     |---|---|---|---|
+     | a rough guess, nothing computed | ✔ | ✘ | **`ABT`** |
+     | computed, and you believe the result is exact | ✘ | ✔ | **`CAL`** |
+     | computed, result still approximate | ✔ | ✔ | **`EST`** |
+
+   - ⛔ **DO NOT reason "the input was itself approximate, so ABT and EST are both defensible."**
+     That argument was made in this vault about a Gen-14 row whose entry says *"approximately 21
+     years old"* at a dated event, and it is **wrong**: (event year − stated age) is a
+     calculation whatever the precision of the age, so the row is `EST`. **The vagueness of the
+     input is what separates `EST` from `CAL`, not what excuses `ABT`.**
+   - ⚠ **`CAL` is the value this vault most likely under-uses.** A birth date computed *exactly*
+     — from a death date plus an age given in years, months and days, say — is `CAL`, not `EST`,
+     because nothing about it is approximate. No gate can see the difference.
+   - ⚠ **NOTHING WILL EVER FLAG A WRONG ONE.** `ABT`, `EST` and `CAL` all normalise to the same
+     comparable year, so `DATE_DRIFT` and every other date gate are blind to the distinction.
+     It is correct only if it is written correctly the first time.
 4. **Old Style / New Style dual dates use BOTH keys, and the DATE takes the NEW STYLE
    (later) year** — GEDCOM 7 Appendix A §6.2's own worked example. Taking the earlier
    year is the intuitive choice and it is wrong; it silently backdates every
