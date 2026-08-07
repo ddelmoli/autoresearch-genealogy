@@ -176,6 +176,39 @@ ARM_DISPLAY_ORDER = ("SOURCE_GAP", "UNCITED", "LOW_COVERAGE",
                      "WELL_SOURCED", "BOOK_SOURCED", "EXISTENCE_PROBE")
 EXISTENCE_PROBE = "EXISTENCE_PROBE"
 
+# ---------------------------------------------------------------------------
+# ROUTE RETIREMENT — the two STRUCTURAL arms ask a different question.
+#
+# For every other arm the poll is "has anything NEW appeared on FamilySearch?".
+# For these two it cannot be, because the whole point of the category is that
+# FamilySearch is not where this person's evidence lives: BOOK_SOURCED cites
+# scholarly apparatus, and UNCITED's own documented route is a LIBRARY pass.
+# Polling them against FS asks a question whose answer is known in advance.
+#
+# ** MEASURED, WHICH IS WHY THIS EXISTS (07 AUG 2026, deferred 51 + Q157). **
+# These two arms hit 0.17 and 0.15 against 0.43-0.48 for every other arm, while
+# holding 355 of the 1,386 rotation pool -- 26%. The vault was declaring "FS will
+# never document this person" and then polling FS for them, about one poll in
+# four. Two rows were re-polled in a single sitting for exactly that reason.
+#
+# So (operator ruling, deferred 51 decision 1) the poll for these arms becomes
+# "is the non-FS route NAMED on this entry?" -- a row carrying `route` has
+# answered it and RETIRES; a row without one stays, and NAMING the route is the
+# disposition that retires it.
+#
+# ⚠ THE RETIREMENT IS PERMANENT FOR THESE ARMS, AND DELIBERATELY SO. `route` is
+# a standing declaration about WHERE THE EVIDENCE IS, not a dated negative like
+# `fs_probed`, so it does not expire and no cooldown applies to it. If the route
+# is later worked and the person becomes sourceable here, their CATEGORY changes
+# and they re-enter the rotation through a different arm on their own.
+#
+# ⛔ `fs_probed` DELIBERATELY DOES NOT GATE HERE. It is a DATED point-in-time
+# reading ("FS held no records on this day"), which is a cooldown-shaped fact,
+# not a retirement-shaped one -- and its semantics were only settled on 07 AUG
+# 2026. Wiring it into the EXISTENCE_PROBE cooldown is a separate change needing
+# its own decision; conflating the two would make a stale probe look permanent.
+ROUTE_RETIRING_ARMS = ("BOOK_SOURCED", "UNCITED")
+
 
 # ---------------------------------------------------------------------------
 # State
@@ -335,6 +368,7 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
     ordered = [a for a in arm_order if a in seen_arms] + sorted(seen_arms - set(arm_order))
 
     by_arm, eligible_by_arm = defaultdict(list), defaultdict(list)
+    retired_by_route = defaultdict(int)
     for c in candidates:
         by_arm[c["arm"]].append(c)
         es = entries_state.get(c["id"], {})
@@ -342,6 +376,15 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
             due, days, why = probe_status(es, "fs", today)
         else:
             due, days, why = poll_status(es, today)
+        # ROUTE RETIREMENT (see ROUTE_RETIRING_ARMS above). Applied AFTER the
+        # cooldown so the two reasons cannot be confused in `_why`, and applied
+        # UNCONDITIONALLY rather than only to due rows -- a declared row is never
+        # due for this arm again, so the count is a stable "how many of this arm
+        # are settled" rather than a per-draw artefact of who happened to be cold.
+        if c["arm"] in ROUTE_RETIRING_ARMS and c.get("route"):
+            due = False
+            why = f"route declared ({c['route']}) — this arm's poll is answered"
+            retired_by_route[c["arm"]] += 1
         c = dict(c, _due=due, _days=days, _why=why, _score=prior_score(c))
         if due:
             eligible_by_arm[c["arm"]].append(c)
@@ -419,11 +462,13 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
         "short": len(draw) < cadence,
         "per_arm": {a: {"pool": len(by_arm[a]), "eligible": len(eligible_by_arm.get(a) or []),
                         "drawn": assigned[a],
+                        "retired_by_route": retired_by_route.get(a, 0),
                         "polled": (arms_state.get(a) or {}).get("polled", 0),
                         "hits": (arms_state.get(a) or {}).get("hits", 0)}
                     for a in ordered},
         "pool_total": len(candidates),
         "eligible_total": sum(len(v) for v in eligible_by_arm.values()),
+        "retired_by_route_total": sum(retired_by_route.values()),
     }
 
 
@@ -510,6 +555,15 @@ def build_candidates(vault, gen_lo=None, gen_hi=None, confidence=None, region=No
                              str(ext.get("fs") or "absent").lower())),
             "has_wt": bool(ext.get("wt") or ext.get("wikitree")),
             "has_anc": bool(ext.get("anc") or ext.get("ancestry")),
+            # Q157 / deferred 51: the standing declaration "this person IS
+            # sourceable, just not here". Read through the seam, never by regex --
+            # an unrecognised slug must be RETURNED, not swallowed, or a
+            # declaration fails silently and the row is polled for ever.
+            "route": (person_store.route(p) if p else None),
+            # Recorded but NOT gating (see ROUTE_RETIRING_ARMS): a dated negative
+            # is cooldown-shaped, not retirement-shaped. Carried so a draw can
+            # SHOW that FS was already read, without that fact retiring anything.
+            "fs_probed": (person_store.fs_probed(p) if p else None),
             # deferred 42 (operator, 03 AUG 2026): the WELL_SOURCED backlog is NOT
             # audited as a campaign -- but a row DRAWN here is audited on the spot,
             # because the poll opens the Sources tab anyway and the event descriptors
@@ -599,13 +653,23 @@ def print_draw(result, clamp_note=None, rate=None):
     if clamp_note:
         print(clamp_note)
     print()
-    print(f"{'ARM':<16} {'pool':>6} {'elig':>6} {'drawn':>6} {'polled':>7} {'hits':>5} {'rate':>7}")
+    print(f"{'ARM':<16} {'pool':>6} {'rtrd':>5} {'elig':>6} {'drawn':>6} "
+          f"{'polled':>7} {'hits':>5} {'rate':>7}")
     for arm in result["arms"]:
         a = result["per_arm"][arm]
         rate = smoothed_rate(a["hits"], a["polled"])
         seen = f"{a['hits']}/{a['polled']}" if a["polled"] else "n=0"
-        print(f"{arm:<16} {a['pool']:>6} {a['eligible']:>6} {a['drawn']:>6} "
+        ret = a.get("retired_by_route", 0)
+        print(f"{arm:<16} {a['pool']:>6} {(ret or '-'):>5} {a['eligible']:>6} {a['drawn']:>6} "
               f"{a['polled']:>7} {a['hits']:>5} {rate:>6.2f} ({seen})")
+    if result.get("retired_by_route_total"):
+        print()
+        print(f"  rtrd = RETIRED BY A DECLARED `route` ({result['retired_by_route_total']} "
+              f"across {', '.join(ROUTE_RETIRING_ARMS)}). For these two arms the poll is")
+        print("  \"is the non-FS route NAMED?\", so a declared row has answered it and is out.")
+        print("  ** A RISE IN THESE ARMS' HIT RATE FROM HERE IS MECHANICAL, NOT THE LANE")
+        print("  IMPROVING ** -- what is left is the undeclared remainder, which is the real")
+        print("  work. Do not read it as evidence in the ROTATE arm-selection decision.")
     print()
     print("THE DRAW:")
     for i, c in enumerate(result["draw"], 1):

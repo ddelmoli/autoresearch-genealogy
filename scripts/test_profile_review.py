@@ -548,6 +548,150 @@ def test_drawn_high_ark_rows_are_flagged_for_the_grouping_audit():
           "the audit floor IS the WELL_SOURCED threshold, not a second magic number")
 
 
+# --------------------------------------------------------------------------- #
+# ROUTE RETIREMENT — the two STRUCTURAL arms (deferred 51, wired 07 AUG 2026).
+#
+# The mechanism: for BOOK_SOURCED and UNCITED the poll is "is the non-FS route
+# NAMED on this entry?", so a row carrying `route` has answered it and drops out
+# of the eligible pool. Pinned in BOTH directions, because a filter that cannot
+# be shown to be arm-scoped is indistinguishable from one that silently retires
+# the whole vault -- which is the failure mode that would look like a working
+# rotation while quietly polling nobody.
+# --------------------------------------------------------------------------- #
+
+def test_route_retires_only_the_structural_arms():
+    today = date(2026, 8, 7)
+    # One routed row per arm, nothing else, so eligibility is unambiguous.
+    cands = []
+    for arm in ARMS:
+        c = cand(0, arm)
+        c["route"] = "as-sondrio"
+        cands.append(c)
+    res = PR.allocate(cands, {"arms": {}, "entries": {}}, today=today, cadence=10)
+    for arm in ARMS:
+        a = res["per_arm"][arm]
+        if arm in PR.ROUTE_RETIRING_ARMS:
+            check(a["eligible"] == 0 and a["retired_by_route"] == 1,
+                  f"{arm}: a declared route retires the row")
+        else:
+            check(a["eligible"] == 1 and a["retired_by_route"] == 0,
+                  f"NEGATIVE CONTROL: {arm} is untouched by a route (not a structural arm)")
+    check(res["retired_by_route_total"] == len(PR.ROUTE_RETIRING_ARMS),
+          "retired_by_route_total counts exactly the structural arms")
+
+
+def test_route_retirement_negative_control():
+    """The SAME rows with the route REMOVED must all be eligible. Without this the
+    test above would pass just as well against a filter that retires everything,
+    or against a fixture whose rows were never eligible to begin with."""
+    today = date(2026, 8, 7)
+    cands = [cand(0, arm) for arm in ARMS]          # no `route` key at all
+    res = PR.allocate(cands, {"arms": {}, "entries": {}}, today=today, cadence=10)
+    for arm in ARMS:
+        a = res["per_arm"][arm]
+        check(a["eligible"] == 1 and a["retired_by_route"] == 0,
+              f"NEGATIVE CONTROL: {arm} row with NO route stays eligible")
+    check(res["retired_by_route_total"] == 0,
+          "NEGATIVE CONTROL: nothing retired when no row declares a route")
+
+
+def test_pool_stays_honest_when_rows_retire():
+    """Retirement happens in allocate(), NOT in build_candidates(), so `pool` keeps
+    reporting the true size of the arm while `eligible` shrinks. If retirement were
+    done by dropping candidates, the arm would appear to vanish and nobody could
+    see how many rows had been settled."""
+    today = date(2026, 8, 7)
+    cands = []
+    for i in range(5):
+        c = cand(i, "BOOK_SOURCED")
+        if i < 3:
+            c["route"] = "medlands"
+        cands.append(c)
+    res = PR.allocate(cands, {"arms": {}, "entries": {}}, today=today, cadence=10)
+    a = res["per_arm"]["BOOK_SOURCED"]
+    check(a["pool"] == 5, "pool still reports every row in the arm")
+    check(a["retired_by_route"] == 3, "retired count is visible, not silent")
+    check(a["eligible"] == 2, "only the undeclared remainder is eligible")
+
+
+def test_unrecognised_route_slug_still_retires():
+    """`person_store.route()` deliberately RETURNS an unknown slug rather than
+    swallowing it (routes are open-ended -- every archive in the world). So an
+    archive this code has never heard of must still retire its row; anything else
+    makes a declaration fail silently, which is the exact defect the key exists to
+    remove."""
+    today = date(2026, 8, 7)
+    c = cand(0, "UNCITED")
+    c["route"] = "some-archive-nobody-has-registered"
+    res = PR.allocate([c], {"arms": {}, "entries": {}}, today=today, cadence=10)
+    check(res["per_arm"]["UNCITED"]["retired_by_route"] == 1,
+          "an unregistered route slug retires the row (declarations must not fail silently)")
+
+
+def test_fs_probed_alone_does_not_retire():
+    """DELIBERATE EXCLUSION, pinned so it is not 'fixed' by accident. `fs_probed` is
+    a DATED point-in-time reading ('FS held no records that day') -- cooldown-shaped,
+    not retirement-shaped. Treating it as permanent would make a stale probe silence
+    a row for ever, which is the failure `route` was designed to avoid."""
+    today = date(2026, 8, 7)
+    c = cand(0, "BOOK_SOURCED")
+    c["fs_probed"] = "2026-08-07"          # probed, but NO route named
+    res = PR.allocate([c], {"arms": {}, "entries": {}}, today=today, cadence=10)
+    a = res["per_arm"]["BOOK_SOURCED"]
+    check(a["retired_by_route"] == 0 and a["eligible"] == 1,
+          "fs_probed alone does NOT retire a structural row -- only `route` does")
+
+
+def test_route_survives_the_candidate_seam():
+    """build_candidates must actually CARRY the route onto the candidate, read via
+    person_store. A gate that is correct in allocate() but never fed does nothing --
+    and it would show up as a clean 0 in every report, i.e. indistinguishable from
+    "no rows are declared yet".
+
+    ** THE FIXTURE NEEDS BOTH HALVES, AND OMITTING EITHER GIVES A FALSE RESULT. **
+    Without `person_model: narrative` the vault defaults to the FILE model and
+    person_store finds nobody; without popping the cached modules, harvest_sources
+    keeps the vault it resolved at first import and the assertions run against the
+    REAL vault. The first draft of this test did both, and "passed" its negative
+    control purely because the row was absent.
+    """
+    print("\n-- route: the candidate seam actually carries it --")
+    tmp = tempfile.mkdtemp(prefix="pr_route_")
+    try:
+        with open(os.path.join(tmp, ".autoresearch.json"), "w", encoding="utf-8") as f:
+            json.dump({"person_model": "narrative"}, f)
+        with open(os.path.join(tmp, "Family_Tree_Test.md"), "w", encoding="utf-8") as f:
+            f.write(
+                "# Test\n\n"
+                "**Placeholder Declared** (d. 1200)\n"
+                "- meta: {id: P-RTE001, generation: 20, life_status: deceased, "
+                "fs: AAAA-AAA, route: some-archive, fs_probed: 2026-08-07}\n\n"
+                "**Placeholder Undeclared** (d. 1200)\n"
+                "- meta: {id: P-RTE002, generation: 20, life_status: deceased, "
+                "fs: BBBB-BBB}\n")
+        os.environ["AUTORESEARCH_VAULT"] = tmp
+        for mod in ("harvest_sources", "gen_person_index", "shard_manifest"):
+            sys.modules.pop(mod, None)
+
+        cands = {c["id"]: c for c in PR.build_candidates(tmp)}
+        # POSITIVE CONTROL FIRST: both rows must be present, or every assertion
+        # below is vacuous. This is the check whose absence made the first draft
+        # of this test pass while reading a different vault entirely.
+        check({"P-RTE001", "P-RTE002"} <= set(cands),
+              "both fixture rows reach build_candidates (guards against a vacuous pass)")
+        check(cands.get("P-RTE001", {}).get("route") == "some-archive",
+              "build_candidates carries `route` through the person_store seam")
+        check(cands.get("P-RTE001", {}).get("fs_probed") == "2026-08-07",
+              "build_candidates carries `fs_probed` too (reported, not gating)")
+        check(cands.get("P-RTE002", {}).get("route") is None,
+              "NEGATIVE CONTROL: an undeclared row carries no route")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.environ.pop("AUTORESEARCH_VAULT", None)
+        for mod in ("harvest_sources", "gen_person_index", "shard_manifest"):
+            sys.modules.pop(mod, None)
+
+
 def main():
     test_exploration_floor()
     test_floor_negative_control()
@@ -568,6 +712,12 @@ def main():
     test_json_stdout_stays_machine_readable()
     test_census_excludes_living()
     test_drawn_high_ark_rows_are_flagged_for_the_grouping_audit()
+    test_route_retires_only_the_structural_arms()
+    test_route_retirement_negative_control()
+    test_pool_stays_honest_when_rows_retire()
+    test_unrecognised_route_slug_still_retires()
+    test_fs_probed_alone_does_not_retire()
+    test_route_survives_the_candidate_seam()
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)
 
