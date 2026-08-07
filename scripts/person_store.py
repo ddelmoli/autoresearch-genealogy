@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import glob
 import os
+import pathlib
 import re
 
 import gdate
@@ -578,6 +579,51 @@ def banked_parents_host(record_or_line):
     return None
 
 
+_ENTRY_TEXT_CACHE = {}
+
+
+def entry_text(record):
+    """Return an entry's FULL text -- header line plus body -- or "" if unavailable.
+
+    ** WHY THIS EXISTS (deferred_decisions 23, 07 AUG 2026). ** Consumers that need
+    an entry's PROSE were reading `record.raw["header_text"]`, which is the header
+    line alone. Measuring the `ABT`-vs-`EST` population that way reported **5**
+    candidates where the real figure was ~83 -- a **16x undercount produced by the
+    ACCESSOR, not the data**, and one that nothing would have flagged: 5 is a
+    plausible-looking number.
+
+    The narrative backend already computes each entry's body span (its body runs
+    from the meta line to the NEXT entry's header, which is the entry-boundary rule
+    in spec/entry-boundary). It was simply being discarded. Recording it here means
+    no caller has to re-implement that boundary -- and a caller that does
+    re-implement it is how entries get silently truncated.
+
+    ⚠ Model-agnostic by design: on the `file` backend an entry IS its file, so the
+    whole file below the frontmatter is returned.
+
+    ⚠ The file is read once and cached by path. Callers iterating the whole vault
+    would otherwise re-read each lineage file per person.
+    """
+    raw = getattr(record, "raw", None)
+    if not isinstance(raw, dict):
+        return ""
+    path = raw.get("path")
+    if not path:
+        return ""
+    try:
+        lines = _ENTRY_TEXT_CACHE.get(path)
+        if lines is None:
+            lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
+            _ENTRY_TEXT_CACHE[path] = lines
+    except OSError:
+        return ""
+    hline = raw.get("header_line")
+    bend = raw.get("body_end")
+    if isinstance(hline, int) and isinstance(bend, int):
+        return "\n".join(lines[hline:bend])
+    return "\n".join(lines)          # file model: the entry is the file
+
+
 ROUTE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ROUTE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
 
@@ -1105,6 +1151,13 @@ class NarrativeBackend:
                                         barriers=barriers)
                 rec.sources = _extract_sources(lines[mline + 1:body_end])
                 rec.raw["line"] = lines[mline]   # raw meta line (consumers re-parse it as `block`)
+                # The body span is computed here anyway and was being thrown away by
+                # `iter_people`, which yields only the record. Recording it is what lets
+                # `entry_text()` read an entry's PROSE without every caller re-implementing
+                # the entry-boundary rule -- see deferred_decisions 23, where reading only
+                # `header_text` produced a 16x undercount.
+                rec.raw["body_start"] = mline + 1
+                rec.raw["body_end"] = body_end
                 yield rec, path, hline, lines[hline:body_end]
 
     @staticmethod
