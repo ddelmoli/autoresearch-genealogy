@@ -578,6 +578,91 @@ def banked_parents_host(record_or_line):
     return None
 
 
+ROUTE_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+ROUTE_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,39}$")
+
+
+def fs_probed(record_or_line):
+    """Return the ISO date FamilySearch was verified EMPTY for this person, or None.
+
+    ** WHY A DATED NEGATIVE (operator-directed, 07 AUG 2026, Open_Questions Q157 +
+    deferred_decisions 51). ** The vault could already say "searched, no profile"
+    (`fs: none`) and "cannot ever be sourced here" (`structural_gap`). It could NOT
+    say WHEN the check happened, and an undated negative is treated as expired on
+    sight -- so the row is re-offered every rotation for ever.
+
+    Measured 07 AUG 2026: the two structural ROTATE arms (BOOK_SOURCED 261,
+    UNCITED 94) hit at **0.17 and 0.15** against 0.43-0.48 for every other arm,
+    because the poll is an FS probe and these are people FamilySearch will never
+    index. They are **26% of the rotation pool**. Two rows in one sitting were
+    re-polled purely because their negative carried no date.
+
+    ⚠ **This is NOT `fs: none`.** `fs: none` says no PROFILE exists. This says the
+    profile (or its absence) was checked and carries **no attached sources** -- a
+    positive read of an empty set at the `entityref` endpoint, which is a different
+    and stronger statement than a failed render. A person may legitimately have a
+    live PID and `fs_probed` on the same day.
+
+    ⚠ **A date is not a licence to stop looking.** It records when the answer was
+    true, so a consumer can decide whether to re-ask. Pair it with `route` to say
+    where the evidence actually lives.
+    """
+    v = _meta_key_value(record_or_line, "fs_probed")
+    return v if v and ROUTE_DATE_RE.match(v) else None
+
+
+def route(record_or_line):
+    """Return the slug naming WHERE this person's records actually are, or None.
+
+    ** THE MISSING PRIMITIVE (operator-directed, 07 AUG 2026). ** The vault could
+    express "this person cannot be sourced" (`structural_gap`) but not "this person
+    CAN be sourced, just not on FamilySearch" -- so Open_Questions Q157's remainder
+    (six people, four of whom died AFTER civil registration began and one of whom
+    lived 1876-1937) had nowhere to go except an opaque `pids` enumeration in
+    `structural_gap` rule 3. That is the enumeration pattern the operator ruled
+    against on 05 AUG 2026 in favour of stating the CRITERION.
+
+    The value is a short slug -- a registered host id where one fits (`metryki`,
+    `jri`, `agad`, `antenati`, `anc`), or an archive slug where the route is
+    in-person (`como-diocesan`, `aquila-diocesan`, `as-sondrio`).
+
+    ⚠ **UNRECOGNISED SLUGS ARE RETURNED, NOT DROPPED**, which is the opposite of
+    `adjudicated_why_values`. That vocabulary is tiny and closed, so dropping a typo
+    is safe. Routes are open-ended -- every archive in the world is a potential
+    value -- so dropping an unknown would make a declaration silently fail, which is
+    exactly the failure mode this key exists to remove. A validator may WARN on a
+    slug outside the known set; the reader must not swallow it.
+
+    ⚠ Shape only is enforced (lowercase slug, 2-40 chars), so a stray sentence or a
+    quoted phrase does not become a route.
+    """
+    v = _meta_key_value(record_or_line, "route")
+    return v if v and ROUTE_SLUG_RE.match(v) else None
+
+
+def _meta_key_value(record_or_line, key):
+    """Read one scalar key out of a `- meta:` flow mapping. Shared by the readers
+    above so the parsing lives in ONE place, per the two-readers-one-entry rule."""
+    line = record_or_line
+    if not isinstance(line, str):
+        raw = getattr(record_or_line, "raw", None)
+        if not isinstance(raw, dict):
+            return None
+        line = next((v for v in (raw.get("line"), raw.get("meta_line"))
+                     if isinstance(v, str) and _META.match(v)), "")
+    m = _META.match(line or "")
+    if not m:
+        return None
+    body = m.group(1).strip()
+    if not body.startswith("{"):
+        return None
+    for part in _flow_split(body):
+        k, sep, v = part.partition(":")
+        if sep and k.strip().lower() == key:
+            return v.strip().strip("'\"").lower() or None
+    return None
+
+
 def external_id_state(value):
     """Classify an external-id field (`fs`, `wt`, `anc`) into ONE of four states.
 
