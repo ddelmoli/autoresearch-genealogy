@@ -45,6 +45,13 @@ python3 scripts/session_close.py --log ... --summary ... --next-plan
 **A hit is the lane target met, or the lane ran dry. Short of target is a MISS.** An
 arm that never loses carries no signal.
 
+**A miss is a result, not wasted effort, and never a reason to skip an iteration**
+(operator, 07 AUG 2026). Run the requested number of iterations. Expecting to miss
+is not grounds for not drawing; an expensive or thin lane is not grounds for stopping
+early. **Prefer a worked miss to an unrun iteration** — one is an observation, the
+other is nothing. The only forbidden thing is recording a cycle that was *not worked*;
+that has never meant a cycle with a *small yield*.
+
 ## Recording work
 
 - **Research_Log session index**: `python3 scripts/log_session.py`, never the Edit

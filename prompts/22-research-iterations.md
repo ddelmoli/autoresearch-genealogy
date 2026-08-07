@@ -191,8 +191,32 @@ movement honestly.
 
 STOPPING EARLY IS ALLOWED AND MUST BE STATED. If the sitting ends before
 [ITERATIONS] iterations (context, my time, a red gate, or the lane running dry),
-say how many ran and why it stopped. Do not pad the count with a shallow draw:
-the bandit records real cycles, and a fake one is worse than a short session.
+say how many ran and why it stopped.
+
+! A MISS IS A RESULT, NOT WASTED EFFORT, AND IS NEVER A REASON TO STOP EARLY
+(operator, 07 AUG 2026). The only thing forbidden here is recording a cycle
+that was NOT WORKED. An iteration you genuinely drew, genuinely worked, and
+that fell short of its lane target is a REAL observation: it is the single
+most informative thing you can hand the bandit, because an arm that only ever
+wins carries no signal at all. Record it as a miss, say what blocked it, and
+carry on to the next iteration.
+
+  - "This draw would probably miss" is NOT a reason to skip it. Run it.
+  - "The remaining lane is expensive / thin / slow" is NOT a reason to stop.
+    That judgement was already made when the floor was set.
+  - Negative results are results. A documented negative, a route closed, a
+    row proven unworkable and declared — all of these advance the record and
+    all of them belong in an iteration that gets recorded.
+
+! THIS PARAGRAPH USED TO SAY "do not pad the count with a shallow draw: the
+bandit records real cycles, and a fake one is worse than a short session", and
+that wording caused the failure it was meant to prevent. Session #150 ran two
+of three requested iterations and cited this line to justify not starting the
+third — reasoning that the honest options were a big draw it might not finish
+or a small one that would miss, and that the small one was "theatre". It is
+not theatre; it is data. SHALLOW meant FABRICATED, never SMALL-YIELD, and the
+distinction is now spelled out because one session already read it the other
+way.
 
 ONCE PER SITTING, NOT PER ITERATION — do this once, whatever [ITERATIONS] is and
 whichever lanes were drawn:
@@ -249,8 +273,18 @@ the vault's `session_plan_snapshots.json`.
   floors guarantee a miss never permanently starves a lane, so there is no
   incentive to flatter the record. A lane that only ever wins teaches the bandit
   nothing.
+- ⭐ **A MISS COSTS NOTHING AND IS NEVER A REASON TO SKIP AN ITERATION**
+  (operator, 07 AUG 2026: *"negative results are still results; I don't consider
+  'misses' to be wasted effort"*). Expecting to miss is not grounds for not
+  drawing; a lane being expensive or thin is not grounds for stopping. **Prefer
+  a worked miss to an unrun iteration** — the miss is an observation and the
+  unrun iteration is nothing.
 - **One iteration, one record.** Never record a single piece of work twice, and
   never record a draw that was not worked.
+  - ⚠ **This is the ONLY thing the "no shallow draw" rule forbids: a cycle
+    RECORDED WITHOUT BEING WORKED.** It has never meant "a cycle with a small
+    yield". Session #150 read it the second way and left a requested third
+    iteration unrun; the prose in the loop section now says so explicitly.
 - **A pending draw belongs to the iteration that consumes it.** It is not an
   unrecorded outcome from the previous session, and re-running the plan does not
   replace it.
