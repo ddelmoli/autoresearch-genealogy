@@ -240,6 +240,70 @@ class RecordTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
+    def test_expand_carries_both_tiers(self):
+        """** EXPAND draws 0-parent AND 1-parent rows ** (deferred 50, wired 07 AUG 2026;
+        the operator's lane definition is "leaf nodes ... especially those for which we
+        only have 0 OR 1 parents"). Until this landed a one-parent row was drawable by
+        NOTHING -- not even by EXPAND, whose whole job is missing parents.
+
+        The two data sources are STUBBED rather than written to a temp vault, on purpose:
+        `extension_frontier.rows_with_bodies` reads `parse_narrative()` off a module-global
+        vault resolved at import, so a temp-dir fixture here silently reads the REAL vault
+        and every assertion passes or fails for the wrong reason. (That is not a defect
+        introduced by this change -- it is why the fixture is stubbed.) The vault-reading
+        half is pinned in `test_build_edges.py`, against the shared `half_wired_rows()`.
+
+        What this pins is the COMPOSITION, which is the part written here: tier labels,
+        SILENT ranking first, the declared rows excluded, and above all NO OVERLAP -- a
+        duplicate id would let one person be drawn twice and counted twice against the
+        lane floor.
+        """
+        import extension_frontier as ef
+        import build_edges as be
+        real_rows, real_hw = ef.rows_with_bodies, be.half_wired_rows
+        try:
+            ef.rows_with_bodies = lambda v: [
+                {"id": "P-ZER001", "name": "Zero Parent", "gen": 6, "file": "F.md",
+                 "declared": False, "tier": "strong_signal", "spouse": False},
+                {"id": "P-ZER002", "name": "Zero Declared", "gen": 7, "file": "F.md",
+                 "declared": True, "tier": "strong_signal", "spouse": False},
+            ]
+            be.half_wired_rows = lambda v: [
+                {"id": "P-ONE001", "name": "One Parent", "gen": 6, "file": "F.md",
+                 "declared": False, "deep": False},
+                {"id": "P-ONE002", "name": "One Declared", "gen": 6, "file": "F.md",
+                 "declared": True, "deep": False},
+                {"id": "P-ONE003", "name": "One Deep", "gen": 30, "file": "F.md",
+                 "declared": False, "deep": True},
+                # already on the 0-parent frontier: must NOT appear twice
+                {"id": "P-ZER001", "name": "Zero Parent", "gen": 6, "file": "F.md",
+                 "declared": False, "deep": False},
+            ]
+            rows = sp.lane_expand("/nonexistent")
+            by_id = {r["id"]: r for r in rows}
+            ids = [r["id"] for r in rows]
+
+            self.assertEqual(len(ids), len(set(ids)),
+                             "no overlap -- a duplicate id is double-counted work")
+            self.assertEqual(by_id["P-ZER001"]["tier"], "silent",
+                             "a 0-parent row is the SILENT tier")
+            self.assertEqual(by_id["P-ONE001"]["tier"], "half_wired",
+                             "a 1-parent row is now DRAWN, in the half_wired tier")
+            self.assertNotIn("P-ZER002", by_id,
+                             "NEGATIVE CONTROL: a DECLARED frontier row is not offered")
+            self.assertNotIn("P-ONE002", by_id,
+                             "NEGATIVE CONTROL: a row declared `no-second-parent` is not offered")
+            tiers = [r["tier"] for r in rows]
+            first_hw = tiers.index("half_wired")
+            self.assertTrue(all(t == "silent" for t in tiers[:first_hw]),
+                            "SILENT ranks ahead of HALF_WIRED")
+            self.assertIn("wire it", by_id["P-ONE003"]["why"],
+                          "a DEEP row's hint says wire the named mother")
+            self.assertIn("declare", by_id["P-ONE001"]["why"],
+                          "a SHALLOW row's hint offers the declaration too")
+        finally:
+            ef.rows_with_bodies, be.half_wired_rows = real_rows, real_hw
+
     def test_lane_target_is_never_capped_to_lane_size(self):
         """** THE TARGET IS NOT CAPPED TO THE LANE SIZE ** (operator, 31 JUL 2026: "I don't
         see any value in the cap").

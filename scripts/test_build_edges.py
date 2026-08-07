@@ -103,6 +103,96 @@ def value_of(report, label):
     raise AssertionError(f"no line matching {label!r} in report:\n{report}")
 
 
+# --------------------------------------------------------------------------- #
+# half_wired_rows() — the SHARED computation behind the HALF_WIRED_PARENT gate
+# line and session_plan's EXPAND half-wired tier (deferred 50, 07 AUG 2026).
+#
+# ⚠ THE BUG THIS PINS AGAINST IS A CONFIDENT ZERO. The first draft read the row's
+# `meta` via r.get("meta") -- a key parse_narrative does not emit -- and returned 0
+# for all 1,401 entries: no error, no warning, a perfectly clean result. It was
+# caught only by comparing against the gate's own known-non-zero 108. So these
+# fixtures assert a NON-ZERO wherever one is expected, never just "no crash".
+# --------------------------------------------------------------------------- #
+
+def _hw(vault):
+    vault_config.load_config.cache_clear()
+    import gen_person_index as G
+    import build_edges as BE
+    G.VAULT = vault
+    BE.VAULT = vault
+    return BE.half_wired_rows(vault)
+
+
+def test_half_wired_detects_one_parent():
+    print("\nbuild_edges.half_wired_rows")
+    with tempfile.TemporaryDirectory() as tmp:
+        rows = _hw(build_vault(tmp, "[P-PPPPPP]"))
+        hw = [r for r in rows if r["id"] == "P-CCCCCC"]
+        check(len(hw) == 1, "a ONE-parent edge is detected (non-zero, not a silent 0)")
+        check(hw and hw[0]["declared"] is False, "and it is undeclared by default")
+
+
+def test_half_wired_negative_controls():
+    with tempfile.TemporaryDirectory() as tmp:
+        rows = _hw(build_vault(tmp, "[P-PPPPPP, P-QQQQQQ]"))
+        check(not [r for r in rows if r["id"] == "P-CCCCCC"],
+              "NEGATIVE CONTROL: a TWO-parent edge is not half-wired")
+    with tempfile.TemporaryDirectory() as tmp:
+        # no parents key at all -> the 0-parent frontier, not this population
+        vault_config.load_config.cache_clear()
+        with open(os.path.join(tmp, ".autoresearch.json"), "w", encoding="utf-8") as fh:
+            json.dump({"person_model": "narrative"}, fh)
+        with open(os.path.join(tmp, "Family_Tree_Test.md"), "w", encoding="utf-8") as fh:
+            fh.write("# T\n\n**Lone Example** (b. 1900)\n"
+                     "- meta: {id: P-LLLLLL, generation: 1}\n- Body.\n")
+        rows = _hw(tmp)
+        check(not [r for r in rows if r["id"] == "P-LLLLLL"],
+              "NEGATIVE CONTROL: a ZERO-parent row is not half-wired (that is SILENT)")
+
+
+def test_half_wired_honours_the_declaration():
+    with tempfile.TemporaryDirectory() as tmp:
+        vault_config.load_config.cache_clear()
+        with open(os.path.join(tmp, ".autoresearch.json"), "w", encoding="utf-8") as fh:
+            json.dump({"person_model": "narrative"}, fh)
+        with open(os.path.join(tmp, "Family_Tree_Test.md"), "w", encoding="utf-8") as fh:
+            fh.write("# T\n\n**Declared Example** (b. 1900)\n"
+                     "- meta: {id: P-DDDDDD, generation: 1, parents: '[P-PPPPPP]', "
+                     "adjudicated_why: no-second-parent}\n- Body.\n\n"
+                     "**Plain Example** (b. 1900)\n"
+                     "- meta: {id: P-EEEEEE, generation: 1, parents: '[P-PPPPPP]'}\n- Body.\n")
+        rows = {r["id"]: r for r in _hw(tmp)}
+        check(rows.get("P-DDDDDD", {}).get("declared") is True,
+              "`adjudicated_why: no-second-parent` marks the row DECLARED")
+        check(rows.get("P-EEEEEE", {}).get("declared") is False,
+              "NEGATIVE CONTROL: the row beside it stays undeclared")
+        # the multi-valued spelling must work too -- it is legal grammar
+        with open(os.path.join(tmp, "Family_Tree_Test.md"), "w", encoding="utf-8") as fh:
+            fh.write("# T\n\n**Multi Example** (b. 1900)\n"
+                     "- meta: {id: P-MMMMMM, generation: 1, parents: '[P-PPPPPP]', "
+                     "adjudicated_why: '[fs-gap, no-second-parent]'}\n- Body.\n")
+        rows = {r["id"]: r for r in _hw(tmp)}
+        check(rows.get("P-MMMMMM", {}).get("declared") is True,
+              "the single-quoted LIST spelling of adjudicated_why is honoured too")
+
+
+def test_half_wired_depth_flag():
+    with tempfile.TemporaryDirectory() as tmp:
+        vault_config.load_config.cache_clear()
+        with open(os.path.join(tmp, ".autoresearch.json"), "w", encoding="utf-8") as fh:
+            json.dump({"person_model": "narrative"}, fh)
+        with open(os.path.join(tmp, "Family_Tree_Test.md"), "w", encoding="utf-8") as fh:
+            fh.write("# T\n\n**Deep Example** (b. 1200)\n"
+                     "- meta: {id: P-DEEP01, generation: 30, parents: '[P-PPPPPP]'}\n- Body.\n\n"
+                     "**Shallow Example** (b. 1850)\n"
+                     "- meta: {id: P-SHAL01, generation: 6, parents: '[P-PPPPPP]'}\n- Body.\n")
+        rows = {r["id"]: r for r in _hw(tmp)}
+        check(rows.get("P-DEEP01", {}).get("deep") is True,
+              f"Gen 30 is flagged deep (threshold {__import__('build_edges').DEEP_HALF_WIRED_GEN})")
+        check(rows.get("P-SHAL01", {}).get("deep") is False,
+              "NEGATIVE CONTROL: Gen 6 is not")
+
+
 def main():
     print("build_edges.validate_edges")
 
@@ -172,6 +262,10 @@ def main():
         check(value_of(rep, "PARENT-GEN MISMATCH") == 1, "mismatched declaration: MISMATCH still 1")
         check(value_of(rep, "GEN_COLLAPSE") == 0, "mismatched declaration: GEN_COLLAPSE 0")
 
+    test_half_wired_detects_one_parent()
+    test_half_wired_negative_controls()
+    test_half_wired_honours_the_declaration()
+    test_half_wired_depth_flag()
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0
 

@@ -254,14 +254,61 @@ IMPROVE_GAP_SHARE = 0.5
 # Lane candidate-builders. Each delegates to the owning tool's own logic.
 # ---------------------------------------------------------------------------
 def lane_expand(vault):
+    """EXPAND's candidates: leaf rows whose parentage is open.
+
+    ** TWO TIERS, because the operator's definition of the lane has two (07 AUG
+    2026: "review all leaf nodes ... especially those for which we only have 0 OR 1
+    parents"). ** Until 07 AUG the builder drew only the 0-parent frontier, so a row
+    naming ONE parent was drawable by nothing at all -- not by EXPAND, whose whole
+    job is missing parents, and not by ROTATE or IMPROVE either. That is
+    `deferred_decisions` 50, and it surfaced when Charlemagne's queen turned out to
+    have been named in PROSE on two entries for seven weeks while her son's edge
+    carried his father alone.
+
+      tier 1  SILENT      -- no parents edge, no declared reason
+      tier 2  HALF_WIRED  -- exactly one parent, no `no-second-parent` declaration
+
+    ⚠ SILENT RANKS FIRST, and not because it is more important: a 0-parent row is
+    unambiguously open, while a 1-parent row may be perfectly correct (an unnamed
+    mistress, an unrecorded mother). Offering the unambiguous work first keeps the
+    lane's early rows cheap to judge.
+
+    ⛔ THE FRONTIER METRIC IS NOT TOUCHED. SILENT / DECLARED still mean exactly what
+    they meant, so nothing in the banner moves. Option 1 of item 50 would have folded
+    these into SILENT and shifted the gate by up to 75 in one commit; option 2 shipped
+    the counter instead, and this makes the counted rows DRAWABLE without ever making
+    a declaration on their behalf.
+
+    ⚠ A HALF_WIRED row's `why` carries a DEPTH HINT, never a verdict -- deep rows
+    usually need the named mother WIRED, shallow ones are genuinely mixed. Both
+    dispositions are already EXPAND units: the vault grows by a person, or the row is
+    closed with a documented reason.
+    """
     import extension_frontier as ef
+    import build_edges as be
     rows = [r for r in ef.rows_with_bodies(vault) if not r["declared"]]
     rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0,
                              ef.TIER_ORDER.get(r["tier"], 3)))
-    return [{"id": r["id"], "name": r["name"], "gen": r["gen"], "file": r["file"],
-             "why": "no parents edge, no declared reason"
-                    + (" (spouse-linked leaf)" if r["spouse"] else "")}
-            for r in rows]
+    out = [{"id": r["id"], "name": r["name"], "gen": r["gen"], "file": r["file"],
+            "tier": "silent",
+            "why": "no parents edge, no declared reason"
+                   + (" (spouse-linked leaf)" if r["spouse"] else "")}
+           for r in rows]
+
+    seen = {r["id"] for r in out}
+    hw = [h for h in be.half_wired_rows(vault)
+          if not h["declared"] and h["id"] not in seen]
+    hw.sort(key=lambda h: (h["gen"] is None, h["gen"] or 0, str(h["id"])))
+    for h in hw:
+        hint = ("second parent is usually NAMED in an authority this entry already "
+                "cites -- wire it, do not declare"
+                if h["deep"] else
+                "mixed set: read the entry -- wire the second parent, or declare "
+                "`no-second-parent` from a RECORD or named authority")
+        out.append({"id": h["id"], "name": h["name"], "gen": h["gen"],
+                    "file": h["file"], "tier": "half_wired",
+                    "why": f"HALF-WIRED: one parent only, no declared reason -- {hint}"})
+    return out
 
 
 def harvestable_pid(pid):

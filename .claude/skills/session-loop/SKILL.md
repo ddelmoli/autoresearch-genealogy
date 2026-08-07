@@ -40,12 +40,18 @@ A lane being cheap is not evidence that it is the valuable one. See
 `python3 scripts/session_plan.py` prints one ranked worklist across the three, and a
 bandit picks the recommended one and prints the lane target.
 
-⚠ **EXPAND's builder currently draws a NARROWER population than the definition above.**
-It offers the SILENT frontier (0 parents, no declared reason). Measured 07 AUG 2026:
-**563** entries have 0 parents, **108** have exactly one (`HALF_WIRED_PARENT`, 97
-undeclared), and **535** have no spouse — and the last two are **drawn by nothing**.
-⚠ Neither is a defect count: one parent is often correct, and many people never
-married. They are candidate pools, and they need the same read-before-acting care.
+✅ **EXPAND's builder was WIDENED to the definition on 07 AUG 2026** (deferred 50).
+It now draws **two tiers**: the SILENT 0-parent frontier, then **`HALF_WIRED`** rows
+naming exactly one parent with no `no-second-parent` declaration (97 of them).
+SILENT ranks first — a 0-parent row is unambiguously open, while a 1-parent row may
+be perfectly correct.
+- ⛔ **The frontier METRIC did not move.** SILENT/DECLARED still count only 0-parent
+  rows, so nothing in the banner changed; the rows became DRAWABLE without any
+  declaration being made on their behalf.
+- ⚠ **Still drawn by NOTHING: the 535 rows with no spouse edge.**
+- ⚠ Neither pool is a defect count: one parent is often correct, and many people
+  never married. They are candidates, and they need read-before-acting care —
+  **16 of 35 keyword matches were false**, the sentence being about the WIFE.
 
 `--lane VERIFY` is rejected; that lane was collapsed into IMPROVE.
 

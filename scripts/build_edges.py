@@ -109,6 +109,61 @@ def edge_ids(val):
     return out
 
 
+# deferred 50, measured 07 AUG 2026: the 97 undeclared half-wired rows split
+# structurally at about Gen 25. Above it the second parent is normally NAMED in an
+# authority the entry already cites (Cawley, Complete Peerage, Richardson) and was
+# simply never wired -- EXPAND-shaped work that grows the tree. Below it the set is
+# genuinely mixed, and that is where `no-second-parent` actually belongs.
+# ⚠ A RANKING HINT, NOT A RULE. It says which QUESTION to ask first, never what the
+# answer is; a deep row can still be correctly one-parent, and a shallow one can
+# still have a mother named in print.
+DEEP_HALF_WIRED_GEN = 25
+
+def half_wired_rows(vault=None):
+    """Entries naming EXACTLY ONE parent, as DATA. (deferred 50)
+
+    ** ONE COMPUTATION, TWO READERS ** -- the same discipline as `gen_mismatches`.
+    `validate_edges()` prints these as the HALF_WIRED_PARENT gate line;
+    `session_plan.lane_expand()` offers the UNDECLARED ones as work. Before this
+    the rule lived inline in the gate only, so a lane that wanted them would have
+    had to re-implement "exactly one parent edge, minus the declared ones" and
+    could then disagree with the banner about its own worklist.
+
+    Returns [{id, name, gen, file, declared, deep}] for every one-parent row.
+      declared -- carries `adjudicated_why: no-second-parent`, i.e. SETTLED
+      deep     -- gen >= DEEP_HALF_WIRED_GEN, where the second parent is usually
+                  NAMED in an authority the entry already cites and simply never
+                  wired. Measured 07 AUG 2026: of 97 undeclared rows, 51 were
+                  Gen 25+ and 49 of those sat in the Magna Carta files.
+
+    ⚠ The caller decides what to do with `deep`; this function does not rank.
+    """
+    rows = G.parse_narrative()
+    out = []
+    for r in rows:
+        if not r.get("id"):
+            continue
+        block = r.get("block") or ""
+        # ⚠ parse_narrative rows carry NO `meta` key -- the meta must be parsed OUT
+        # of the block, exactly as validate_edges does. A first draft here used
+        # r.get("meta") and returned a clean, confident ZERO for all 1,401 rows.
+        # It was caught only because the gate's own 108 was a known-non-zero control.
+        meta = G.parse_meta(block)
+        pkids = edge_tokens(meta.get("parents"))
+        if len(pkids) != 1:
+            continue
+        metaline = (block.split("\n")[0] if block.lstrip().startswith("- meta:")
+                    else next((l for l in block.split("\n")
+                               if l.lstrip().startswith("- meta:")), ""))
+        why = person_store.adjudicated_why_values(metaline)
+        gen = r.get("gen")
+        out.append({"id": r["id"], "name": r.get("name") or "?", "gen": gen,
+                    "file": r.get("file") or "",
+                    "declared": "no-second-parent" in why,
+                    "deep": bool(gen is not None and gen >= DEEP_HALF_WIRED_GEN)})
+    return out
+
+
 def gen_mismatches(vault=None):
     """UNEXPLAINED parent-generation mismatches, as DATA. (deferred 39)
 
@@ -230,12 +285,6 @@ def validate_edges(limit=20):
         # moved the frontier gate by up to 75 in one commit before anyone knew how
         # many rows were Bernard-shaped. The vault's own rule is that a declaration
         # inherits the correctness of its REASON, so triage precedes the metric.
-        pkids = edge_tokens(meta.get("parents"))
-        if len(pkids) == 1:
-            why = person_store.adjudicated_why_values(r["block"].split("\n")[0]
-                    if r["block"].lstrip().startswith("- meta:") else
-                    next((l for l in r["block"].split("\n") if l.lstrip().startswith("- meta:")), ""))
-            half_wired.append((r["id"], "no-second-parent" in why))
 
     collapse_pairs, collapse_notes = vault_config.get_known_gen_collapse(VAULT) if VAULT else (set(), {})
     dangling, selfedge, recip, gen_bad, gen_declared = [], [], [], [], []
@@ -277,6 +326,10 @@ def validate_edges(limit=20):
     print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real IMPROVE defect candidate]")
     print(f"  ADJUDICATED_UNEXPLAINED (no `adjudicated_why`): {len(adj_unexplained)}   [advisory; the reason decides whether the judgement can ever go stale]")
     print(f"  BANKED_STALE (`banked_parents` on an entry that is NOW wired): {len(banked_stale)}   [advisory; baseline 0 — prune the key when you wire the edge]")
+    # ONE COMPUTATION, TWO READERS -- the gate and `session_plan.lane_expand()` both
+    # call half_wired_rows(), so the banner and the worklist cannot disagree about
+    # which rows are half-wired. Same discipline as gen_mismatches().
+    half_wired = [(h["id"], h["declared"]) for h in half_wired_rows(VAULT)]
     hw_declared = [i for i, d in half_wired if d]
     print(f"  HALF_WIRED_PARENT (entry names exactly ONE parent): {len(half_wired)}   [advisory; baseline is NOT 0 — one parent is often CORRECT. {len(hw_declared)} DECLARED via `adjudicated_why: no-second-parent`, {len(half_wired)-len(hw_declared)} undeclared = the worklist. NOT counted by SILENT/DECLARED — deferred 50]")
     for c in banked_stale[:limit]:
