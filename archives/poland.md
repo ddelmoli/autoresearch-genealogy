@@ -38,6 +38,22 @@ Polish genealogical records are extensive but access varies significantly by reg
 - **Cost**: Free
 - **AI accessibility**: Browse-only images
 
+### AGAD (Archiwum Główne Akt Dawnych / Central Archives of Historical Records)
+- **URL**: https://agad.gov.pl/ (scans via https://agadd.home.net.pl/)
+- **Coverage**: Central Polish state archive, Warsaw. Holds pre-partition and partition-era registers, including the Fond 300 metrical books for parishes in the eastern borderlands (now Ukraine/Belarus).
+- **Cost**: Free
+- **Searchable**: No — browse by fond, album and image number
+- **AI accessibility**: Images fetch directly by URL, so a scan can be retrieved and read once the album is identified. There is no name index, so the album must be located first.
+- **Use**: The route when a parish sits outside Geneteka's coverage. Album numbering is not chronological, and early albums may lack the grandparent generation.
+
+### JRI-Poland (Jewish Records Indexing - Poland)
+- **URL**: https://jri-poland.org/ (searched through the JewishGen Unified Search)
+- **Coverage**: The largest index of Jewish vital records from Poland — births, marriages and deaths transcribed from Polish state archive holdings, town by town.
+- **Cost**: Free (a JewishGen account is required)
+- **Searchable**: Yes (by surname, town, record type, year range)
+- **AI accessibility**: AI-searchable via the JewishGen interface
+- **Use**: The first stop for a Polish-Jewish line. ⚠ It indexes what has been transcribed, not what survives — an absent town means "not yet indexed", never "no records". Search on sound, not spelling.
+
 ### Mapa Nazwisk (Surname Map)
 - **URL**: https://www.mapanazwisk.eu/en/
 - **Coverage**: Modern distribution of Polish surnames

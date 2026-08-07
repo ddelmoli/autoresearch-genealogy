@@ -15,6 +15,12 @@ If you want the shorter beginner version first, read [What Counts As Proof](../g
 - Census records (original enumeration sheets)
 - Court records (probate, land, wills)
 - Tax records and property records
+- **Photographed gravestones** — a stone cut for the burial is a physical artifact made at the time of the event, so a memorial page **whose photograph you have actually looked at** is a primary source for the burial, the death date and whatever is carved on it. The index hosting the photo (Find a Grave, BillionGraves, JOWBR, a military-monument database) is irrelevant: the artifact is the source, not the website.
+
+**Two limits on gravestones, both of which demote the item to Tier 2 or Tier 3:**
+- **No photograph = not this tier.** A memorial page with no image is a contributor's assertion about a stone, not the stone. That is Tier 3.
+- **A marker erected long after the death is Tier 2**, however good the photograph. It is compiled from tradition and documents the *commemoration*, not the event — the common case being monuments raised to medieval or colonial figures centuries later.
+- **Age at death carved on a stone is not primary for the BIRTH.** It is a survivor's arithmetic, and it is wrong constantly.
 
 **Why most reliable**: Created by an official or authorized person, usually close to the time of the event. The informant was often a direct participant.
 
@@ -22,7 +28,8 @@ If you want the shorter beginner version first, read [What Counts As Proof](../g
 
 ### Tier 2: Secondary Sources (compiled from primary sources by researchers, journalists, or publishers)
 
-- Newspaper articles (obituaries, wedding announcements, biographical sketches)
+- Newspaper articles (obituaries, wedding announcements, biographical sketches) — an obituary is compiled after the death, usually from family report, and is a rich source of leads rather than proof of any one fact
+- Commemorative monuments and memorial plaques erected significantly after the event
 - Published genealogies and county histories
 - Compiled indexes (FamilySearch indexes, cemetery transcription projects)
 - Historical society publications
@@ -37,6 +44,7 @@ If you want the shorter beginner version first, read [What Counts As Proof](../g
 ### Tier 3: Tertiary Sources (compiled from secondary sources or from memory)
 
 - User-contributed family trees (Ancestry, Geni, WikiTree, MyHeritage)
+- Memorial index pages carrying **no photograph** — a contributor's transcription or assertion, not the stone
 - Oral history and family stories
 - Photo captions and album labels
 - Family tree software exports from unknown compilers

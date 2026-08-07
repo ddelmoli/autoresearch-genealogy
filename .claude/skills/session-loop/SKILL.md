@@ -19,10 +19,33 @@ The default unit of research work inside phase 2 is
 
 ## The three lanes
 
-`python3 scripts/session_plan.py` prints one ranked worklist across **EXPAND**
-(parentless frontier), **IMPROVE** (source gaps, single-sourced entries, and a
-reserved defect share), and **ROTATE** (the profile-review draw). A bandit over lanes
-picks the recommended one and prints the lane target.
+**What each lane is FOR** (operator, 07 AUG 2026 — this is the definition; the pool a
+builder happens to compute is an approximation of it):
+
+| lane | purpose |
+|---|---|
+| **EXPAND** | Extend the tree. Review all **leaf nodes** on a regular basis — especially those with **0 or 1 parents**, or **0 spouses**. |
+| **IMPROVE** | Review people who are **thinly sourced**, to see whether more can be gathered about them. |
+| **ROTATE** | Re-visit **all** people periodically, to see whether new information has appeared. |
+
+⭐⭐ **ROTATE IS THE EXPLOITATION ARM; EXPAND AND IMPROVE ARE THE EXPLORATION ARMS**
+(operator, 07 AUG 2026). That is a statement about what the lanes ARE, not about how
+they have scored. It matters because a bandit that maximises hit-rate will always
+prefer the exploit arm: re-polling a known person is cheap and reliably "succeeds",
+while extending and sourcing are slow and often fail. **Measured on this vault:
+ROTATE 0.75, EXPAND 0.38, IMPROVE 0.06, and 8 of the last 12 draws went to ROTATE.**
+A lane being cheap is not evidence that it is the valuable one. See
+`deferred_decisions.md` for the open question about the mechanism.
+
+`python3 scripts/session_plan.py` prints one ranked worklist across the three, and a
+bandit picks the recommended one and prints the lane target.
+
+⚠ **EXPAND's builder currently draws a NARROWER population than the definition above.**
+It offers the SILENT frontier (0 parents, no declared reason). Measured 07 AUG 2026:
+**563** entries have 0 parents, **108** have exactly one (`HALF_WIRED_PARENT`, 97
+undeclared), and **535** have no spouse — and the last two are **drawn by nothing**.
+⚠ Neither is a defect count: one parent is often correct, and many people never
+married. They are candidate pools, and they need the same read-before-acting care.
 
 `--lane VERIFY` is rejected; that lane was collapsed into IMPROVE.
 

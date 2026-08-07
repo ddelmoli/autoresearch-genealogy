@@ -61,6 +61,14 @@ Jewish genealogy is organized by record type and challenge rather than by countr
 - **Searchable**: Yes (some collections indexed)
 - **AI accessibility**: AI-searchable for indexed collections
 
+### JRI-Poland (Jewish Records Indexing - Poland)
+- **URL**: https://jri-poland.org/ (reachable through the JewishGen Unified Search)
+- **Coverage**: The largest index of Jewish vital records from Poland — births, marriages and deaths transcribed from Polish state archive holdings, organised by town.
+- **Cost**: Free (JewishGen account required)
+- **Searchable**: Yes (surname, town, record type, year range)
+- **AI accessibility**: AI-searchable
+- **Use**: The primary index for Polish-Jewish lines, and the complement to Gesher Galicia (which covers the former Galicia only). ⚠ Coverage is per-town and reflects transcription progress, not survival: a town returning nothing has not necessarily lost its records.
+
 ### All Russia Family Tree (VGD)
 - **URL**: https://www.vgd.ru/
 - **Coverage**: Forum-based research community for Russian Empire records, including Jewish metric books and community records.
