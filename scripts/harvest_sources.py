@@ -279,6 +279,91 @@ MEMORIAL_ALLOWLIST_MARKERS = (
 )
 
 
+# ── policy (f): OBITUARIES — INCLUDED as records, but only the person's OWN ────
+#
+# ⚠ WHY THIS EXISTS. Limb (f) was the ONE source class rule 8 names with no
+# detector: (c) has `is_book_collection`, (e) has `is_memorial_collection`, (c)/(d)
+# have `reference_work_limb`, and obituaries — the class limb (f) explicitly
+# INCLUDES in the census — had nothing. Measured 06 AUG 2026 across 335 people with
+# a live FS PID and a dated death: 116 obituary attachments postdate their own
+# subject's death, on 39 people (12%), median gap 40 years, maximum 73.
+#
+# ⭐ THE MECHANISM, confirmed end to end rather than inferred: ONE family obituary
+# names several relatives, FamilySearch mints a PERSONA for each name, and each
+# persona is attached to that relative's profile. Three married couples were found
+# carrying IDENTICAL obituary sets while having died ten and twenty years apart —
+# which is impossible unless the obituaries belong to neither of them.
+#
+# ⛔ OPERATOR RULING 06 AUG 2026 (Open_Questions Q209): limbs (g)/(h) WIN over (f).
+# A relative's obituary documents THAT RELATIVE and is off the ARK coverage metric.
+# Limb (f)'s "obituaries count" governs a person's OWN obituary.
+OBITUARY_COLLECTION_MARKERS = (
+    "obituar",      # the stem: covers Obituary / Obituaries in every title seen
+    "death notice",
+)
+
+
+def is_obituary_collection(title: str) -> bool:
+    """Does this FS/Ancestry collection title name a policy-(f) OBITUARY collection?
+
+    ⚠⚠ A TRUE ANSWER DOES NOT MEAN THE RECORD SHOULD BE EXCLUDED. Limb (f) INCLUDES
+    obituaries in the census — an obituary is a published account of a death naming
+    family, and for 20th-century collateral it is often the only thing documenting a
+    person at all. This answers "is this the obituary class", which is step one; the
+    question that decides crediting is WHOSE death it reports, and for that use
+    `obituary_postdates_death` below.
+
+    ⚠ THE STEM IS `obituar`, NOT THE WORD. It has to catch both "Obituary Records"
+    and "Obituaries, Births, and Marriages", and no ordinary collection title
+    contains that stem for another reason. Contrast the `igi` case documented under
+    `reference_work_limb`, where a bare marker was REFUSED because it is a substring
+    of *original*, *digital* and *digitized* — the guard there was necessary and here
+    it is not, and the difference is that `obituar` is not a substring of anything.
+
+    ⚠⚠ MIXED COLLECTIONS ARE A KNOWN FALSE POSITIVE, and the biggest one is in this
+    vault heavily: **"GenealogyBank Obituaries, Births, and Marriages, 1980-2015"**
+    also carries BIRTH and MARRIAGE announcements. A title match therefore does NOT
+    prove the attachment is an obituary — only that it MIGHT be. This matters in one
+    direction only: it can over-flag, never under-flag, so it is safe as a screen and
+    unsafe as a verdict. **Read the event descriptor before acting on a positive.**
+    """
+    return any(m in (title or "").casefold() for m in OBITUARY_COLLECTION_MARKERS)
+
+
+def obituary_postdates_death(title: str, event_year, died_year, grace: int = 1) -> bool:
+    """Is this an obituary indexed too long after the person's OWN death to be theirs?
+
+    The check that found all 39 rows: an obituary is published within days of a
+    death, so an obituary indexed years later reports SOMEBODY ELSE's death and the
+    person is merely named in it — limb (g)/(h), off the metric.
+
+    ⭐ `grace` EXISTS BECAUSE AN OBITUARY CAN CROSS A YEAR BOUNDARY. A death on 28
+    DEC 1959 can be published 2 JAN 1960, and only YEARS are reliably available from
+    the index, so a one-year allowance is the honest resolution of the data. Raising
+    it further would start hiding real cases: on the measured population exactly ONE
+    of 116 flagged rows sat in the 2-3 year band while SEVENTY-EIGHT were off by 31
+    years or more.
+
+    ⚠ RETURNS FALSE WHEN EITHER YEAR IS MISSING. An undated obituary or an undated
+    person is UNKNOWN, not innocent and not guilty — the same guard as
+    `is_structural`, where a person with no dated vitals must never be swept up by a
+    year criterion. 26 of the 116 flagged attachments carried no locator at all and a
+    further share carry no event date; none of those is judged here.
+
+    ⚠ IT ASSUMES THE VAULT'S DEATH YEAR IS RIGHT. The rival reading of every positive
+    is "the obituary is fine and the vault's death date is wrong". That was tested on
+    the measured population and rejected on the distribution, not on faith — but for
+    a SINGLE row it stays a live alternative, so check the death date before acting.
+    """
+    if not is_obituary_collection(title):
+        return False
+    try:
+        ey, dy = int(event_year), int(died_year)
+    except (TypeError, ValueError):
+        return False
+    return ey > dy + grace
+
+
 def is_memorial_collection(title: str) -> bool:
     """Does this FS collection title name a policy-(e) memorial/headstone index?
 
