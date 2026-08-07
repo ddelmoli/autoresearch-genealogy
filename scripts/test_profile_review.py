@@ -692,6 +692,47 @@ def test_route_survives_the_candidate_seam():
             sys.modules.pop(mod, None)
 
 
+def test_floor_unmet_names_the_right_cause():
+    """A FULLY DECLARED arm is unmet for a different reason than a COLD one, and the
+    message must not conflate them. Before route retirement this line asserted
+    'every candidate is inside its cooldown' unconditionally; once a whole arm could
+    be permanently declared that became a false statement, and it would send the
+    next reader hunting a rotation bug that does not exist."""
+    print("\n-- floor unmet: the cause is computed, not assumed --")
+    today = date(2026, 8, 7)
+    declared = [dict(cand(i, "BOOK_SOURCED"), route="medlands") for i in range(4)]
+    res = PR.allocate(declared, {"arms": {}, "entries": {}}, today=today, cadence=5)
+    a = res["per_arm"]["BOOK_SOURCED"]
+    check("BOOK_SOURCED" in res["floor_unmet"],
+          "a fully declared arm is still REPORTED as floor-unmet, not hidden")
+    check(a["retired_by_route"] == a["pool"] == 4 and a["eligible"] == 0,
+          "and it is visibly declared-to-exhaustion rather than empty")
+
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        PR.print_draw(res)
+    out = buf.getvalue()
+    check("DECLARED" in out and "settled, not cold" in out,
+          "the printed reason says DECLARED for a fully-declared arm")
+    check("every candidate inside its cooldown" not in out,
+          "NEGATIVE CONTROL: it does NOT claim cooldown for a declared arm")
+
+    # NEGATIVE CONTROL: the same shape with NO routes must still say 'cooldown'.
+    cold = [dict(cand(i, "BOOK_SOURCED")) for i in range(4)]
+    st = {"arms": {}, "entries": {c["id"]: {"last_polled": today.isoformat()} for c in cold}}
+    res2 = PR.allocate(cold, st, today=today, cadence=5)
+    buf2 = io.StringIO()
+    with contextlib.redirect_stdout(buf2):
+        PR.print_draw(res2)
+    out2 = buf2.getvalue()
+    check("BOOK_SOURCED" in res2["floor_unmet"] and "cooldown" in out2,
+          "NEGATIVE CONTROL: an undeclared cold arm still reports COOLDOWN")
+    check("settled, not cold" not in out2,
+          "NEGATIVE CONTROL: a cold arm is never described as settled")
+
+
+
 def main():
     test_exploration_floor()
     test_floor_negative_control()
@@ -718,6 +759,7 @@ def main():
     test_unrecognised_route_slug_still_retires()
     test_fs_probed_alone_does_not_retire()
     test_route_survives_the_candidate_seam()
+    test_floor_unmet_names_the_right_cause()
     print(f"\n{PASS} passed, {FAIL} failed")
     raise SystemExit(1 if FAIL else 0)
 

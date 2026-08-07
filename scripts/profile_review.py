@@ -688,9 +688,26 @@ def print_draw(result, clamp_note=None, rate=None):
             print("      probe: " + "; ".join(f"{p} ({w})" for p, w in c["probes"]))
     print()
     if result["floor_unmet"]:
-        print("** FLOOR UNMET for: " + ", ".join(result["floor_unmet"])
-              + " — every candidate in that arm is inside its cooldown. "
-                "Reported, NOT padded from another arm.")
+        # ** THE REASON IS PART OF THE MESSAGE, AND THERE ARE NOW TWO OF THEM. **
+        # This line used to assert "every candidate is inside its cooldown" for
+        # every unmet arm. Once `route` retirement landed that became false: an arm
+        # can be unmet because its rows are temporarily COLD (it returns next
+        # session) or because they are permanently DECLARED (it does not). Reporting
+        # a settled arm as a cold one invites somebody to go looking for a rotation
+        # bug that is not there -- so the cause is computed per arm, never assumed.
+        parts = []
+        for arm in result["floor_unmet"]:
+            a = result["per_arm"][arm]
+            ret, poolsz = a.get("retired_by_route", 0), a["pool"]
+            if ret and ret >= poolsz:
+                parts.append(f"{arm} (all {poolsz} DECLARED — settled, not cold; "
+                             f"this arm is complete and will not return)")
+            elif ret:
+                parts.append(f"{arm} ({ret} of {poolsz} declared, the rest in cooldown)")
+            else:
+                parts.append(f"{arm} (every candidate inside its cooldown)")
+        print("** FLOOR UNMET for: " + "; ".join(parts)
+              + ". Reported, NOT padded from another arm.")
     if result["short"]:
         print(f"** SHORT DRAW: {len(result['draw'])} of {result['cadence']} — "
               "the eligible pool is exhausted. No silent top-up.")
