@@ -1309,6 +1309,47 @@ def is_relative_sources_bullet(line: str) -> bool:
     return bool(PID_RE.search(first_clause) or _INLINE_COLLATERAL_RE.search(inner))
 
 
+# ** A KIN LIST DOCUMENTS NOBODY (deferred 54, remaining half, 08 AUG 2026). **
+#
+# Spec 05 has always said so in prose -- "a name in a `- Siblings` / `- Children of` /
+# `- Parents:` list still credits nothing, because it documents nothing" -- but the
+# CODE only ever applied the locator test, so such a line credited records whenever it
+# happened to sit near one. Measured: `- Parents: <Name> (...)` handed out 8 records,
+# and a `- Children (6): ...` line handed 8 to EACH of two daughters. The clearest
+# artifact was an INFANT DEAD AT TWO reading `WELL_SOURCED` with 4 records, his own
+# entry citing none, all four credited off his father's "4 documented children" line.
+#
+# ⚠ THIS DELIBERATELY DOES NOT MATCH A SHARED EVENT. A marriage act, a census
+# household or a joint manifest DOCUMENTS BOTH PARTIES, so
+# `- Married **X** (FS <PID>), m. 1883 -- atto -- <ARK>` must keep crediting the wife.
+# `test_foreign_credit_magnitude` pins that, and an earlier attempt at this fix was
+# refuted by it in six assertions within a minute. The discriminator is therefore the
+# ENUMERATING HEAD-WORD, not the presence of a relative.
+#
+# ⚠ Head TEXT is load-bearing here, which rule 8 limb (g) declined for CREDITING. The
+# direction is what differs, and it is the same argument `own_region` already makes: a
+# typo here means the rule does NOT fire, leaving the pre-existing over-credit -- it
+# **fails open, to the status quo**, never toward destroying a real record.
+_KIN_LIST_RE = re.compile(
+    r"^\s*-\s*(?:\*\*|⭐|⚠|✓|✅)*\s*"
+    # ⚠ An optional COUNT or adjective may precede the kin word. The first cut of this
+    # regex required the word immediately after the bullet and therefore MISSED the
+    # very line that raised the item -- "- 4 documented children: ..." -- which is how
+    # an infant dead at two was reading WELL_SOURCED off his father's entry.
+    r"(?:[0-9]+\s+)?(?:[a-z]+\s+){0,2}"
+    r"(?:parents?|children|child|siblings?|issue|sons?|daughters?|brothers?|sisters?)"
+    r"\b[^:\n]{0,40}:", re.IGNORECASE)
+
+
+def is_kin_list_line(line: str) -> bool:
+    """True for a bullet whose head ENUMERATES relatives, e.g. `- Children (6): ...`.
+
+    Such a line documents nobody -- it is a roster. Spec 05 says so; this makes the
+    code say it too. See `_KIN_LIST_RE` for why a shared-event line is excluded.
+    """
+    return bool(_KIN_LIST_RE.match(line))
+
+
 def sanctioned_region_for_pid(body: str, pid: str) -> str:
     """The text of any DEDICATED relative-sources bullet in `body` naming `pid`.
 
@@ -1504,6 +1545,15 @@ def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict
                 # not `record_count` — see attributed_region_for_pid for the 88
                 # entries that taught us the difference (deferred 29).
                 region = attributed_region_for_pid(body, pid)
+                # deferred 54 (remaining half): a KIN LIST is a roster, not a record.
+                #
+                # ⚠ DROP THE WHOLE REGION WHOSE HEAD IS A KIN LIST, not merely the head
+                # LINE. The first cut stripped the line only and changed NOTHING on the
+                # live vault, because the locators sit on the SUB-BULLETS the head pulls
+                # in -- which are not themselves kin-list lines. Same shape as
+                # `own_region`, which drops a relative-sources bullet's whole region.
+                if is_kin_list_line(region.split("\n", 1)[0]):
+                    region = ""
                 foreign_count = count_records(region)
                 if not foreign_count:
                     continue

@@ -128,6 +128,61 @@ class whole_body_credit:
         return False
 
 
+# --- deferred 54, remaining half: a KIN LIST documents nobody ----------------
+
+KIN_LIST_WITH_LOCATORS = f"""### Generation 9
+
+**Rich Father** (b. 1700; d. 1770; FS PID {PID_A})
+- meta: {{id: P-AAA111, profile_status: complete, life_status: deceased, generation: 9, fs: {PID_A}}}
+- 4 documented children: **Poor Child** ({PID_B}, infant), and three others
+  - the family's 1750 land deed — {ARK1}
+  - the family's 1755 land deed — {ARK2}
+
+**Poor Child** (b. 1730; d. 1732; FS PID {PID_B})
+- meta: {{id: P-BBB222, profile_status: stub, life_status: deceased, generation: 8, fs: {PID_B}}}
+- An infant who died at two. Nothing of his own is cited anywhere.
+"""
+
+
+def test_kin_list_credits_nobody():
+    """A roster is not a record (deferred 54, 08 AUG 2026).
+
+    THE ARTIFACT THAT RAISED IT: an INFANT DEAD AT TWO read `WELL_SOURCED` with four
+    records, his own entry citing none, every one credited off his father's
+    "4 documented children: ..." line. **The census was attributing the COUNT OF
+    CHILDREN to one of the children.**
+
+    ⚠ TWO THINGS THIS PINS THAT THE FIRST IMPLEMENTATION GOT WRONG, both of which
+    changed NOTHING on the live vault and so looked like successes:
+      1. The head may carry a COUNT or adjective before the kin word. Requiring the
+         word immediately after the bullet missed "4 documented children:" -- the very
+         line in question.
+      2. The WHOLE REGION must be dropped, not the head LINE. The locators sit on the
+         SUB-BULLETS the head pulls in, and those are not themselves kin-list lines.
+    """
+    c = census(KIN_LIST_WITH_LOCATORS)
+    check(c["Poor Child"][1] == 0,
+          f"the child named in a kin list is credited NOTHING (got {c['Poor Child'][1]})")
+    check(c["Poor Child"][0] == "SOURCE_GAP",
+          f"...and lands in SOURCE_GAP, where an undocumented infant belongs "
+          f"(got {c['Poor Child'][0]})")
+    check(c["Rich Father"][1] == 2,
+          f"POSITIVE CONTROL: the father still gets his own 2 (got {c['Rich Father'][1]})")
+
+
+def test_shared_event_still_credits():
+    """NEGATIVE CONTROL, and the boundary an earlier attempt at this fix broke.
+
+    A marriage act, a census household or a joint manifest DOCUMENTS BOTH PARTIES, so
+    `- Married **X** (FS <PID>) ... atto -- <ARK>` must keep crediting the wife. A
+    symmetric "credit exactly what subtraction removes" rewrite was refuted here in
+    six assertions within a minute. The discriminator is the ENUMERATING HEAD-WORD,
+    never the mere presence of a relative."""
+    c = census(MARRIAGE_NARRATIVE)
+    check(c["Poor Wife"][1] == 1,
+          f"a shared marriage act still credits the wife 1 (got {c['Poor Wife'][1]})")
+
+
 # --- fixtures ---------------------------------------------------------------
 
 # THE P-BEAZEM SHAPE. The wife is named once, in a marriage narrative that cites the
@@ -249,6 +304,10 @@ def main():
     print("\n== the mirror-image defect is NOT introduced ==")
     check(i.get("Poor Wife", ("", 0))[1] > 0 and c.get("Poor Wife", ("", 0))[1] > 0,
           "a documented relative is never un-credited to zero")
+
+    print("\n== deferred 54, remaining half: a KIN LIST documents nobody ==")
+    test_kin_list_credits_nobody()
+    test_shared_event_still_credits()
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0
