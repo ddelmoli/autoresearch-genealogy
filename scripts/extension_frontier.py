@@ -86,36 +86,40 @@ LIVING_RE = re.compile(r"life_status:\s*(living|unknown)")
 # nothing ever re-examines it. Two were minted by accident in one sitting (see
 # `deferred_decisions` 55) -- one of them by a bullet reading "Bank, do not wire
 # from the tree", a statement about METHOD that closed a frontier row.
-DECLARED_RE = re.compile(
-    r"terminus|reliability ceiling"
-    # "not given"/"not stated"/"not recorded" are how Cawley-derived entries phrase a
-    # dead end, and omitting them produced a FALSE SILENT on Pavia, whose entry already
-    # said "Parentage not given by Cawley".
-    r"|parentage[^.;]{0,40}(?:unknown|not known|not given|not stated|not recorded|unproven|doubtful|not securely|not established)"
-    # ⛔ `brick wall` was REMOVED 07 AUG 2026 (operator, applying the "no effort stops"
-    # ruling). It is genealogy slang for "I cannot get past this" — a statement about
-    # the SEARCHER, not about the ancestry. Ten of its 51 rows said so in the same
-    # bullet: "No parents recorded IN FREE SOURCES ACCESSIBLE HERE. Brick wall FOR NOW";
-    # "BERMUDA RECORDS NOT ACCESSIBLE ONLINE. Confirmed brick wall". Most of the rest
-    # were barer — "Parents: Unknown. Brick wall." with no source and no reasoning.
-    # 21 rows declared on it ALONE and became SILENT; the other 30 carry real ancestry
-    # language and were unaffected, as were every `terminus` row (Arnulf, Rollo, Rurik,
-    # Olga). ⚠ `no parents recorded` DELIBERATELY STAYS: "recorded" means both "in the
-    # record" (an ancestry claim — a baptism naming no father) and "in what I searched"
-    # (effort), and no regex separates them. Those 28 rows need reading (deferred 57).
-    r"|parents? (?:are )?(?:unknown|not known|not recorded)|no parents recorded"
-    r"|legendary|fabricat|unknown per Cawley|origin.{0,24}(?:unknown|doubt)"
-    # The explicit marker (24 JUL 2026): entries open a recorded stop with a literal
-    # "FRONTIER DECLARATION <date>" bullet, so a declaration registers mechanically
-    # instead of depending on its prose wording. Same write-end lesson as the header
-    # grammar: give the writer a vocabulary the reader matches exactly.
-    # ⚠ The free-text ancestry phrases above remain accepted for the backlog, and they
-    # carry the residual hazard of `deferred_decisions` 55: "her parentage is unknown"
-    # is written both about a CLOSED question and about an OPEN one, and no regex can
-    # tell those apart. The marker is the only unambiguous form.
-    r"|FRONTIER DECLARATION",
-    re.I,
-)
+# ⭐⭐ **FREE-TEXT MATCHING WAS RETIRED 08 AUG 2026 (operator ruling, deferred 55
+# option 1). THE EXPLICIT MARKER IS NOW THE ONLY THING THAT DECLARES A FRONTIER ROW.**
+#
+# The alternation that used to live here matched ancestry phrases -- `terminus`,
+# `parentage unknown`, `no parents recorded`, `legendary`, `fabricat`, `origin
+# unknown`, `reliability ceiling`. Measured before the change: of 264 declared rows,
+# **195 (74%) already carried the explicit marker and only 69 rested on free text.**
+# Of those 69, **26 hit an unambiguous ancestry phrase and were STAMPED with the
+# marker** (their reasons preserved verbatim in-entry), and **44 rested only on the
+# genuinely ambiguous phrases and correctly fell back to SILENT.**
+#
+# WHY THE PHRASES HAD TO GO, and it is not the ambiguity everyone expected:
+#   (a) The known problem -- "her parentage is unknown" is written both about a
+#       CLOSED question and an OPEN one, and no regex separates them. The 44
+#       fallbacks are dominated by "No parents recorded in FamilySearch", which is a
+#       statement about ONE HOST, not about the ancestry. Under the no-effort-stops
+#       ruling those are research to-dos, i.e. exactly what SILENT is for.
+#   (b) ⚡ The decisive one, found the same day: **the detector could not tell an
+#       ASSERTION from a DENIAL.** A session wrote "a documented negative on FS is
+#       not a <the marker>" onto six entries -- spelling the phrase out IN ORDER TO
+#       SAY THE ROW WAS NOT ONE -- and minted **five accidental closures**
+#       (SILENT 301 -> 296). No wording rule could have prevented that: the sentence
+#       was already unambiguous to any human reader.
+#
+# ⚠ A false DECLARED is the EXPENSIVE error -- it removes a real row from the EXPAND
+# pool permanently and silently, and nothing re-examines it. A false SILENT merely
+# nags. That asymmetry is why this check is now deliberately hard to satisfy.
+#
+# ⚠ TO DECLARE A ROW, WRITE THE MARKER. There is no longer any other way, by design.
+# ⚠ CASE-INSENSITIVE, deliberately. The reader must be tolerant of what is already
+# written -- the same rule the FS write-back grammar states in CLAUDE.method.md
+# ("match case-insensitively ... count on the words, never on the decoration").
+# A declaration must not fail because someone typed it in sentence case.
+DECLARED_RE = re.compile(r"FRONTIER DECLARATION", re.I)
 
 
 # A declaration is only worth the SILENT row it closes if it says WHY on some

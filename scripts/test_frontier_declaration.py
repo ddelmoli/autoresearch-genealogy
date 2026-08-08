@@ -55,7 +55,10 @@ for phrase in [
     check(f"effort: {phrase[:52]!r}", declares(phrase), False)
 
 print()
-print("ANCESTRY claims must STILL declare (a real terminus is not weakened):")
+print("** FREE-TEXT ANCESTRY PHRASES NO LONGER DECLARE (deferred 55 option 1, 08 AUG 2026). **")
+print("They are RESEARCH STATES until somebody writes the marker. All of these were")
+print("accepted before the ruling; 26 rows carrying them were STAMPED with the marker")
+print("and kept DECLARED, and 44 resting on them alone correctly fell back to SILENT.")
 for phrase in [
     "RURIKID TERMINUS (semi-legendary).",
     "TERMINUS -- this is the documented top of Royal line D.",
@@ -65,8 +68,9 @@ for phrase in [
     "The descent above him is legendary.",
     "reliability ceiling for this branch",
     "his origin is unknown",
+    "No parents recorded in FamilySearch.",
 ]:
-    check(f"ancestry: {phrase[:52]!r}", declares(phrase), True)
+    check(f"free text no longer declares: {phrase[:44]!r}", declares(phrase), False)
 
 print()
 print("The explicit marker is the unambiguous form and must always declare:")
@@ -85,22 +89,25 @@ for phrase in [
     check(f"plain: {phrase[:52]!r}", declares(phrase), False)
 
 print()
-print("The two phrasings that tripped deferred 55 in the wild:")
-# Heinrich I: a METHOD statement that closed his frontier row. Now inert.
+print("The phrasings that tripped deferred 55 in the wild -- ALL now inert:")
 check("'Bank, do not wire from the tree' is inert",
       declares("Bank, do not wire from the tree -- the edge waits on Cawley."), False)
-# Reginlind: an ancestry claim about an OPEN state. STILL declares -- the residual
-# hazard of deferred 55, which this ruling narrows but does not remove. Pinned so the
-# limit is visible rather than assumed.
-check("'her parentage is unknown' still declares (residual 55 hazard)",
-      declares("Her own parentage is unknown per the sources consulted."), True)
+# Reginlind: an ancestry claim about an OPEN state. This was the residual hazard the
+# ruling was taken to remove -- "nobody has established this yet" and "this cannot be
+# established" are the same words.
+check("'her parentage is unknown' no longer declares",
+      declares("Her own parentage is unknown per the sources consulted."), False)
+check("deferred 57's ambiguous phrase no longer declares",
+      declares("No parents recorded in free sources accessible here. Brick wall for now."), False)
 
 print()
-print("RESIDUAL (deferred 57): `no parents recorded` still declares even with an")
-print("effort qualifier beside it, because \"recorded\" means both \"in the record\"")
-print("and \"in what I searched\" and no regex separates them:")
-check("'No parents recorded in free sources ... Brick wall for now' still declares",
-      declares("No parents recorded in free sources accessible here. Brick wall for now."), True)
+print("** THE CASE THAT DECIDED THE RULING: the detector could not tell an ASSERTION")
+print("from a DENIAL. ** A bullet that spelled the marker out IN ORDER TO SAY THE ROW")
+print("WAS NOT ONE minted five accidental closures (SILENT 301 -> 296). This is pinned")
+print("as a KNOWN LIMIT, not as correct behaviour: the marker is a literal string and")
+print("a literal string cannot be negated. Do not write the marker to disclaim it.")
+check("a DENIAL of the marker still declares -- known, unavoidable, documented",
+      declares("a documented negative on FS is not a FRONTIER DECLARATION"), True)
 
 print()
 print("`backed` is scoped to the DECLARING BULLET, not the whole entry:")
@@ -111,25 +118,25 @@ entry_with_unrelated_source = "\n".join([
     "**Someone** (b. 1700)",
     "- meta: {id: P-000001, generation: 12}",
     "- His marriage is in the Cawley Medlands ENGLAND chapter and the parish register.",
-    "- Parentage unknown.",
+    "- FRONTIER DECLARATION 08 AUG 2026: parentage unknown.",
 ])
 decl = EF.declaring_lines(entry_with_unrelated_source)
 check("declaring_lines finds exactly the declaring bullet", len(decl), 1)
-check("...and it is the bare one", "Parentage unknown" in decl[0], True)
+check("...and it is the bare one", "parentage unknown" in decl[0].lower(), True)
 check("bare declaration reads UNBACKED even though the entry cites Cawley",
       any(EF.BACKED_RE.search(l) for l in decl), False)
 
 entry_backed_in_place = "\n".join([
     "**Someone** (b. 1700)",
     "- meta: {id: P-000002, generation: 12}",
-    "- TERMINUS: parentage not given by Cawley, Medlands ENGLAND ch. 3.",
+    "- FRONTIER DECLARATION 08 AUG 2026 -- TERMINUS: parentage not given by Cawley, Medlands ENGLAND ch. 3.",
 ])
 check("declaration that names its authority IN the bullet reads BACKED",
       any(EF.BACKED_RE.search(l) for l in EF.declaring_lines(entry_backed_in_place)), True)
 
 # route_digest blockquotes mirror entry text at the head of every lineage file; if
 # they counted, one person's declaration would be credited to the whole shard.
-quoted = "> - TERMINUS: parentage not given by Cawley."
+quoted = "> - FRONTIER DECLARATION 08 AUG 2026 -- TERMINUS, per Cawley."
 check("blockquoted mirror is not a declaring line", EF.declaring_lines(quoted), [])
 
 print()
