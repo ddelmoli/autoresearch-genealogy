@@ -223,7 +223,16 @@ whichever lanes were drawn:
    - THE PROFILE-REVIEW SLICE. It is due EVERY session, independent of whether
      ROTATE was ever drawn; a skipped session is coverage permanently deferred,
      not deferred-and-caught-up. Draw it, poll it, and record each entry with
-     --record. ! Draw only what you will actually poll: a slice drawn at 20 and
+     --record.
+     ! SINCE 08 AUG 2026 ROTATE IS NO LONGER A BANDIT LANE (deferred 51 option 3):
+     the bandit chooses between EXPAND and IMPROVE only. The slice is UNAFFECTED --
+     it runs every sitting on its own cadence, which is precisely why taking ROTATE
+     out of the draw cost no coverage.
+     ! ALSO RECORD ONE LANE OBSERVATION FOR THE SLICE:
+       session_plan.py --record --lane ROTATE --outcome hit|miss --session <N>
+     Its observations no longer feed any choice, and they are kept anyway
+     (operator, 08 AUG 2026): a lane that RUNS but is not COUNTED is the shape that
+     let the FS write-back queue go quiet. ! Draw only what you will actually poll: a slice drawn at 20 and
      polled at 5 leaves 15 entries looking considered when nobody looked, and
      the unpolled ones must be named at review.
    - NOT here: the Research_Log row and the Handoff close block. Those are one

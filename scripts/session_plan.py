@@ -131,6 +131,17 @@ LANES = ("EXPAND", "IMPROVE", "ROTATE")
 # (`--record --lane ROTATE`), countable, and reported. What changed is only that it is
 # no longer something to CHOOSE, because an exploitation arm running on a schedule is
 # not something to explore over.
+#
+# ⭐ **AND THE SLICE IS STILL RECORDED AS A LANE OBSERVATION (operator, 08 AUG 2026).**
+# The ruling left this ambiguous: with ROTATE out of the selection set, its
+# observations no longer feed any choice, so recording them could have been dropped.
+# The operator kept it. **A lane that RUNS but is not COUNTED is exactly the shape that
+# let the FS write-back queue go quiet** -- work happening with no number attached to
+# it. So each sitting still records one ROTATE observation for the profile-review
+# slice, and `arms["ROTATE"]` keeps an honest running tally that simply is not used
+# for selection.
+# ⚠ Do NOT "clean this up" by rejecting the lane: an unused tally is cheap, and a
+# silent lane is the failure mode this vault has paid for twice.
 BANDIT_LANES = ("EXPAND", "IMPROVE")
 
 # ** VERIFY WAS COLLAPSED INTO IMPROVE, 02 AUG 2026 (operator; deferred 39 + 40). **
