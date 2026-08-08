@@ -1338,7 +1338,20 @@ _KIN_LIST_RE = re.compile(
     # an infant dead at two was reading WELL_SOURCED off his father's entry.
     r"(?:[0-9]+\s+)?(?:[a-z]+\s+){0,2}"
     r"(?:parents?|children|child|siblings?|issue|sons?|daughters?|brothers?|sisters?)"
-    r"\b[^:\n]{0,40}:", re.IGNORECASE)
+    r"\b\**"
+    # ⚠⚠ THE PARENTHETICAL IS ALLOWED TO RUN LONG, AND *ONLY* THE PARENTHETICAL
+    # (deferred 59 (c), 08 AUG 2026). The real rosters read
+    #     "- Children (10 confirmed on FS <PID> Family tab, ... iter 2): <names>"
+    # and the 40-char pre-colon window cut them off at the parenthesis, so a roster
+    # crediting 21 records slipped through. ⛔ WIDENING THE PLAIN WINDOW INSTEAD WOULD
+    # BE WRONG: measured on this vault, a 200-char window also swallows
+    #   "- **PARENTS ADDED 24 JUL 2026, resolving a SILENT row.** Son of **<Name>..."
+    #   "- daughter <Name>'s 29 DEC 1948 death certificate, naming ... as mother"
+    #   "- son <Name>, b. 24 DEC 1748, and chr. 1748 <Town> -- ~fs:1:1:..."
+    # -- narrative and limb-(g) lines, none of them rosters. Requiring the long run to
+    # be BRACKETED keeps the rule pinned to the enumerating shape.
+    r"(?:\s*\([^)\n]{0,300}\))?\**"
+    r"[^:\n]{0,40}:", re.IGNORECASE)
 
 
 def is_kin_list_line(line: str) -> bool:
@@ -1348,6 +1361,30 @@ def is_kin_list_line(line: str) -> bool:
     code say it too. See `_KIN_LIST_RE` for why a shared-event line is excluded.
     """
     return bool(_KIN_LIST_RE.match(line))
+
+
+def struck_out_for_pid(head: str, pid: str) -> bool:
+    """True when `pid` sits inside a ~~struck-through~~ span on this head.
+
+    ** deferred 59 (a), 08 AUG 2026. ** A hand-strikethrough is this vault's mark for
+    a claim that has been RETRACTED -- and a person struck out and explicitly removed
+    from the tree was still crediting records to whoever's entry the line sat in. The
+    worst case credited **29 records** off a head reading
+
+        `5. ~~<Name> (1879-1958, FS PID <PID>)~~ -- **REMOVED 04 JUN 2026: ...**`
+
+    ⚠ **Scoped to the STRUCK SPAN, not the line.** A line may strike one candidate
+    while discussing a live one beside it, so striking the whole head would silence a
+    pid the entry still asserts. The test is whether THIS pid is inside the retraction.
+
+    ⚠ This makes strikethrough load-bearing, which limb (g) declined for CREDITING.
+    Direction again: a missed strike leaves the pre-existing over-credit, so it
+    **fails open to the status quo** -- the same argument `own_region` makes.
+    """
+    for span in re.findall(r"~~(.+?)~~", head, re.DOTALL):
+        if pid in span:
+            return True
+    return False
 
 
 def sanctioned_region_for_pid(body: str, pid: str) -> str:
@@ -1552,7 +1589,9 @@ def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict
                 # live vault, because the locators sit on the SUB-BULLETS the head pulls
                 # in -- which are not themselves kin-list lines. Same shape as
                 # `own_region`, which drops a relative-sources bullet's whole region.
-                if is_kin_list_line(region.split("\n", 1)[0]):
+                _head = region.split("\n", 1)[0]
+                # deferred 59 (a): a person STRUCK OUT of the tree credits nothing.
+                if is_kin_list_line(_head) or struck_out_for_pid(_head, pid):
                     region = ""
                 foreign_count = count_records(region)
                 if not foreign_count:

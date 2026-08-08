@@ -183,6 +183,84 @@ def test_shared_event_still_credits():
           f"a shared marriage act still credits the wife 1 (got {c['Poor Wife'][1]})")
 
 
+# --- deferred 59 option 1: struck-out people, and long bracketed rosters -----
+
+STRUCK = f"""### Generation 5
+
+**Compiler** (b. 1850; d. 1920; FS PID {PID_A})
+- meta: {{id: P-AAA111, profile_status: complete, life_status: deceased, generation: 5, fs: {PID_A}}}
+- 5. ~~Struck Person (1879-1958, FS PID {PID_B})~~ — **REMOVED 04 JUN 2026: not a child of this couple.**
+  - the 1900 census — {ARK1}
+  - the 1910 census — {ARK2}
+
+**Struck Person** (b. 1879; d. 1958; FS PID {PID_B})
+- meta: {{id: P-BBB222, profile_status: stub, life_status: deceased, generation: 5, fs: {PID_B}}}
+- Removed from the tree; nothing of his own is cited.
+"""
+
+LONG_ROSTER = f"""### Generation 5
+
+**Compiler** (b. 1850; d. 1920; FS PID {PID_A})
+- meta: {{id: P-AAA111, profile_status: complete, life_status: deceased, generation: 5, fs: {PID_A}}}
+- Children (10 confirmed on the {PID_B} Family tab, all anchored — corrected 26 MAY 2026 iter 2): **Listed Person** ({PID_B})
+  - the 1900 census — {ARK1}
+  - the 1910 census — {ARK2}
+
+**Listed Person** (b. 1880; d. 1950; FS PID {PID_B})
+- meta: {{id: P-BBB222, profile_status: stub, life_status: deceased, generation: 4, fs: {PID_B}}}
+- Named only in that roster.
+"""
+
+
+def test_struck_out_person_credits_nothing():
+    """deferred 59 (a): a person STRUCK OUT of the tree credits nothing.
+
+    Worst live case: a head reading `5. ~~<Name> (… FS PID <PID>)~~ — **REMOVED 04 JUN
+    2026: …**` was crediting **29 records**. Three such rows dropped 29->4, 26->7 and
+    26->16 when this landed.
+
+    ⚠ Scoped to the STRUCK SPAN, not the line: a head may strike one candidate while
+    discussing a live one beside it."""
+    c = census(STRUCK)
+    check(c["Struck Person"][1] == 0,
+          f"the struck person is credited NOTHING (got {c['Struck Person'][1]})")
+    check(c["Compiler"][1] == 2,
+          f"POSITIVE CONTROL: the compiler keeps his own 2 (got {c['Compiler'][1]})")
+
+
+def test_long_bracketed_roster_is_still_a_kin_list():
+    """deferred 59 (c): the 40-char pre-colon window cut real rosters off.
+
+    `- Children (10 confirmed on FS <PID> Family tab, … iter 2): <names>` ran past the
+    allowance, so a roster crediting 21 records slipped deferred 54 entirely.
+
+    ⛔ ONLY THE BRACKETED RUN IS ALLOWED TO BE LONG. Measured on this vault, widening
+    the PLAIN window to 200 also swallows narrative and limb-(g) lines --
+    `- **PARENTS ADDED 24 JUL 2026 …**`, `- daughter <N>'s … death certificate`,
+    `- son <N>, b. 1748 …` -- none of them rosters."""
+    c = census(LONG_ROSTER)
+    check(c["Listed Person"][1] == 0,
+          f"a long bracketed roster credits nothing (got {c['Listed Person'][1]})")
+    check(c["Compiler"][1] == 2,
+          f"POSITIVE CONTROL: the compiler keeps his own 2 (got {c['Compiler'][1]})")
+
+
+def test_59_negative_controls():
+    """The shapes deferred 59 option 1 must NOT touch — narrative and limb (g)."""
+    import harvest_sources as H
+    for line in [
+        "- **PARENTS ADDED 24 JUL 2026, resolving a SILENT row.** Son of **A Placeholder**: x",
+        "- daughter <Name>'s 29 DEC 1948 death certificate, naming **<Name>** as her mother (persona): y",
+        "- son <Name>, b. 24 DEC 1748, and chr. 1748 <Town>",
+        "- Married **X** (FS AAAA-111), m. 1883 — atto — fs:1:1:QQQQ-1",
+    ]:
+        check(not H.is_kin_list_line(line), f"NOT a kin list: {line[:52]}")
+    check(not H.struck_out_for_pid("5. Live Person (FS AAAA-111) is current", "AAAA-111"),
+          "NEGATIVE CONTROL: an unstruck head is not a retraction")
+    check(not H.struck_out_for_pid("~~Other Person (BBBB-222)~~ but AAAA-111 stands", "AAAA-111"),
+          "NEGATIVE CONTROL: a pid OUTSIDE the struck span is untouched")
+
+
 # --- fixtures ---------------------------------------------------------------
 
 # THE P-BEAZEM SHAPE. The wife is named once, in a marriage narrative that cites the
@@ -308,6 +386,11 @@ def main():
     print("\n== deferred 54, remaining half: a KIN LIST documents nobody ==")
     test_kin_list_credits_nobody()
     test_shared_event_still_credits()
+
+    print("\n== deferred 59 option 1: struck-out people + long bracketed rosters ==")
+    test_struck_out_person_credits_nothing()
+    test_long_bracketed_roster_is_still_a_kin_list()
+    test_59_negative_controls()
 
     print(f"\n{PASS} passed, {FAIL} failed")
     return 1 if FAIL else 0
