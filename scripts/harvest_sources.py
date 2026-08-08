@@ -1237,6 +1237,111 @@ def attributed_region_for_pid(body: str, pid: str) -> str:
 _SOURCES_BULLET_RE = re.compile(
     r"^-\s+.{0,120}?\bsources\b\s*(?:for\b|of\b|[—–]|-\s)", re.IGNORECASE)
 
+# ** THE SECOND HALF OF THE HEAD TEST (deferred_decisions 54, resolved 08 AUG 2026,
+# operator chose "both, narrowly"). **
+#
+# `_SOURCES_BULLET_RE` alone asks only "does the head say sources FOR/OF something".
+# That cannot separate a genuine relative bullet from an entry's OWN bullet that
+# merely uses the word "for", so `- **Sources for his life**` was treated as a
+# relative's bullet: adding ONE locator naming a child then deleted every record on
+# the entry (measured synthetically 5 -> 0, WELL_SOURCED -> SOURCE_GAP; three live
+# entries affected, the clearest reading "Edward's OWN profile" and losing 16 -> 5).
+#
+# So the head must ALSO NAME A TARGET: a relation word, a PID-shaped token, or the
+# words "inline collateral". Verified against all twelve live relative bullets in
+# the reference vault -- every genuine one carries at least one, and the false
+# positives carry none.
+_RELATION_RE = re.compile(
+    r"\b(?:wife|husband|spouse|widow|son|sons|daughter|daughters|child|children|"
+    r"brother|brothers|sister|sisters|mother|father|parents|niece|nephew|cousin|"
+    r"grandson|granddaughter|grandchild|in-law)\b", re.IGNORECASE)
+_INLINE_COLLATERAL_RE = re.compile(r"inline\s+collateral", re.IGNORECASE)
+
+
+def is_relative_sources_bullet(line: str) -> bool:
+    """True for a DEDICATED relative-sources bullet -- the Spec 05 convention.
+
+    ** ONE PREDICATE, USED BY BOTH SIDES, AND THAT SYMMETRY IS THE FIX. ** Before
+    deferred 54 was resolved the two halves disagreed about what "a region about a
+    relative" meant: `own_region` SUBTRACTED regions whose head merely said
+    "sources for", while path (2) of `scan_family_tree_files` CREDITED any line that
+    mentioned a pid and sat near a locator. Because the two tests were different, a
+    locator could be subtracted from the host without being credited to the relative,
+    or credited to a relative it was never subtracted from -- which is precisely the
+    placement sensitivity deferred 54 recorded (negating four locators RAISED a count
+    by three).
+
+    Now a region is "about a relative" iff its head passes THIS test, `own_region`
+    removes exactly those regions, and path (2) credits exactly those regions. What
+    leaves the host is what reaches the relative.
+    """
+    if not _SOURCES_BULLET_RE.match(line):
+        return False
+    # ⚠ THE RELATION WORD MUST BE IN THE **TARGET**, NOT ANYWHERE ON THE LINE.
+    # These heads run to 200+ chars because the whole parenthetical sits on them,
+    # and a line-wide search matches relation words in ordinary PROSE: the first
+    # cut of this fix still accepted
+    #   "- **FS-attached sources — Giacomo's OWN profile** (… the prior bullet
+    #    cited only the three sons …)"
+    # on the "sons" in its own explanatory clause, and changed nothing at all.
+    # So the relation test is scoped to the bold span -- the segment between the
+    # `sources for/of/-` separator and the end of the bold run, which is where the
+    # convention actually names its target.
+    m = _SOURCES_BULLET_RE.match(line)
+    tail = line[m.end():]
+    target = re.split(r"\*\*|\(|:", tail, maxsplit=1)[0]
+    if _RELATION_RE.search(target):
+        return True
+    # A target named only by PERSONAL NAME ("sources for <Name>") carries its
+    # identifier in the FIRST CLAUSE of the following parenthetical:
+    #   - **... sources for <Name>** (<PID>, inline collateral; …)
+    # ⚠ Read that clause, NOT the whole line. PID_RE matches the 4-3 shape, which
+    # is also the shape of an ARK SUFFIX, and these heads quote ARKs and other
+    # people's pids in their explanatory prose -- so a line-wide test accepted
+    #   "- **FS-attached sources — Edward's OWN profile** (Recipe-S 01 JUL 2026,
+    #    **29 record ARKs** — surfaced by …)"
+    # on pids appearing far downstream, and left the false subtraction in place.
+    paren = re.search(r"\(([^)]*)\)", tail)
+    if not paren:
+        return False
+    inner = paren.group(1)
+    first_clause = inner.split(",", 1)[0]
+    return bool(PID_RE.search(first_clause) or _INLINE_COLLATERAL_RE.search(inner))
+
+
+def sanctioned_region_for_pid(body: str, pid: str) -> str:
+    """The text of any DEDICATED relative-sources bullet in `body` naming `pid`.
+
+    ⚠⚠ **NOT WIRED INTO THE CREDITING PATH, AND THE REASON IS THE INTERESTING PART
+    (deferred 54, 08 AUG 2026).** It was written to make crediting symmetric with
+    `own_region` -- what leaves the host is what reaches the relative -- and
+    `test_foreign_credit_magnitude` refuted that in six assertions within a minute.
+
+    **The asymmetry is PRINCIPLED, not a defect.** A marriage act, a census
+    household or a shared manifest **documents BOTH parties**, so it is correctly
+    credited to the wife on a `- Married **X** (FS <PID>) ... atto -- <ARK>` line
+    while being correctly NOT subtracted from the husband whose entry it sits in.
+    Crediting is therefore legitimately WIDER than subtraction, and forcing them to
+    match un-credits every shared-event relative to zero.
+
+    Kept, unused, because the narrowing it implements is still the right shape for
+    the OTHER half of deferred 54 -- the kin-list over-credit, where
+    `- Parents: <Name> (...)` hands out 8 records and `- Children (6): ...` hands 8
+    to each of two daughters, which Spec 05 says must document nothing. That fix
+    needs to distinguish a kin LIST from a shared EVENT, which this predicate does
+    not do on its own: a `- Married ...` line is neither a sanctioned bullet nor a
+    kin list. See the item for the remaining scope.
+    """
+    lines = body.splitlines()
+    keep: "set" = set()
+    for i, line in enumerate(lines):
+        if not is_relative_sources_bullet(line):
+            continue
+        region_idx = _attributed_region_indices(lines, i)
+        if pid in "\n".join(lines[j] for j in sorted(region_idx)):
+            keep |= region_idx
+    return "\n".join(lines[j] for j in sorted(keep))
+
 
 def own_region(body: str, owners: "set", pid_to_id: "Dict[str, str]") -> str:
     """The text of this entry that documents the entry's OWN person: the body MINUS
@@ -1301,7 +1406,7 @@ def own_region(body: str, owners: "set", pid_to_id: "Dict[str, str]") -> str:
     lines = body.splitlines()
     drop: "set" = set()
     for i, line in enumerate(lines):
-        if not _SOURCES_BULLET_RE.match(line):
+        if not is_relative_sources_bullet(line):
             continue                     # not a dedicated relative-sources bullet
         region_idx = _attributed_region_indices(lines, i)
         region = "\n".join(lines[j] for j in sorted(region_idx))

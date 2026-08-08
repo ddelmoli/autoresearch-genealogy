@@ -4,12 +4,23 @@
 Runnable with no test framework: `python3 scripts/test_locator_placement.py`
 (exit 0 = pass).
 
+✅ **THE OVER-SUBTRACTION HALF WAS FIXED 08 AUG 2026** (deferred 54, operator chose
+"both, narrowly"); these tests now GUARD the fix rather than pin the defect. The
+over-CREDITING half is still open -- see the item -- and is not covered here.
+
 THE DEFECT. A person's `ark_count` depends on WHERE a locator sits, not only on
 whether it counts. Deferred 54 recorded a four-configuration table taken from a
 live entry in which negating four locators RAISED the reported count by three,
 and deleting them gave the same figure as negating them -- so a session doing the
 documented right thing (negate, never delete) watched the number move the wrong
 way and reasonably suspected its own edit.
+
+⚠⚠ **THE CENSUS CANNOT SEE ANY OF THIS, WHICH IS WHY THESE TESTS ARE THE ONLY
+GUARD.** Fixing the over-subtraction moved NO census count on the reference vault
+(SOURCE_GAP 175 before and after), because `fold_matches` takes `max()` across a
+person's crediting blocks and another block was already winning. Two WRONG versions
+of this fix also moved no count. **A green census is not evidence that a change to
+this code is correct, in either direction.**
 
 ** WHY THE TABLE IS RE-DERIVED SYNTHETICALLY HERE RATHER THAN COPIED. ** The
 original table belongs to a real person whose entry is ~69k chars. These tests
@@ -188,9 +199,8 @@ def main():
     print("INVARIANT 1 — adding a locator must never LOWER the count")
     check(up_plain >= base_plain,
           f"plain head: {base_plain} -> {up_plain}")
-    xfail(up_for == 0,
-          f"'for' head: {base_for} -> {up_for} — ADDING a locator erased all 4",
-          f"{base_for} -> {base_for + 1}, as the plain head does")
+    check(up_for == base_for + 1,
+          f"'for' head: {base_for} -> {up_for} (was 4 -> 0 before deferred 54 was fixed)")
 
     print()
     print("INVARIANT 2 — negating a locator must never RAISE the count")
@@ -209,18 +219,41 @@ def main():
     neg_f = n(fixture(for_head, NEGATED_LINE))
     del_f = n(fixture(for_head))
     check(neg_f <= live_f, f"'for' head: negate {live_f} -> {neg_f}")
-    xfail(neg_f != del_f,
-          f"'for' head: negating gives {neg_f} but deleting gives {del_f}",
-          "the two agree, so recording an exclusion costs nothing")
+    check(neg_f == del_f,
+          f"'for' head: negating ({neg_f}) agrees with deleting ({del_f}) "
+          f"-- recording an exclusion now costs nothing")
 
     print()
     print("category consequence — the count is what the census bands read from")
     c_plain = cat(fixture(plain_head, RELATIVE_LINE))
     c_for = cat(fixture(for_head, RELATIVE_LINE))
     check(c_plain == "WELL_SOURCED", f"plain head stays WELL_SOURCED (got {c_plain})")
-    xfail(c_for == "SOURCE_GAP",
-          f"'for' head falls to {c_for} on the SAME content",
-          "WELL_SOURCED, as the plain head is")
+    check(c_for == "WELL_SOURCED",
+          f"'for' head stays {c_for} on the SAME content (was SOURCE_GAP)")
+
+    print()
+    print("THE TWO TRAPS THAT DEFEATED THE FIRST TWO ATTEMPTS AT THIS FIX")
+    # Real heads run to 200+ chars because the whole parenthetical sits on the line.
+    # Attempt 1 searched the WHOLE LINE for a relation word and matched "sons" in an
+    # entry's own explanatory prose. Attempt 2 searched the whole line for a PID and
+    # matched pids quoted downstream. Both left the false subtraction in place and
+    # both LOOKED like working fixes. Neither is detectable from the census, which
+    # does not move either way (max() over blocks masks it).
+    prose_relation = ("**Sources — his OWN profile** (Recipe-S 01 JUL 2026, surfaced by an "
+                      "audit: the prior bullet cited only the three sons and missed these):")
+    prose_pid = (f"**Sources — his OWN profile** (Recipe-S 01 JUL 2026, cross-checked against "
+                 f"{PID_KID} and others):")
+    for label, head in (("relation word in the head's PROSE", prose_relation),
+                        ("a PID quoted downstream in the head", prose_pid)):
+        got = n(fixture(head, RELATIVE_LINE))
+        check(got == 5, f"{label}: own bullet NOT subtracted -> {got} (must be 5, not 0)")
+    # ...while the genuine forms these traps resemble must still be recognised.
+    for label, head in (
+            ("target names a relation", "**FS-attached sources for wife Jane** (fixture):"),
+            ("PID in the first clause",
+             f"**FS-attached sources for Jane Doe** ({PID_KID}, inline collateral):")):
+        got = n(fixture(head, RELATIVE_LINE))
+        check(got == 0, f"positive control, {label}: subtracted -> {got} (must be 0)")
 
     print()
     print("NEGATIVE CONTROL — the rule must still subtract a GENUINE relative bullet")
