@@ -111,6 +111,28 @@ SNAPSHOT_FILE = "session_plan_snapshots.json"
 CONFIG_KEY = "session_plan"
 LANES = ("EXPAND", "IMPROVE", "ROTATE")
 
+# ** ROTATE LEFT THE BANDIT 08 AUG 2026 (operator, deferred 51 option 3). **
+#
+# The bandit maximises hit-rate, and ROTATE is the EXPLOITATION arm: re-polling a
+# known person is cheap and reliably "succeeds", while extending and sourcing are
+# slow and often fail. So it won every time. Measured in session #154: **the bandit
+# chose ROTATE on all FIVE draws, and BOTH exploration lanes had to be forced by the
+# operator** -- after which each promptly missed its floor, which is the point. A lane
+# being cheap is not evidence that it is the valuable one.
+#
+# ⭐ THE DECISIVE FACT IS THAT ROTATE ALREADY HAS ITS OWN CADENCE. The profile-review
+# clock is due EVERY session regardless of which lane is drawn, and each ROTATE draw
+# in #154 simply WAS that slice. So taking it out of the bandit removes no coverage
+# whatever -- the periodic re-visit still happens on its own schedule -- while the
+# bandit's choice becomes what it should always have been: EXPAND vs IMPROVE, the two
+# arms that grow the tree.
+#
+# ⚠ `LANES` DELIBERATELY STILL CONTAINS ROTATE. It remains a real lane: recordable
+# (`--record --lane ROTATE`), countable, and reported. What changed is only that it is
+# no longer something to CHOOSE, because an exploitation arm running on a schedule is
+# not something to explore over.
+BANDIT_LANES = ("EXPAND", "IMPROVE")
+
 # ** VERIFY WAS COLLAPSED INTO IMPROVE, 02 AUG 2026 (operator; deferred 39 + 40). **
 #
 # 40 measured that the two lanes already drew from mostly the same people: 694 in
@@ -1241,7 +1263,10 @@ def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
 def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER):
     """Pick the recommended lane. Pure function of (state, lane_sizes) — pinned by
     scripts/test_session_plan.py. Returns (lane, reason)."""
-    live = [ln for ln in LANES if lane_sizes.get(ln, 0) > 0]
+    # deferred 51 option 3: choose only among the EXPLORATION arms. ROTATE is still a
+    # lane and still recorded; it simply runs on the profile-review cadence instead of
+    # competing for the draw.
+    live = [ln for ln in BANDIT_LANES if lane_sizes.get(ln, 0) > 0]
     if not live:
         return None, "all lanes empty"
     arms = {ln: arm_of(state, ln) for ln in live}

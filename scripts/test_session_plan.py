@@ -49,19 +49,43 @@ class DrawTests(unittest.TestCase):
         self.assertIn("bootstrap", reason)
 
     def test_bootstrap_prefers_least_sampled(self):
-        # ROTATE has been worked in no sitting at all.
-        st = arms((("EXPAND",), ("EXPAND",), ("IMPROVE",), ("IMPROVE",)),
-                  EXPAND=(2, 2), IMPROVE=(2, 0), ROTATE=(0, 0))
+        # IMPROVE has been worked in no sitting at all. (Was ROTATE until 08 AUG
+        # 2026; ROTATE left the bandit under deferred 51 option 3, so the floor is
+        # now exercised with a lane the bandit can actually pick.)
+        st = arms((("EXPAND",), ("EXPAND",)),
+                  EXPAND=(2, 2), IMPROVE=(0, 0), ROTATE=(9, 9))
         lane, reason = sp.draw_lane(st, ALL_FULL)
-        self.assertEqual(lane, "ROTATE")
+        self.assertEqual(lane, "IMPROVE")
         self.assertIn("bootstrap", reason)
 
     def test_no_exploitation_on_tiny_n_even_with_perfect_record(self):
-        # EXPAND is 1-for-1 (rate 1.0) but ROTATE is unsampled: floor wins.
-        st = arms((("EXPAND",), ("IMPROVE",), ("IMPROVE",)),
-                  EXPAND=(1, 1), IMPROVE=(2, 0), ROTATE=(0, 0))
+        # EXPAND is 1-for-1 (rate 1.0) but IMPROVE is unsampled: floor wins.
+        st = arms((("EXPAND",),),
+                  EXPAND=(1, 1), IMPROVE=(0, 0), ROTATE=(9, 9))
         lane, _ = sp.draw_lane(st, ALL_FULL)
-        self.assertEqual(lane, "ROTATE")
+        self.assertEqual(lane, "IMPROVE")
+
+    def test_rotate_is_never_drawn_by_the_bandit(self):
+        """deferred 51 option 3, 08 AUG 2026 -- the ruling, pinned.
+
+        ROTATE is the EXPLOITATION arm and it won every draw (5/5 in session #154,
+        with BOTH exploration lanes having to be forced by the operator). It left the
+        bandit because it ALREADY has a cadence: the profile-review clock runs every
+        session regardless of lane, so removing it from the draw removes no coverage.
+
+        ⚠ It is still a LANE -- recordable and counted. Only unchooseable."""
+        # A perfect ROTATE record against two poor ones must STILL not pick it.
+        st = arms(WARMUP + (("EXPAND",), ("IMPROVE",), ("ROTATE",)) * 3,
+                  EXPAND=(9, 1), IMPROVE=(9, 1), ROTATE=(9, 9))
+        lane, reason = sp.draw_lane(st, ALL_FULL)
+        self.assertNotEqual(lane, "ROTATE", f"bandit picked the exploit arm: {reason}")
+        self.assertIn(lane, ("EXPAND", "IMPROVE"))
+        # ...and it is absent even when it is the ONLY lane with rows.
+        lane, _ = sp.draw_lane(st, {"EXPAND": 0, "IMPROVE": 0, "ROTATE": 50})
+        self.assertIsNone(lane, "ROTATE alone must read as 'no lane to draw'")
+        # POSITIVE CONTROL: it remains a real, recordable lane.
+        self.assertIn("ROTATE", sp.LANES)
+        self.assertNotIn("ROTATE", sp.BANDIT_LANES)
 
     def test_empty_lane_never_drawn(self):
         st = {"arms": {}, "history": []}
@@ -76,12 +100,12 @@ class DrawTests(unittest.TestCase):
         self.assertIn("empty", reason)
 
     def test_staleness_floor_beats_exploit(self):
-        # All sampled past the floor; ROTATE absent from the last SIX sittings, so
+        # Both sampled past the floor; IMPROVE absent from the last SIX sittings, so
         # the staleness floor must beat EXPAND's better rate.
-        st = arms(WARMUP + (("EXPAND",), ("IMPROVE",)) * 3,
-                  EXPAND=(6, 5), IMPROVE=(6, 1), ROTATE=(2, 0))
+        st = arms(WARMUP + (("EXPAND",), ("ROTATE",)) * 3,
+                  EXPAND=(6, 5), IMPROVE=(2, 0), ROTATE=(6, 1))
         lane, reason = sp.draw_lane(st, ALL_FULL)
-        self.assertEqual(lane, "ROTATE")
+        self.assertEqual(lane, "IMPROVE")
         self.assertIn("staleness", reason)
 
     def test_exploit_picks_best_smoothed_rate(self):
@@ -119,17 +143,17 @@ class SittingTests(unittest.TestCase):
     def test_staleness_window_is_sittings_not_observations(self):
         # One huge sitting cannot age a lane out of the window on its own.
         base = dict(EXPAND=(2, 2), IMPROVE=(2, 2), ROTATE=(2, 2))
-        # A twenty-iteration EXPAND sitting is ONE sitting, so ROTATE is still inside
+        # A twenty-iteration EXPAND sitting is ONE sitting, so IMPROVE is still inside
         # a two-sitting window. Under the old observation-counting it was long gone.
-        st = arms(WARMUP + (("ROTATE",), ("EXPAND",) * 20), **base)
+        st = arms(WARMUP + (("IMPROVE",), ("EXPAND",) * 20), **base)
         lane, _ = sp.draw_lane(st, ALL_FULL, stale_after=2)
-        self.assertNotEqual(lane, "ROTATE")
+        self.assertNotEqual(lane, "IMPROVE")
         # Three more sittings and it has genuinely aged out. (stale_after=3 so that
-        # ROTATE is the ONLY stale lane; with a 2-window EXPAND is stale too and wins
+        # IMPROVE is the ONLY stale lane; with a 2-window EXPAND is stale too and wins
         # on lane order, which would prove nothing about the unit under test.)
-        st = arms(WARMUP + (("ROTATE",), ("EXPAND",), ("IMPROVE",), ("EXPAND",)), **base)
+        st = arms(WARMUP + (("IMPROVE",), ("EXPAND",), ("ROTATE",), ("EXPAND",)), **base)
         lane, reason = sp.draw_lane(st, ALL_FULL, stale_after=3)
-        self.assertEqual(lane, "ROTATE")
+        self.assertEqual(lane, "IMPROVE")
         self.assertIn("staleness", reason)
 
     def test_legacy_rows_without_a_session_fall_back_to_the_date(self):
