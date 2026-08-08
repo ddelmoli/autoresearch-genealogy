@@ -67,24 +67,52 @@ SPOUSE_RE = re.compile(r"spouse:\s*'\[")
 TIER_RE = re.compile(r"evidence_tier:\s*(\w+)")
 LIVING_RE = re.compile(r"life_status:\s*(living|unknown)")
 
-# A reason to have no parents. Deliberately broad: this gate is trying NOT to nag
-# about decisions already recorded, so a false "DECLARED" is cheaper than a false
-# "SILENT" that trains the reader to ignore the report.
+# A reason to have no parents.
+#
+# ** THERE ARE NO "EFFORT" STOPS (operator ruling, 07 AUG 2026). **
+# A DECLARED row means the ANCESTRY stops here on some authority. It does NOT mean
+# nobody has got round to it. Those are opposite states and the vault had been
+# recording them in the same field:
+#   - a TERMINUS is about ANCESTRY -- no cited authority carries the line further;
+#   - a STOP is about EFFORT -- the work is simply undone.
+# The second is a research to-do, which is precisely what SILENT is for. So the
+# alternation that used to match "NOT WORKED", "not yet worked", "deliberate stop",
+# "NOT EXTENDED" and "do NOT adopt/extend/wire" was REMOVED. Measured at the ruling:
+# 39 of 327 declared rows rested on that language ALONE and became SILENT.
+#
+# This also reverses the note that used to sit here, which reasoned that "a false
+# DECLARED is cheaper than a false SILENT". It is not. A false SILENT nags; a false
+# DECLARED **removes a real row from the EXPAND pool permanently and silently**, and
+# nothing ever re-examines it. Two were minted by accident in one sitting (see
+# `deferred_decisions` 55) -- one of them by a bullet reading "Bank, do not wire
+# from the tree", a statement about METHOD that closed a frontier row.
 DECLARED_RE = re.compile(
     r"terminus|reliability ceiling"
     # "not given"/"not stated"/"not recorded" are how Cawley-derived entries phrase a
     # dead end, and omitting them produced a FALSE SILENT on Pavia, whose entry already
-    # said "Parentage not given by Cawley". A missed DECLARED is the expensive error
-    # here: it sends someone researching a question the vault already closed.
+    # said "Parentage not given by Cawley".
     r"|parentage[^.;]{0,40}(?:unknown|not known|not given|not stated|not recorded|unproven|doubtful|not securely|not established)"
-    r"|parents? (?:are )?(?:unknown|not known|not recorded)|no parents recorded|brick wall"
+    # ⛔ `brick wall` was REMOVED 07 AUG 2026 (operator, applying the "no effort stops"
+    # ruling). It is genealogy slang for "I cannot get past this" — a statement about
+    # the SEARCHER, not about the ancestry. Ten of its 51 rows said so in the same
+    # bullet: "No parents recorded IN FREE SOURCES ACCESSIBLE HERE. Brick wall FOR NOW";
+    # "BERMUDA RECORDS NOT ACCESSIBLE ONLINE. Confirmed brick wall". Most of the rest
+    # were barer — "Parents: Unknown. Brick wall." with no source and no reasoning.
+    # 21 rows declared on it ALONE and became SILENT; the other 30 carry real ancestry
+    # language and were unaffected, as were every `terminus` row (Arnulf, Rollo, Rurik,
+    # Olga). ⚠ `no parents recorded` DELIBERATELY STAYS: "recorded" means both "in the
+    # record" (an ancestry claim — a baptism naming no father) and "in what I searched"
+    # (effort), and no regex separates them. Those 28 rows need reading (deferred 57).
+    r"|parents? (?:are )?(?:unknown|not known|not recorded)|no parents recorded"
     r"|legendary|fabricat|unknown per Cawley|origin.{0,24}(?:unknown|doubt)"
-    r"|NOT WORKED|not yet worked|deliberate stop|NOT EXTENDED|do NOT (?:adopt|extend|wire)"
-    # The explicit marker (24 JUL 2026): entries now open a recorded stop with a
-    # literal "FRONTIER DECLARATION <date>" bullet, so a declaration registers
-    # mechanically instead of depending on its prose wording. Same write-end
-    # lesson as the header grammar: give the writer a vocabulary the reader
-    # matches exactly. Free-text reasons above remain accepted for the backlog.
+    # The explicit marker (24 JUL 2026): entries open a recorded stop with a literal
+    # "FRONTIER DECLARATION <date>" bullet, so a declaration registers mechanically
+    # instead of depending on its prose wording. Same write-end lesson as the header
+    # grammar: give the writer a vocabulary the reader matches exactly.
+    # ⚠ The free-text ancestry phrases above remain accepted for the backlog, and they
+    # carry the residual hazard of `deferred_decisions` 55: "her parentage is unknown"
+    # is written both about a CLOSED question and about an OPEN one, and no regex can
+    # tell those apart. The marker is the only unambiguous form.
     r"|FRONTIER DECLARATION",
     re.I,
 )
@@ -95,17 +123,42 @@ DECLARED_RE = re.compile(
 # result; the same words written after looking at nothing are a way to make the
 # worklist shorter without doing any work — and the vault has learned repeatedly
 # that a number moving in the flattering direction deserves the most scrutiny.
-# BACKED_RE is the cheap mechanical proxy: does the entry name a source, an
+# BACKED_RE is the cheap mechanical proxy: does the DECLARATION name a source, an
 # authority, or an explicit onward route? It is advisory and deliberately broad —
 # it cannot judge whether the reasoning is good, only whether any was offered.
+#
+# ⚠⚠ **IT IS MATCHED AGAINST THE DECLARING BULLET, NOT THE WHOLE ENTRY** (fixed
+# 07 AUG 2026). It used to scan the entire body, which asks a different question —
+# "does this entry mention any source anywhere?" — and on a long entry the answer is
+# always yes. Measured at the fix: **entry-scope reported 0 unbacked declarations;
+# bullet-scope reports 21.** The advisory was printing all-clear over 21 declarations
+# that name nothing, which is the exact "flattering direction" the note above warns
+# about — in its own implementation.
+#
+# ⚠ `not yet worked` / `NOT WORKED` remain here deliberately, even though they no
+# longer DECLARE (the "no effort stops" ruling): if such a phrase still appears beside
+# a real ancestry claim, it is evidence that *something* was offered, and this regex
+# only ever asks whether a reason was given.
 BACKED_RE = re.compile(
     r"Cawley|Medlands|\bFMG\b|Richardson|Complete Peerage|ODNB|Henry Project|\bWeis\b"
     r"|Visitation|Muskett|History of Parliament|\bVCH\b|British History Online"
     r"|Macnamara|Clutterbuck|\bIPM\b|inquisition|charter|register|probate|\bwill\b"
-    r"|FamilySearch|\bFS\b|WikiTree"
+    r"|FamilySearch|\bFS\b|WikiTree|Primary Chronicle|annal|NEHGR|Savage|Torrey"
     r"|[Rr]oute:|not yet worked|NOT WORKED|re-read|read directly",
     re.I,
 )
+
+
+def declaring_lines(body):
+    """The bullet(s) that actually carry the declaration.
+
+    Scoping `backed` to these is the difference between asking "does this DECLARATION
+    say why" and "does this ENTRY mention a source anywhere". Blockquoted lines are
+    excluded: `route_digest` mirrors entry text at the head of every lineage file, so
+    counting them would credit a declaration to every person in the shard.
+    """
+    return [l for l in body.split("\n")
+            if not l.lstrip().startswith(">") and DECLARED_RE.search(l)]
 
 
 def rows_with_bodies(vault):
@@ -149,7 +202,8 @@ def rows_with_bodies(vault):
             "tier": tier.group(1) if tier else "",
             "spouse": bool(SPOUSE_RE.search(meta)),
             "declared": bool(DECLARED_RE.search(body)),
-            "backed": bool(BACKED_RE.search(body)),
+            # scoped to the declaring bullet, not the whole body -- see BACKED_RE
+            "backed": any(BACKED_RE.search(l) for l in declaring_lines(body)),
         })
     return out
 
