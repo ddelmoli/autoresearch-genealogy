@@ -144,7 +144,20 @@ BACKED_RE = re.compile(
     r"|Visitation|Muskett|History of Parliament|\bVCH\b|British History Online"
     r"|Macnamara|Clutterbuck|\bIPM\b|inquisition|charter|register|probate|\bwill\b"
     r"|FamilySearch|\bFS\b|WikiTree|Primary Chronicle|annal|NEHGR|Savage|Torrey"
-    r"|[Rr]oute:|not yet worked|NOT WORKED|re-read|read directly",
+    # ⚠ The list above was ANGLO-MEDIEVAL and did not know the authorities this vault
+    # actually leans on outside that world (added 08 AUG 2026, working the 21 unbacked
+    # rows). Eight declarations named a real work and still read as "cites no source":
+    # Copinger's *Manors of Suffolk* (3 rows), Otis's *Barnstable Families*, *History of
+    # North Bridgewater*, a Cagnano **tavola alfabetica**, and a **Geneteka** index row.
+    # A backing check that only recognises Cawley will always report the non-medieval
+    # half of a vault as unbacked, which is a defect in the CHECK, not in the entries.
+    r"|Copinger|Otis|Barnstable Families|North Bridgewater|Davy MSS"
+    r"|Geneteka|Antenati|metryki|ScotlandsPeople|tavola alfabetica|town records"
+    r"|Vital Records"
+    # `route` in ANY form: the vault's own word for "here is where to look next", which
+    # is exactly the third thing this check accepts. `[Rr]oute:` only matched the colon
+    # form and missed "⏭ **Routes**:" and "the route is ...".
+    r"|\broutes?\b|not yet worked|NOT WORKED|re-read|read directly",
     re.I,
 )
 
