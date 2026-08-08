@@ -98,9 +98,13 @@ class _Rec:
 
 
 banked_meta = ps.set_meta_key(META, "banked_parents", "fs")
+# ⚠ Q238 option 1 (08 AUG 2026): the exit test is COMPLETENESS, not PRESENCE, so a
+# ONE-parent row is STILL OFFERED -- that is precisely the half-wired case the key
+# could not express before. The "settled" fixture therefore needs TWO parents.
 fake = [
-    _Rec("P-0XAMP1", [], banked_meta, name="Unwired"),          # offered
-    _Rec("P-0XAMP2", ["P-AAAAAA?"], banked_meta, name="Wired"),  # NOT offered
+    _Rec("P-0XAMP1", [], banked_meta, name="Unwired"),           # offered
+    _Rec("P-0XAMP4", ["P-AAAAAA?"], banked_meta, name="HalfWired"),  # offered (Q238)
+    _Rec("P-0XAMP2", ["P-AAAAAA?", "P-BBBBBB?"], banked_meta, name="Wired"),  # NOT
     _Rec("P-0XAMP3", [], META, name="NotBanked"),                # NOT offered
 ]
 _orig = ps.iter_people
@@ -109,7 +113,8 @@ try:
     rows = sp.lane_banked("/nonexistent")
 finally:
     ps.iter_people = _orig
-check("only the unwired banked row is offered", [r["id"] for r in rows], ["P-0XAMP1"])
+check("unwired AND half-wired banked rows are offered; a 2-parent row is not",
+      sorted(r["id"] for r in rows), ["P-0XAMP1", "P-0XAMP4"])
 check("row carries the banked defect tag", rows[0]["_defect"], "banked")
 check("banked ranks below `edge`",
       sp._DEFECT_RANK["banked"] > sp._DEFECT_RANK["edge"], True)
@@ -124,6 +129,35 @@ stale = lambda meta_line, parents: bool(
 check("banked + unwired -> not stale", stale(banked_meta, None), False)
 check("banked + wired -> STALE", stale(banked_meta, "'[P-AAAAAA?]'"), True)
 check("not banked + wired -> not stale", stale(META, "'[P-AAAAAA?]'"), False)
+
+print()
+print("6. Q238 option 1: the exit test is COMPLETENESS, not PRESENCE")
+# THE DEFECT: the test was "has any `parents` edge", so adding the key to a row with
+# ONE parent fired BANKED_STALE at once -- exactly the case where a SECOND parent is
+# located and deliberately not wired. The find could then live only in prose, where no
+# builder reads it. Measured before the change: all 27 rows then carrying the key had
+# ZERO parents, so this regressed nothing and unlocked 95 half-wired rows.
+_P = "P-AAA111"
+for _line, _want, _label in [
+    (f"- meta: {{id: {_P}, banked_parents: fs}}", False,
+     "no parents -> still open (the original population)"),
+    (f"- meta: {{id: {_P}, parents: '[P-XXXXX1?]', banked_parents: fs}}", False,
+     "ONE parent -> STILL OPEN; the case Q238 unlocked"),
+    (f"- meta: {{id: {_P}, parents: '[P-XXXXX1?, P-XXXXX2?]', banked_parents: fs}}", True,
+     "TWO parents -> settled, prune the key"),
+    (f"- meta: {{id: {_P}, parents: '[P-XXXXX1?]', adjudicated_why: no-second-parent, "
+     f"banked_parents: fs}}", True,
+     "ONE parent + `no-second-parent` -> settled; that value IS the terminal state"),
+]:
+    check(_label, ps.banked_parents_settled(_line), _want)
+
+# ⚠ ONE PREDICATE, TWO READERS -- the gate and the lane must not drift, which is why
+# neither implements the test itself. Same discipline as gen_mismatches().
+import os as _os
+_here = _os.path.dirname(_os.path.abspath(__file__))
+for _f in ("build_edges.py", "session_plan.py"):
+    _src = open(_os.path.join(_here, _f), encoding="utf-8").read()
+    check(f"{_f} calls the shared predicate", "banked_parents_settled" in _src, True)
 
 print()
 if FAILED:

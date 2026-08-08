@@ -657,6 +657,44 @@ def fs_probed(record_or_line):
     return v if v and ROUTE_DATE_RE.match(v) else None
 
 
+def banked_parents_settled(record) -> bool:
+    """True when a `banked_parents` note has been OVERTAKEN and should be pruned.
+
+    ** Q238, option 1 (operator, 08 AUG 2026): the exit test is COMPLETENESS, not
+    PRESENCE. ** It was "has any `parents` edge", which made the key unusable on a
+    HALF-WIRED row -- exactly the case where a second parent is located and not
+    wired. Adding it to such a row fired `BANKED_STALE` immediately (verified on two
+    rows, 08 AUG), so the find could only be recorded in prose, where no builder
+    reads it. That is the failure `banked_parents` exists to prevent, reappearing one
+    case to the left.
+
+    A row is settled when it has **TWO** parents, or when it declares
+    `no-second-parent` -- which is precisely the "one parent is CORRECT" terminal
+    state, so it belongs in this test rather than fighting it.
+
+    ⚠ Measured before the change: **all 27 rows then carrying `banked_parents` had
+    ZERO parents**, so this regressed nothing, and it unlocked **95 still-open
+    half-wired rows**.
+
+    ONE PREDICATE, TWO READERS -- `build_edges --validate` (the BANKED_STALE gate) and
+    `session_plan.lane_banked` (the worklist) both call it, so the gate and the lane
+    cannot disagree about which rows are done. Same discipline as `gen_mismatches`
+    and `half_wired_rows`.
+    """
+    # Accepts a PersonRecord or a raw `- meta:` LINE, because the gate
+    # (`build_edges --validate`) works from parsed meta and the lane from records.
+    # One predicate must serve both or they drift -- that is the whole point of it.
+    if isinstance(record, str):
+        parents = _meta_key_value(record, "parents") or ""
+        toks = [t for t in re.split(r"[\[\],\s]+", parents) if t]
+    else:
+        toks = [str(x).strip() for x in (getattr(record, "parents", None) or [])
+                if str(x).strip()]
+    if len(toks) >= 2:
+        return True
+    return "no-second-parent" in (adjudicated_why_values(record) or [])
+
+
 def fs_absent(record_or_line):
     """Return the ISO date it was verified that NO FamilySearch profile exists, or None.
 

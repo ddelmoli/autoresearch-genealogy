@@ -820,8 +820,11 @@ def lane_banked(vault):
         host = ps.banked_parents_host(rec)
         if not host:
             continue
-        if getattr(rec, "parents", None):
-            continue                      # wired since it was banked: done, not work
+        # Q238 option 1: settled = TWO parents, or a `no-second-parent` declaration.
+        # Was "any parents edge", which excluded the HALF-WIRED rows this lane most
+        # needs to offer. Shared predicate so the gate and the lane cannot disagree.
+        if ps.banked_parents_settled(rec):
+            continue                      # completed since it was banked: not work
         rows.append({
             "id": rec.id,
             "name": rec.name or "?",

@@ -262,7 +262,9 @@ def validate_edges(limit=20):
         # `lane_banked` already excludes wired rows, so a stale key cannot resurrect
         # finished work; it is reported because a key nobody prunes stops meaning
         # anything, which is how `adjudicated` acquired its own stale check.
-        if meta.get("banked_parents") and edge_tokens(meta.get("parents")):
+        # Q238 option 1 (08 AUG 2026): settled = TWO parents or `no-second-parent`,
+        # not merely "has an edge" -- see person_store.banked_parents_settled.
+        if meta.get("banked_parents") and person_store.banked_parents_settled(_mline):
             banked_stale.append(r["id"])
         # HALF_WIRED_PARENT (deferred_decisions 50, operator chose option 2 on
         # 04 AUG 2026): the entry names exactly ONE parent.
