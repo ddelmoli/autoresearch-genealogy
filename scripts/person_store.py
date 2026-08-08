@@ -657,6 +657,43 @@ def fs_probed(record_or_line):
     return v if v and ROUTE_DATE_RE.match(v) else None
 
 
+def fs_absent(record_or_line):
+    """Return the ISO date it was verified that NO FamilySearch profile exists, or None.
+
+    ** deferred_decisions 56, option 2 (operator, 08 AUG 2026). ** `fs: none` means
+    "searched, nothing is there", and it CANNOT CARRY A DATE. The EXISTENCE_PROBE arm
+    treats an undated negative as expired on sight, so every such row returned every
+    cycle, for ever. One entry had the diagnosis written on it by an earlier session
+    that could not fix it, because the grammar had nowhere to put the date.
+
+    ⚠⚠ **THIS IS NOT `fs_probed`, AND THE TWO ARE EASY TO CONFUSE. They answer
+    different questions:**
+
+        fs_probed   a profile (or its absence) was checked and carries NO RECORDS.
+                    A person may hold a LIVE PID and `fs_probed` on the same day.
+        fs_absent   NO PROFILE EXISTS AT ALL. Pairs with `fs: none`.
+
+    A row can legitimately carry both, and they are not redundant: one is about the
+    attached-source set, the other about the profile's existence.
+
+    ⚠ **IT DOES NOT SUPPRESS IN IMPROVE, deliberately, and that asymmetry with
+    `fs_probed` is a decision rather than an oversight.** `fs_probed` suppresses a
+    SOURCE_GAP row (deferred 58) because it says the sources were READ and are empty.
+    `fs_absent` says only that FamilySearch has no profile -- which is silent about
+    whether records exist in an archive, a register or a book. Those rows already
+    route to non-FS in the IMPROVE worklist, and suppressing them there would hide
+    real work behind a fact about the wrong repository.
+
+    ⚠ **A date is not a licence to stop looking**, and ⛔ **do not write one for a
+    probe you did not perform** -- an invented date silences a real worklist row,
+    which is strictly worse than no date at all. Measured 08 AUG 2026: **13 entries
+    carry `fs: none` (NOT the 44 an earlier prose-grep reported), and 9 of the 13 are
+    ANSWERABLE** through a relative's family panel.
+    """
+    v = _meta_key_value(record_or_line, "fs_absent")
+    return v if v and ROUTE_DATE_RE.match(v) else None
+
+
 def route(record_or_line):
     """Return the slug naming WHERE this person's records actually are, or None.
 

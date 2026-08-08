@@ -204,9 +204,16 @@ EXISTENCE_PROBE = "EXISTENCE_PROBE"
 #
 # ⛔ `fs_probed` DELIBERATELY DOES NOT GATE HERE. It is a DATED point-in-time
 # reading ("FS held no records on this day"), which is a cooldown-shaped fact,
-# not a retirement-shaped one -- and its semantics were only settled on 07 AUG
-# 2026. Wiring it into the EXISTENCE_PROBE cooldown is a separate change needing
-# its own decision; conflating the two would make a stale probe look permanent.
+# not a retirement-shaped one. Conflating the two would make a stale probe look
+# permanent. (It DOES suppress in IMPROVE's SOURCE_GAP pool -- deferred 58 -- which
+# is a different question: "is this a prime harvest target today", not "is this
+# settled for ever". Two jobs, one key; do not unify them.)
+#
+# ⚠ `fs_absent` IS DIFFERENT AGAIN AND IT *DOES* GATE, via the EXISTENCE_PROBE
+# COOLDOWN rather than by retiring (deferred 56 option 2). `fs_probed` = the sources
+# were read and are empty; `fs_absent` = no profile exists at all. A row may carry
+# both. `fs_absent` does NOT suppress in IMPROVE: FamilySearch having no profile is
+# silent about whether an archive or a register does.
 ROUTE_RETIRING_ARMS = ("BOOK_SOURCED", "UNCITED")
 
 
@@ -280,7 +287,8 @@ def poll_status(entry_state, today, cooldown=POLL_COOLDOWN_DAYS):
     return (days >= cooldown), days, f"polled {days}d ago (cooldown {cooldown}d)"
 
 
-def probe_status(entry_state, platform, today, cooldown=PROBE_COOLDOWN_DAYS):
+def probe_status(entry_state, platform, today, cooldown=PROBE_COOLDOWN_DAYS,
+                 record_date=None):
     """(due, days_since_or_None, reason) for the ~365d EXISTENCE probe.
 
     ** AN UNDATED NEGATIVE IS EXPIRED ON SIGHT. ** `fs: none` means "searched
@@ -288,12 +296,29 @@ def probe_status(entry_state, platform, today, cooldown=PROBE_COOLDOWN_DAYS):
     since that search makes it silently wrong and nothing ever expires it. The same
     will be true of any wt/anc negative the moment one is written. The fix is not
     to trust the token: an absent probe date reads as due, always.
+
+    ** `record_date` IS THE `fs_absent` KEY (deferred 56 option 2, 08 AUG 2026). **
+    Before it, the ONLY date lived in the rotation state file, so a probe recorded by
+    a session that never ran `--record` was invisible, and 13 `fs: none` rows returned
+    every cycle for ever. Putting the date ON THE RECORD is the same choice `route`
+    and `fs_probed` made, for the same reason: the knowledge is visible to anyone
+    reading the entry, not just to the arm's state file.
+
+    ⚠ **The MORE RECENT of the two wins.** They are independent observations -- the
+    state file records when the ROTATION last polled, the key records when a HUMAN
+    last verified absence -- and taking the newer is the only reading that cannot
+    resurrect a settled row or silence a freshly-created profile.
     """
     d = parse_date((entry_state or {}).get(f"last_probed_{platform}"))
+    r = parse_date(record_date)
+    if r and (d is None or r > d):
+        d, src = r, f"`{platform}_absent` on the record"
+    elif d is not None:
+        src = "the rotation state"
     if d is None:
         return True, None, f"no dated {platform} probe (undated negative = expired on sight)"
     days = (today - d).days
-    return (days >= cooldown), days, f"{platform}-probed {days}d ago (cooldown {cooldown}d)"
+    return (days >= cooldown), days, f"{platform}-probed {days}d ago per {src} (cooldown {cooldown}d)"
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +398,11 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
         by_arm[c["arm"]].append(c)
         es = entries_state.get(c["id"], {})
         if c["arm"] == EXISTENCE_PROBE:
-            due, days, why = probe_status(es, "fs", today)
+            # deferred 56 option 2: the record's own `fs_absent` date counts as a
+            # probe, so a verified absence no longer depends on somebody having run
+            # `--record` in the same sitting.
+            due, days, why = probe_status(es, "fs", today,
+                                          record_date=c.get("fs_absent"))
         else:
             due, days, why = poll_status(es, today)
         # ROUTE RETIREMENT (see ROUTE_RETIRING_ARMS above). Applied AFTER the
@@ -564,6 +593,12 @@ def build_candidates(vault, gen_lo=None, gen_hi=None, confidence=None, region=No
             # is cooldown-shaped, not retirement-shaped. Carried so a draw can
             # SHOW that FS was already read, without that fact retiring anything.
             "fs_probed": (person_store.fs_probed(p) if p else None),
+            # deferred 56 option 2: DATED "no profile exists". Unlike `fs_probed`
+            # this one DOES gate -- it feeds the EXISTENCE_PROBE cooldown above,
+            # which is the whole point of the key. ⚠ It is cooldown-shaped, NOT
+            # retirement-shaped: it expires, so a profile created later is still
+            # found.
+            "fs_absent": (person_store.fs_absent(p) if p else None),
             # deferred 42 (operator, 03 AUG 2026): the WELL_SOURCED backlog is NOT
             # audited as a campaign -- but a row DRAWN here is audited on the spot,
             # because the poll opens the Sources tab anyway and the event descriptors
