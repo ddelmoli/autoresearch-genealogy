@@ -431,6 +431,37 @@ def lane_improve(vault):
     breadth = {"single": len(singles),
                "multi": sum(1 for r in recs
                             if not hs.is_single_sourced(r) and (r.get("hosts") or 0) >= 2)}
+    # ** deferred 58 (operator chose option 1, 08 AUG 2026): a SOURCE_GAP row whose
+    # attached-source set has already been READ and found empty leaves the harvest
+    # pool. **
+    #
+    # `SOURCE_GAP` means "0 records", and NOTHING distinguished a row nobody had
+    # looked at from one deliberately corrected TO zero. Measured on the forced
+    # IMPROVE draw that raised this: of the top FOUR harvestable candidates, TWO were
+    # already finished -- one corrected to 0 records six days earlier (its single
+    # attachment is a DAUGHTER's death certificate, filed as limb (g) and negated),
+    # and one whose entry says in terms "do not re-harvest this PID". **Every honest
+    # limb (g) correction was minting a fresh false candidate.**
+    #
+    # The key is `fs_probed`, reused rather than reinvented: it already means "the
+    # attached-source set was read and holds NO records", which is exactly this state.
+    #
+    # ⚠⚠ THIS IS A DIFFERENT JOB FROM `fs_probed` IN THE ROTATE ARMS, AND THE TWO MUST
+    # NOT BE UNIFIED. There (Q157) `fs_probed` deliberately retires NOTHING, because a
+    # dated point-in-time reading must not permanently silence a row; only a declared
+    # `route` retires, and `test_profile_review.test_fs_probed_alone_does_not_retire`
+    # pins that. Here the question is not "is this row settled forever" but "should it
+    # rank as a prime FS-harvest target today", and a dated empty read answers it.
+    # Pinned in both directions by `scripts/test_improve_probed.py`.
+    probed = {}
+    for _p in person_store.iter_people(vault):
+        if _p.id:
+            _d = person_store.fs_probed(_p)
+            if _d:
+                probed[_p.id] = _d
+    suppressed = [r for r in gaps if r["id"] in probed]
+    gaps = [r for r in gaps if r["id"] not in probed]
+
     load = kr.load_by_id()          # no census: LOAD is pure graph reachability
     for r in gaps + singles:
         r["_load"] = load.get(r["id"], 0)
@@ -453,6 +484,11 @@ def lane_improve(vault):
                 "_cool_key": r["id"] if kind == "gap" else f"corrob:{r['id']}",
                 "_kind": kind, "why": why}
 
+    # The suppressed count rides on `breadth` so the printout can report it. Reporting
+    # it is not decoration: `profile_review` learned the same lesson with its `rtrd`
+    # column -- a pool that silently shrinks looks like a lane running dry, and nobody
+    # can tell how many rows were SETTLED from how many were never there.
+    breadth["gap_probed_suppressed"] = len(suppressed)
     return ([row(r, "gap") for r in gaps],
             [row(r, "corrob") for r in singles],
             breadth)
@@ -1576,6 +1612,12 @@ def main(argv=None):
             print(f"    ⚠ {len(stale_pids)} drawn-or-not entries have an UNCONFIRMED FS "
                   f"PID. Confirming one is step 0 of prompt 25 and SCORES NOTHING")
             print("      — it is a precondition, not a disposition (deferred 40).")
+            _sup = i_breadth.get("gap_probed_suppressed") or 0
+            if _sup:
+                print(f"    ⭐ {_sup} SOURCE_GAP row(s) are SUPPRESSED from this pool by a dated")
+                print("      `fs_probed`: their sources were READ and hold no records, so a 0 there")
+                print("      is a finished answer, not an unopened one (deferred 58). Reported, not")
+                print("      hidden — a pool that shrinks silently reads as a lane running dry.")
             # deferred 34, option 2: the GOAL metric, at the moment of choosing.
             # SOURCE_GAP is the lane's worklist; MULTI_SOURCED is what the 01 AUG
             # biography ruling is about, and it is the one that must go UP.
