@@ -225,6 +225,7 @@ def validate_edges(limit=20):
     adj_stale = []                    # (id, adjudicated_id) — see below
     adj_unexplained = []              # ids whose adjudication states no reason
     banked_stale = []                 # ids banked-not-wired that are NOW wired
+    edges_aud_stale = []              # ids with `edges_audited` and no unmarked edge left
     half_wired = []                   # (id, adjudicated_why) — exactly ONE parent edge
     for r in rows:
         if not r["id"]:
@@ -266,6 +267,21 @@ def validate_edges(limit=20):
         # not merely "has an edge" -- see person_store.banked_parents_settled.
         if meta.get("banked_parents") and person_store.banked_parents_settled(_mline):
             banked_stale.append(r["id"])
+        # EDGES_AUDITED_STALE (deferred 60, 09 AUG 2026): `edges_audited` says this
+        # entry's UNMARKED edges were walked and confirmed. Once the entry has no
+        # unmarked edges left -- every one has since been given a `?`, or removed --
+        # the key describes nothing and should have gone with the change.
+        #
+        # ⚠ Unlike ADJUDICATED_STALE this cannot HIDE a candidate: a row with no
+        # unmarked edges is outside the AUDIT population anyway. It is reported for
+        # the other reason that key acquired a stale check -- a key nobody prunes
+        # stops meaning anything, and the next reader cannot tell a live confirmation
+        # from residue. Advisory, baseline 0.
+        if person_store.edges_audited(_mline):
+            _toks = [t for k in ("parents", "spouse")
+                     for t in re.findall(r"P-[0-9A-Za-z]+\??", str(meta.get(k) or ""))]
+            if not any(not t.endswith("?") for t in _toks):
+                edges_aud_stale.append(r["id"])
         # HALF_WIRED_PARENT (deferred_decisions 50, operator chose option 2 on
         # 04 AUG 2026): the entry names exactly ONE parent.
         #
@@ -328,6 +344,7 @@ def validate_edges(limit=20):
     print(f"  ADJUDICATED_STALE (adjudicated id is not a `?` edge): {len(adj_stale)}   [advisory; baseline 0 — a stale one HIDES a real IMPROVE defect candidate]")
     print(f"  ADJUDICATED_UNEXPLAINED (no `adjudicated_why`): {len(adj_unexplained)}   [advisory; the reason decides whether the judgement can ever go stale]")
     print(f"  BANKED_STALE (`banked_parents` on an entry that is NOW wired): {len(banked_stale)}   [advisory; baseline 0 — prune the key when you wire the edge]")
+    print(f"  EDGES_AUDITED_STALE (`edges_audited` with no unmarked edge left): {len(edges_aud_stale)}   [advisory; baseline 0 — the key describes nothing once every edge carries a `?`]")
     # ONE COMPUTATION, TWO READERS -- the gate and `session_plan.lane_expand()` both
     # call half_wired_rows(), so the banner and the worklist cannot disagree about
     # which rows are half-wired. Same discipline as gen_mismatches().

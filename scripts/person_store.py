@@ -732,6 +732,58 @@ def fs_absent(record_or_line):
     return v if v and ROUTE_DATE_RE.match(v) else None
 
 
+def edges_audited(record_or_line):
+    """Return the ISO date this entry's UNMARKED edges were examined and CONFIRMED.
+
+    ** deferred_decisions 60, option 1 (operator, 09 AUG 2026). ** The IMPROVE AUDIT
+    tier selects people whose parent/spouse edges carry NO mark, on the prior that an
+    unmarked edge on a record-less or `speculative` entry rests on nothing but the
+    vault's own belief. Its instruction covers one branch only: *"if it cannot be
+    confirmed give it a `?`"*. **"It WAS confirmed" had nowhere to go.** The edge
+    stays unmarked -- correctly, it is not a defect -- but unmarked is the tier's own
+    selection criterion, so a confirmed row is drawn again, indefinitely, and each
+    time the answer is the same. That is exactly the loop `adjudicated` was created to
+    stop for `?` edges (deferred 32), reappearing one state to the left.
+
+    Measured when it was raised: an AUDIT draw offered seven rows, all seven were
+    walked against FamilySearch, and **all seven matched PID for PID** against the
+    parents the vault already held (junk-PID control 404s, so the sweep was
+    calibrated). Seven confirmations with no way to record any of them.
+
+    ⛔ **`adjudicated` CANNOT be reused for this.** It is defined against a `?` edge,
+    and `build_edges --validate` reports `ADJUDICATED_STALE` for an id listed there
+    that the entry no longer marks `?`. Writing it on a confirmed UNMARKED edge would
+    trip that gate on purpose, and a stale entry HIDES a real candidate.
+
+    ⚠⚠ **THIS IS A FOURTH DATED KEY AND IT MUST NOT BE UNIFIED WITH THE OTHER THREE.**
+    They answer four different questions and have four different powers:
+
+        route          WHERE the evidence is. Retires two ROTATE arms, permanently.
+        fs_probed      the attached sources were READ and hold no records.
+                       Suppresses an IMPROVE SOURCE_GAP row; retires nothing in ROTATE.
+        fs_absent      NO FS profile exists at all. Feeds the EXISTENCE cooldown;
+                       suppresses nothing.
+        edges_audited  this entry's unmarked EDGES were checked and are right.
+                       Suppresses the IMPROVE AUDIT tier; touches nothing else.
+
+    ⚠⚠ **THE KNOWN HAZARD, NAMED RATHER THAN FIXED: THIS KEY DATES AN ENTRY, NOT AN
+    EDGE SET.** If new unmarked edges are wired onto a row AFTER its audit date, the
+    row stays suppressed and those edges are never examined. Detecting that needs the
+    edge set stored alongside the date, which is the composite-token shape this vault
+    rejected for `adjudicated` (`P-XXXXXX?!`, silently destroyed by the next
+    `build_edges --apply`). **So: re-stamp the date when you wire a new edge onto an
+    audited row.** `build_edges --validate` reports residue as `EDGES_AUDITED_STALE`
+    (advisory, baseline 0) -- a key on a row with no unmarked edges left.
+
+    ⛔ **Do not write a date for an audit you did not perform.** Same rule as
+    `fs_probed` and `fs_absent`: an invented date silences a real worklist row, which
+    is worse than no date. **A confirmation means the far-end PID was compared from
+    the CHILD's page** -- say so, and say against what, in the entry prose.
+    """
+    v = _meta_key_value(record_or_line, "edges_audited")
+    return v if v and ROUTE_DATE_RE.match(v) else None
+
+
 def route(record_or_line):
     """Return the slug naming WHERE this person's records actually are, or None.
 

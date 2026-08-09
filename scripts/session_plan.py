@@ -886,6 +886,67 @@ def open_question_ids(vault):
         return set()          # no register -> nothing is tracked; never a hard failure
 
 
+def _edge_audit_qualifies(meta, cat, tier):
+    """(unmarked edge tokens, is-high-risk) for the AUDIT tier's population.
+
+    ONE PREDICATE, TWO READERS -- `lane_edge_audit` (the worklist) and
+    `edge_audit_settled` (the count of rows retired by `edges_audited`) both call it,
+    so the lane and its own settled-count cannot disagree about who is in the pool.
+    Same discipline as `gen_mismatches` and `banked_parents_settled`.
+    """
+    unmarked = [t for k in ("parents", "spouse")
+                for t in re.findall(r"P-[0-9A-Za-z]+\??", str(meta.get(k) or ""))
+                if not t.endswith("?")]
+    high_risk = bool(unmarked) and (tier == "speculative"
+                                    or cat in ("UNCITED", "SOURCE_GAP"))
+    return unmarked, high_risk
+
+
+def edge_audit_settled(vault):
+    """How many AUDIT-tier rows are suppressed because `edges_audited` confirmed them.
+
+    Reported by `plan_summary` rather than left implicit: a pool that silently shrinks
+    reads as a lane running dry, and nobody can tell SETTLED work from work that was
+    never there. Same lesson as `gap_probed_suppressed` and profile_review's `rtrd`.
+    """
+    try:
+        import gen_person_index as g
+        import harvest_sources as H
+    except Exception:
+        return 0
+    try:
+        cov = {r.get("id"): r for r in H.gather_records()}
+    except Exception:
+        cov = {}
+    n = 0
+    for r in g.parse_narrative():
+        rid = r.get("id")
+        if not rid:
+            continue
+        block = r.get("block") or ""
+        meta = g.parse_meta(block)
+        _u, high = _edge_audit_qualifies(
+            meta, (cov.get(rid) or {}).get("category", ""),
+            str(meta.get("evidence_tier") or ""))
+        if high and person_store.edges_audited(_meta_line(block)):
+            n += 1
+    return n
+
+
+def _meta_line(block):
+    """The `- meta:` LINE out of a narrative block, for the person_store readers.
+
+    They take a PersonRecord or that one line; `parse_narrative` hands back a whole
+    block, and passing the block would silently return None for every key -- a false
+    negative that reads exactly like "the key is not set". Hence a named helper
+    rather than an inline expression.
+    """
+    for ln in (block or "").split("\n"):
+        if ln.lstrip().lower().startswith("- meta:"):
+            return ln
+    return ""
+
+
 def edge_audit_coverage(vault):
     """(total edge tokens, tokens carrying `?`, people with unmarked edges NOT offered).
 
@@ -949,6 +1010,17 @@ def lane_edge_audit(vault):
     ⚠ AND THESE ARE NOT DEFECTS. A row here carries no evidence of a problem -- it
     is an AUDIT of an assertion nothing has tested. It ranks BEHIND every gate
     finding and every `?` edge, so known defects are never displaced by sampling.
+
+    ** A CONFIRMED ROW LEAVES, via `edges_audited` (deferred 60, option 1, operator
+    09 AUG 2026). ** Until then this tier could only record a FAILED audit -- the
+    instruction was "if it cannot be confirmed give it a `?`" -- so a row that was
+    walked and found SOUND stayed unmarked, which is this tier's own selection
+    criterion, and came back for ever. Seven rows were confirmed PID-for-PID in one
+    draw and not one of them could be retired. The suppressed count is returned
+    alongside the rows and PRINTED, the same discipline as `gap_probed_suppressed`
+    and profile_review's `rtrd` column: a pool that silently shrinks looks like a
+    lane running dry, and nobody can tell settled work from work that was never
+    there.
     """
     try:
         import gen_person_index as g
@@ -967,16 +1039,19 @@ def lane_edge_audit(vault):
         rid = r.get("id")
         if not rid:
             continue
-        meta = g.parse_meta(r.get("block") or "")
-        unmarked = [t for k in ("parents", "spouse")
-                    for t in re.findall(r"P-[0-9A-Za-z]+\??", str(meta.get(k) or ""))
-                    if not t.endswith("?")]
-        if not unmarked:
-            continue
+        block = r.get("block") or ""
+        meta = g.parse_meta(block)
         tier = str(meta.get("evidence_tier") or "")
         cat = (cov.get(rid) or {}).get("category", "")
-        if tier != "speculative" and cat not in ("UNCITED", "SOURCE_GAP"):
-            continue              # low-risk remainder: declared, not offered
+        unmarked, high_risk = _edge_audit_qualifies(meta, cat, tier)
+        if not high_risk:
+            continue              # no unmarked edges, or the low-risk remainder:
+                                  # declared in the docstring, not offered
+        # Read through the person_store seam, never a regex -- one home for the
+        # grammar, the same rule as `adjudicated_why_values` and `banked_parents_host`.
+        if person_store.edges_audited(_meta_line(block)):
+            continue              # walked and CONFIRMED: settled, counted by
+                                  # `edge_audit_settled`, not silently dropped
         why = ("speculative tier" if tier == "speculative"
                else f"entry cites NO records ({cat})")
         out.append({
@@ -1657,6 +1732,18 @@ def main(argv=None):
                 print("      `fs_probed`: their sources were READ and hold no records, so a 0 there")
                 print("      is a finished answer, not an unopened one (deferred 58). Reported, not")
                 print("      hidden — a pool that shrinks silently reads as a lane running dry.")
+            # deferred 60: the AUDIT tier can finally record a CONFIRMED edge, so the
+            # rows it retires must be visible for exactly the same reason as above.
+            try:
+                _aud_done = edge_audit_settled(vault)
+            except Exception:
+                _aud_done = 0
+            if _aud_done:
+                print(f"    ⭐ {_aud_done} AUDIT row(s) are SETTLED by a dated `edges_audited`:")
+                print("      their unmarked edges were walked and CONFIRMED, which the tier could")
+                print("      not record until deferred 60 — so a sound row came back for ever.")
+                print("      ⚠ The key dates an ENTRY, not an edge set: re-stamp it when you wire")
+                print("      a NEW edge onto an audited row, or that edge is never examined.")
             # deferred 34, option 2: the GOAL metric, at the moment of choosing.
             # SOURCE_GAP is the lane's worklist; MULTI_SOURCED is what the 01 AUG
             # biography ruling is about, and it is the one that must go UP.
