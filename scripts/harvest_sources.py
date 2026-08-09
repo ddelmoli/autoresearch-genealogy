@@ -1387,6 +1387,45 @@ def struck_out_for_pid(head: str, pid: str) -> bool:
     return False
 
 
+# ** deferred 59 (a), THE RESIDUE -- 09 AUG 2026. ** `struck_out_for_pid` asks whether
+# THIS pid is inside the retraction, which is right for a pid written ON the head. It
+# cannot see the other half: a roster item whose SUBJECT is struck still pulls in its
+# sub-bullets, and any pid named THERE keeps crediting. Measured: 5 credits / 9 records
+# survived a strikethrough, the worst being a person marked
+#     `5. ~~<Name> (1879-1958, FS PID <PID>)~~ -- **REMOVED 04 JUN 2026: ...`
+# whose removal note names his ACTUAL parents -- so their two entries were credited 3
+# records each off a block that exists to say he is not this family's. (Those records
+# document the CHILD in any case, i.e. rule 8 limb (g), which credits nothing.)
+#
+# ⛔⛔ A BLANKET "ANY `~~` ON THE HEAD" TEST IS WRONG, AND IT WAS MEASURED BEFORE BEING
+# REJECTED. This vault also strikes a COMPLETED FOLLOW-UP: one real head carries
+#     `(a) ~~the "<X>" NUMIDENT on <PID>~~ **READ 16 JUL 2026 = no payload**`
+#     `(c) ~~FS write-back: ... create the two Gen-5 parents~~ **✅ DONE 17 JUL 2026 ...**`
+# where the strike means DONE, not RETRACTED -- and the pids it credits are the two
+# parents that write-back CREATED. A blanket rule would silence 3 legitimate credits to
+# suppress 6 bad ones. **The discriminator is POSITION: the struck span must open the
+# head's SUBJECT**, i.e. sit at the very start after the bullet/number marker and any
+# decoration. A strike later in the line is an aside, not a removal.
+#
+# ⚠ Same fail-open direction as its sibling: an unmatched shape leaves the pre-existing
+# over-credit rather than destroying a real record.
+_STRUCK_HEAD_RE = re.compile(
+    r"^\s*(?:(?:[-*+]|\d+[.)])\s*)?"          # optional bullet or roster number
+    r"(?:(?:\*\*|__|[⭐⚠⛔✓✅❌🔻⏭])\s*)*"      # optional emphasis / status decoration
+    r"~~")
+
+
+def struck_out_head(head: str) -> bool:
+    """True when the head's SUBJECT is struck through, i.e. the whole block is retracted.
+
+    Distinct from `struck_out_for_pid`, which asks about one pid written on the head.
+    This asks whether the block's subject was removed -- in which case the region
+    documents a person the vault has retracted, and credits nobody. See `_STRUCK_HEAD_RE`
+    for why the test is positional rather than "the line contains `~~`".
+    """
+    return bool(_STRUCK_HEAD_RE.match(head))
+
+
 def sanctioned_region_for_pid(body: str, pid: str) -> str:
     """The text of any DEDICATED relative-sources bullet in `body` naming `pid`.
 
@@ -1591,7 +1630,11 @@ def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict
                 # `own_region`, which drops a relative-sources bullet's whole region.
                 _head = region.split("\n", 1)[0]
                 # deferred 59 (a): a person STRUCK OUT of the tree credits nothing.
-                if is_kin_list_line(_head) or struck_out_for_pid(_head, pid):
+                # Two halves — the pid struck ON the head, and (the residue, 09 AUG
+                # 2026) a head whose own SUBJECT is struck, which retracts the whole
+                # block including the pids named in its sub-bullets.
+                if (is_kin_list_line(_head) or struck_out_for_pid(_head, pid)
+                        or struck_out_head(_head)):
                     region = ""
                 foreign_count = count_records(region)
                 if not foreign_count:
