@@ -829,13 +829,40 @@ FULL_HOST_LOC_RE = re.compile(
 _LOC_ALNUM_RUN = re.compile(r"[0-9A-Za-z]{3,}")
 
 
+# ** AN `fs:` LOCATOR MUST BE RECORD-SHAPED — [[Open_Questions]] Q200, 09 AUG 2026. **
+# A family panel, a record-match hint list and a data-problem flag are all WHERE YOU
+# LOOKED, not WHAT YOU FOUND. But `fs:` + a non-space run IS the locator grammar, so each
+# counted as a record. Q200 caught four family-panel URLs and negated them; TWO MORE
+# SURVIVED in a shape it did not anticipate, because they are endpoint NAMES rather than
+# URLs and so matched no URL screen:
+#     `— evidence fs:record-match hints on <PID>, read 31 JUL 2026`
+#     `— evidence fs:data-problem on <PID>, read 31 JUL 2026`
+# Both sit in the write-back grammar's `— evidence` slot, which is exactly where a route
+# gets mistaken for evidence.
+#
+# ⚠ THE RULE IS SCOPED TO FamilySearch AND MUST STAY THAT WAY. A general "reject a
+# path-shaped locator" rule was measured and REFUTED: `tna:C142/87/65` (a National
+# Archives piece reference), `agad:300/872/31-1865` and `anc:6224/31430110` are all
+# legitimate and path-shaped, and a blanket rule would destroy 16 real citations. FS is
+# the one host whose namespace mixes RECORDS with APPLICATION ROUTES, so FS is the one
+# host that needs a shape.
+#
+# Measured before applying: of 7,621 `fs:` locators in the vault, 7,619 are `1:1:`/`3:1:`/
+# `ark:/` and exactly 2 are not — both of them routes. No legitimate citation is affected.
+_FS_RECORD_TAIL = re.compile(r"^(?:[13]:1:|ark:/\d+/)", re.I)
+
+
 def is_record_locator(token: str) -> bool:
     """True if `token` (a `host:...` match) cites a record rather than naming a
-    locator class in prose."""
+    locator class in prose, or naming a ROUTE where the record was looked for."""
     if ":" not in token:
         return False
-    tail = token.split(":", 1)[1]
+    host, tail = token.split(":", 1)
     if not tail or tail[-1] in ":=/-_.":
+        return False
+    # "fs" is FamilySearch's emitted short id (the one registry key whose prefix
+    # differs from its name); see `_emitted_host_ids`.
+    if host.casefold() == "fs" and not _FS_RECORD_TAIL.match(tail):
         return False
     return bool(_LOC_ALNUM_RUN.search(tail))
 
