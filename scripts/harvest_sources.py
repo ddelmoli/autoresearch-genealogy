@@ -231,9 +231,67 @@ NEGATED_LOCATOR_RE = re.compile(
 )
 
 
+# ⭐⭐ ONE RECORD, TWO SPELLINGS -- A TOKEN NEGATED ONCE ON A LINE IS NEGATED EVERYWHERE
+# ON THAT LINE (deferred_decisions 63, 09 AUG 2026).
+#
+# `~` suppresses the SPAN it prefixes. A locator commonly appears TWICE on one line, and
+# the second spelling kept counting -- so a bullet could state in terms that a record is
+# excluded while the census counted it. All five live cases, and each is a different
+# reason the second spelling exists:
+#
+#   (a) an ARCHIVE URL beside the id -- `~agad:PL_1_300_874_0117.jpg —
+#       <http://…/album/874/PL_1_300_874_0117.jpg>`. The URL PATH ends in the very
+#       filename that is the locator, so the route re-credits the record. 3 lines.
+#   (b) the FS WRITE-BACK GRAMMAR'S OWN `— evidence <locator>` SLOT. A bullet negated
+#       three attachments that document other people, then the mandatory evidence field
+#       restated all three unnegated. **Two documented conventions in direct conflict.**
+#   (c) NARRATIVE ORDER -- "The record (`fs:1:1:X`) reads: …" and, six sentences later,
+#       "Not adopted, not counted: `~fs:1:1:X`". The verdict comes last and lost.
+#
+# ⛔ IT IS **NOT** WHAT deferred 63 DIAGNOSED. That item blamed the registry's
+# `url_pattern`, on the theory that a bare link counts as a locator. It does not:
+# `url_pattern` HAS NO CONSUMER in the counting path at all, so the proposed
+# "derive a URL branch from url_pattern" fix would have changed nothing here. What makes
+# the URL count is the locator token embedded in its path. **The effect was real and the
+# mechanism was wrong** -- which is why this was re-measured before being fixed.
+#
+# ⚠ THE NEGATION IS ALWAYS THE VERDICT in these shapes -- (a) a route to an excluded act,
+# (b) evidence FOR a detach request, (c) an explicit "not counted". So suppressing the
+# other spellings is right. An unmarked locator that is a DIFFERENT record on the same
+# line still counts, which is the positive control the tests lead with.
+def _negated_tokens(spans: "List[str]") -> "set":
+    """The counted locator tokens sitting inside `~`-negated spans.
+
+    ⚠ Runs `ARK_PATTERNS` DIRECTLY rather than calling `extract_arks`, which begins by
+    calling this function's own caller -- the first cut did, and recursed until the
+    stack blew. The span is already known to be negated, so there is nothing to strip.
+    """
+    toks = set()
+    for s in spans:
+        for pat in ARK_PATTERNS:
+            for m in pat.finditer(s):
+                toks.add(m.group(1))
+    return toks
+
+
 def strip_negated_locators(text: str) -> str:
-    """Blank every `~`-prefixed locator so no counter can see it."""
-    return NEGATED_LOCATOR_RE.sub(" ", text or "")
+    """Blank every `~`-prefixed locator, and every OTHER spelling of the same token."""
+    if not text:
+        return text or ""
+    spans = [m.group(0) for m in NEGATED_LOCATOR_RE.finditer(text)]
+    out = NEGATED_LOCATOR_RE.sub(" ", text)
+    for tok in _negated_tokens(spans):
+        # Bounded so a token is never blanked as a SUBSTRING of a longer, unrelated id
+        # (`AAAA-111` must not match inside `AAAA-1119`).
+        #
+        # ⚠ THE BOUNDARY IS `[\w-]` ONLY, AND DELIBERATELY DOES **NOT** EXCLUDE `:` OR
+        # `/`. The first cut did, and it silently disabled this whole pass: the token
+        # sits after `fs:1:1:` and after a URL's last `/`, which are precisely the two
+        # second-spelling contexts this exists to reach. Excluding them rejected every
+        # live case while still passing the substring control -- a guard that blocked
+        # only the intended matches.
+        out = re.sub(r"(?<![\w-])" + re.escape(tok) + r"(?![\w-])", " ", out)
+    return out
 
 
 # ** THE MEMORIAL CLASSES, IN ONE PLACE (deferred_decisions 33, option 1;
@@ -852,6 +910,16 @@ def count_records(body: str) -> int:
     locator not yet moved onto a record line (transitional, so nothing is lost).
     A fully un-migrated body has no host-prefixed lines, so this returns exactly
     len(extract_arks(body)) — identical to the pre-Spec-03 count."""
+    # ⭐ NEGATION IS RESOLVED OVER THE WHOLE BODY BEFORE THE LINES ARE COUNTED
+    # (deferred_decisions 63, 09 AUG 2026). A token negated in one bullet routinely
+    # reappears UNNEGATED in another — an exclusion bullet saying "these are his
+    # CHILDREN's births, limb (g)" while the entry's big harvest bullet still lists the
+    # same ids. Stripping per line cannot see that, so the exclusion was honoured for a
+    # legacy body (whose count comes from `extract_arks(body)`, body-wide) and silently
+    # IGNORED for a migrated one (counted line by line) — the same entry scoring
+    # differently depending only on which grammar it had been migrated to.
+    # One entry alone carried EIGHT such tokens.
+    body = strip_negated_locators(body)
     # A line is a record line only if it carries a locator that POINTS AT a record —
     # not one that merely names the locator form in prose (see is_record_locator).
     record_lines = [ln for ln in body.splitlines() if record_locators(ln)]
