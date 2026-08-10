@@ -1426,6 +1426,88 @@ def struck_out_head(head: str) -> bool:
     return bool(_STRUCK_HEAD_RE.match(head))
 
 
+# ** deferred 59 (b)/(d)/(e3), operator ruling 09 AUG 2026. ** ONE principle, three
+# shapes: **a line that merely NAMES a person credits them nothing when the records it
+# carries document somebody else.** Spec 05 and rule 8 limbs (g)/(h) had each already
+# said this in other clothing; these three heads escaped only because they carry no
+# ENUMERATING head-word, which is all `is_kin_list_line` knows how to look for.
+#
+# (e3) SPOUSE CROSS-REFERENCE -- `- Married <Name> (... FS: <PID>)`, `- Wife: <Name> ...`
+# (b)  NUMBERED ROSTER ITEM   -- `5. **<Name>** (b. 1893; FS <PID>; ...)`, a kin list
+#                                wearing a number instead of the word "Children"
+# (d)  THE ENTRY'S OWN HEADER -- a line-start bold span IS an entry header (integrity
+#                                rule 8 / spec entry-boundary), and integrity rule 6
+#                                already bans a FOREIGN pid there for this exact reason.
+#
+# ⚠⚠ THE FAIL DIRECTION IS THE OPPOSITE OF `is_kin_list_line`'s, SO THE TESTS ARE
+# TIGHTER. A missed kin list leaves a pre-existing over-credit; a FALSE POSITIVE here
+# DESTROYS a real record. Hence (b) requires the bold span to be followed immediately by
+# a `(` -- the vitals parenthetical of the header grammar -- so a numbered ANALYSIS item
+# opening with a bold label is not swept up.
+#
+# ⛔ AND THE SANCTIONED INLINE-COLLATERAL BULLET MUST SURVIVE, which is checked FIRST and
+# pinned as a positive control: `- **FS-attached sources for wife <Name>** (<PID>, inline
+# collateral): <locators>` is how this vault deliberately DOES credit a relative. A
+# suppressor that also kills the sanctioned form is indistinguishable from one that
+# works, and this repo has shipped that mistake before.
+#
+# MEASURED at the ruling (09 AUG 2026), after the head-line refinement below: **7 people
+# change, 4 of them to 0 own records** -- SOURCE_GAP +4, LOW_COVERAGE +2, WELL_SOURCED -6.
+# Two of the four read WELL_SOURCED off a husband's marriage line while their own entries
+# carry no `Sources` bullet at all, and one of those entries says in terms that her
+# parentage is UNRESEARCHED. That is the limb-(g) failure exactly: the metric stops
+# distinguishing DOCUMENTED from MENTIONED, and nobody is ever prompted to research the
+# people about whom least is known.
+# ⚠ THE RELATION WORDS ARE THE FOUR THAT WERE MEASURED, AND A BARE `m.` IS DELIBERATELY
+# NOT AMONG THEM. It was in the first draft on the strength of "it obviously means
+# married", matched no head in the live population, and is a common abbreviation that can
+# open a line about almost anything. Given the fail direction here DESTROYS a record,
+# an unmeasured shape does not get added on plausibility. Add one when a head needs it.
+_SPOUSE_XREF_RE = re.compile(
+    r"^\s*-\s*(?:\*\*|__)?\s*"
+    r"(?:married|wife|husband|spouse)\b", re.IGNORECASE)
+_ROSTER_ITEM_RE = re.compile(
+    r"^\s*\d+[.)]\s*(?:\*\*|__)\s*[^*\n]+(?:\*\*|__)\s*\(")
+_ENTRY_HEADER_RE = re.compile(r"^(?:\*\*|__)[^*\n]+(?:\*\*|__)")
+
+
+def credits_head_line_only(line: str) -> bool:
+    """True for a head that credits its named person ONLY what is on the head LINE.
+
+    The three shapes are spelled out above `_SPOUSE_XREF_RE`. Composed with, not folded
+    into, `is_kin_list_line`: that one keys on an enumerating head-word and these do not.
+
+    ⭐⭐ AND THE TREATMENT IS DELIBERATELY *NOT* THE KIN LIST'S. A kin list drops its WHOLE
+    region; these keep the head line and drop only the sub-bullets, and the asymmetry is
+    principled:
+
+      * a KIN LIST names SEVERAL people and carries no act of its own, so nothing on it
+        documents any of them;
+      * a SPOUSE / ROSTER / HEADER line names ONE person and MAY carry that person's
+        shared act -- `... m. **17 JAN 1883 <Town>** atto 2 -- <ARK>`. A marriage act, a
+        census household or a joint manifest **documents BOTH parties**, which is a
+        standing invariant (`test_foreign_credit_magnitude.test_shared_event_still_credits`,
+        whose docstring records that a symmetric rewrite "was refuted here in six
+        assertions within a minute").
+
+    ⚠⚠ THAT INVARIANT CAUGHT THE FIRST CUT OF THIS FUNCTION, which dropped the whole
+    region and killed the shared marriage act along with the borrowed pile. The split was
+    then MEASURED on the live vault, and it is clean: every demolition case carries **0
+    records on its head line and all of them in the sub-bullets** (16/16, 16/16, 20/20,
+    16/16, 24 of 25), while every legitimate case is the reverse (1 on the head, 0 below).
+    **The shared act is on the LINE; the borrowed pile is in the SUB-BULLETS.**
+
+    ⛔ The sanctioned relative-sources bullet is excluded FIRST -- it is the convention by
+    which this vault deliberately credits a relative its FULL region, and must keep
+    working.
+    """
+    if is_relative_sources_bullet(line):
+        return False
+    return bool(_SPOUSE_XREF_RE.match(line)
+                or _ROSTER_ITEM_RE.match(line)
+                or _ENTRY_HEADER_RE.match(line))
+
+
 def sanctioned_region_for_pid(body: str, pid: str) -> str:
     """The text of any DEDICATED relative-sources bullet in `body` naming `pid`.
 
@@ -1636,6 +1718,12 @@ def scan_family_tree_files(pid_to_id: "Optional[Dict[str, str]]" = None) -> Dict
                 if (is_kin_list_line(_head) or struck_out_for_pid(_head, pid)
                         or struck_out_head(_head)):
                     region = ""
+                elif credits_head_line_only(_head):
+                    # deferred 59 (b)/(d)/(e3): a spouse / roster / header line names
+                    # ONE person and may carry their SHARED ACT, so the head LINE still
+                    # credits -- but the sub-bullets it pulls in are the entry person's
+                    # own records and document the named relative not at all.
+                    region = _head
                 foreign_count = count_records(region)
                 if not foreign_count:
                     continue

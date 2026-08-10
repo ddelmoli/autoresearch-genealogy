@@ -112,19 +112,30 @@ class whole_body_credit:
     vault it reported 209 entries changing category and a 'before' SOURCE_GAP of
     167 against the banner's actual 252, i.e. it measured its own over-reach rather
     than the defect. A control has to reproduce the fault it names and nothing else.
+
+    ** AND IT MUST SWITCH OFF EVERY LATER SCOPING RULE, NOT JUST THE MAGNITUDE ONE
+    (extended 09 AUG 2026, deferred 59 (b)/(d)/(e3)). ** This control widens the region
+    back to the whole body -- whose FIRST LINE is the entry's bold-name header, which
+    `credits_head_line_only` then truncates straight back to one line. So the control
+    stopped reproducing its own fault the moment that rule landed, and began measuring
+    the NEW rule instead: the identical trap described above, one fix later. Only the
+    CONTROL changed here; not one assertion's expected value moved.
     """
 
     def __enter__(self):
         self._saved = HS.attributed_region_for_pid
+        self._saved_head_only = HS.credits_head_line_only
 
         def old_behaviour(body, pid):
             return body if HS.count_records(self._saved(body, pid)) else ""
 
         HS.attributed_region_for_pid = old_behaviour
+        HS.credits_head_line_only = lambda line: False
         return self
 
     def __exit__(self, *exc):
         HS.attributed_region_for_pid = self._saved
+        HS.credits_head_line_only = self._saved_head_only
         return False
 
 
