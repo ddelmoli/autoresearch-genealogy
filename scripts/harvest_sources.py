@@ -966,8 +966,30 @@ def sources_bullet_text(body: str) -> str:
 
 
 def count_records_strict(body: str) -> int:
-    """count_records restricted to what a Sources bullet actually asserts."""
-    return count_records(sources_bullet_text(body))
+    """count_records restricted to what a Sources bullet actually asserts.
+
+    ⚠⚠ NEGATION IS RESOLVED OVER THE WHOLE BODY *BEFORE* THE BODY IS NARROWED, and
+    getting that order wrong re-credited 27 records across 10 entries (found 10 AUG
+    2026, session #159, working Q229).
+
+    `count_records` strips body-wide (deferred_decisions 63: a token negated in one
+    bullet is negated in every other spelling of it). Narrowing FIRST threw that away,
+    because **the `~` almost never lives inside the Sources bullet** — it is written
+    where the rejection is explained, in a write-back queue bullet, an audit note or a
+    `Named-in` block, while the bare token stays in the harvest list. Slicing to the
+    Sources bullet discarded the negation and kept the token.
+
+    The symptom is diagnostic and was the thing that surfaced it: `strict > loose`, on
+    all 10 entries. Strict is a RESTRICTION of loose, so it can never exceed it. The
+    worst row read 8 loose against 26 strict; another read 14 against 16, its two extra
+    "records" being a census and a christening for two DIFFERENT same-name men, both of
+    which that entry is queued to detach and names as somebody else's.
+
+    ⛔ This mattered because strict is the counter the **deferred-19 flip switches the
+    census to**. The defect was invisible in today's numbers and would have arrived as
+    a silent 27-record regression at the moment of the flip, re-crediting exactly the
+    locators the vault had done the work to reject."""
+    return count_records(sources_bullet_text(strip_negated_locators(body)))
 
 
 def count_records(body: str) -> int:
