@@ -571,6 +571,38 @@ def is_memorial_collection(title: str) -> bool:
 # ⚠ MATCHED ON THE COLLECTION TITLE, NEVER ON THE LOCATOR — same rule as (e), same
 # reason: there cannot be a locator-shaped test.
 #
+# ⭐⭐ A PRINTED TRANSCRIPTION OF A PRIMARY RECORD SERIES IS A **RECORD**, NOT A BOOK
+# (operator ruling 09 AUG 2026, deferred_decisions 64). Printed town Vital Records (the
+# NEHGS volumes), county Deeds, County Court records, Probate Records and Wills Abstracts
+# are DELIBERATELY ABSENT from the markers below and must stay absent.
+#
+# The ruling turns on a parity the metric already contained and could not defend:
+#   * the FILM IMAGES of a town register ("… Town Clerk, Vital and Town Records …")
+#     are a record collection and count;
+#   * an FS INDEX entry (`1:1:`) for that register is a VOLUNTEER's transcription of it,
+#     and counts;
+#   * the NEHGS PRINTED VOLUME is an EDITOR's transcription of the same register, and
+#     under a literal limb (c) did not.
+# The identical underlying record counted or not by which transcription you happened to
+# read — an artifact of ACCESS ROUTE, not of evidence quality.
+#
+# ⚠ THE LINE IS TRANSCRIPTION vs NARRATIVE, not print vs film. A town HISTORY, a
+# "Pioneers of …" volume and a compiled descendants genealogy are analysis ABOUT people
+# and stay screened; a printed edition OF a register is the register.
+#
+# ⚠⚠ AND THE FAIL DIRECTION HERE IS DESTRUCTIVE, WHICH IS WHY THE LIST STAYS NARROW: a
+# false positive REMOVES a real record from the census. A bare "history of" marker was
+# considered and NOT taken — it would reach titles like "History of <Town>" that this
+# list does miss, and it risks a record collection whose title merely contains the
+# phrase. Under-catching is recoverable; over-catching silently deletes evidence.
+#
+# ⛔ SCREENING THEM WOULD ALSO HAVE BROKEN THE OTHER HALF OF THE CENSUS. Measured
+# 09 AUG 2026: of 23 entries whose Sources bullet names a printed record series, only 8
+# cite apparatus `SCHOLARLY_CITATION_RE` recognises — so screening the other 15 would
+# have moved them to **UNCITED**, "nobody has cited anything", about entries cited to the
+# best evidence that exists. Any future move of this class must widen BOTH classifiers in
+# the same commit.
+#
 # ⚠⚠ THIS LIST IS A FLOOR, NEVER A TOTAL. It cannot enumerate every compiled work,
 # and it is not meant to: the CAUSE of the twelve bad entries was that every one of
 # them was a BARE LOCATOR LIST with no record description, which is the thing rule 8
@@ -594,6 +626,15 @@ BOOK_COLLECTION_MARKERS = (
     "u.s. and international marriage records",
     "sons of the american revolution",
     "daughters of the american revolution",
+    # ── DERIVATIVE WORKS, added 09 AUG 2026 (deferred_decisions 64, operator ruling) ──
+    # Town and family HISTORIES, compiled "pioneers/descendants" volumes and journals:
+    # narrative or analysis ABOUT people, not a transcription OF a register.
+    "history of the town",
+    "history of the city",
+    "pioneers of",
+    "genealogies of the families",
+    "the descendants of",
+    "bay state monthly",
     # aggregated user trees sold as collections (limb (d), same treatment)
     "family trees",
     "community trees",
