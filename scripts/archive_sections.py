@@ -180,6 +180,46 @@ def _matches_terminal(status: str, allow) -> bool:
     return False
 
 
+# --------------------------------------------------------------------------------------
+# HEADING LINT (added 11 AUG 2026) — the trap that hides a RESOLVED question from this tool.
+#
+# `_heading_status` reads the status as the text after the LAST em-dash. A heading whose
+# last segment is a PROVENANCE clause ("— raised 05 AUG 2026 (session #144)") therefore
+# reports that clause as its status, and no terminal keyword ever matches — so when the
+# question is later resolved by inserting "— RESOLVED <date>" BEFORE the stable trailing
+# provenance, the block silently stops being archivable.
+#
+# ** THIS IS NOT HYPOTHETICAL. ** Q188 and Q219 were both fully resolved on 09 AUG 2026 and
+# both sat live because of exactly this, and a scan on 11 AUG found the shape in 28 of 144
+# numbered questions (19%) — 2 blocked, 26 latent. It is the same class of failure as the
+# 30 JUN 2026 backlog in `_is_tombstone`: the engine reporting "nothing to archive" while
+# resolved blocks pile up inline and the file runs over threshold.
+#
+# ⛔ THE FIX BELONGS AT THE AUTHORING END, NOT HERE. Widening the detector to accept a
+# terminal status in ANY em-dash segment was considered and REJECTED on measurement: it
+# would archive Q134 and Q254, both LIVE, because their headings cite ANOTHER question's
+# status ("split out of the RESOLVED Q195"). The last-em-dash rule is correct; what is
+# needed is a warning when a heading is authored into the trap. Hence: advisory only.
+_PROVENANCE_RE = re.compile(r"^\s*(raised|opened|split out of)\b", re.I)
+
+
+def lint_headings(text):
+    """Return [(qlabel, last_segment)] for numbered questions whose terminal-status slot
+    holds a provenance clause instead of a status. Advisory: these are not errors today,
+    they are questions that CANNOT ARCHIVE once resolved."""
+    out = []
+    lines = text.splitlines(keepends=True)
+    for start, _end in _split_h3_blocks(lines):
+        heading = lines[start].rstrip("\n")
+        m = re.match(r"###\s*(\d+)\.", heading)
+        if not m or _is_tombstone(heading):
+            continue
+        last = _heading_status(heading)
+        if _PROVENANCE_RE.match(last):
+            out.append((m.group(1), last))
+    return out
+
+
 def _trailer_split(block_lines):
     """Split block into (heading_line, body_lines, trailer_lines) where trailer is the
     trailing run of blank / '---' lines."""
@@ -507,7 +547,30 @@ def main():
     ap.add_argument("--migrate-tombstones", action="store_true",
                     help="one-time: convert existing inline tombstones to the compact "
                          "'## Resolved & Closed — Index' (drop-by-status targets)")
+    ap.add_argument("--lint-headings", action="store_true",
+                    help="advisory: report question headings whose terminal-status slot holds a "
+                         "provenance clause ('— raised <date>'), which silently blocks archiving "
+                         "once the question is resolved")
     args = ap.parse_args()
+
+    if args.lint_headings:
+        cfg = load_config()
+        rc = 0
+        for t in cfg.get("targets", []):
+            if t.get("policy") != "drop-by-status":
+                continue
+            path = VAULT / t["file"]
+            if not path.exists():
+                continue
+            hits = lint_headings(path.read_text(encoding="utf-8"))
+            print(f"HEADING_LINT ({t['file']}): {len(hits)}  [advisory]"
+                  "  (terminal-status slot holds a provenance clause -> cannot archive when resolved)")
+            for q, last in hits:
+                print(f"    Q{q}: last em-dash segment = {last[:70]!r}")
+            if hits:
+                print("    FIX: move the clause into the title, e.g. "
+                      "'### N. Title (raised <date>, session #N) — RESOLVED <date>'.")
+        return rc
 
     cfg = load_config()
     targets = cfg.get("targets", [])

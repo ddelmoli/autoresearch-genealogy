@@ -329,6 +329,15 @@ parts = [
     # while the live value was 243. READ THE FLAGGED ROWS before trusting the count.
     "handoff-lint -> " + run("handoff_lint.py", r"HANDOFF_LINT:", args=["--quiet"], max_lines=1),
     "housekeeping -> " + run("size_heartbeat.py", r"HOUSEKEEPING", max_lines=1),
+    # Open_Questions heading grammar (archive_sections.py --lint-headings). ADVISORY,
+    # baseline 0. A heading whose terminal-status slot holds a provenance clause
+    # ("— raised <date>") CANNOT ARCHIVE once resolved, because the status is read as
+    # the text after the LAST em-dash — so resolved blocks accumulate inline while the
+    # archiver truthfully reports "nothing to archive". Found in 28 of 144 questions on
+    # 11 AUG 2026 (2 already blocking, 26 latent); all 28 fixed, hence baseline 0.
+    # A NON-ZERO IS A FUTURE SILENT BACKLOG, not a present error — fix the heading.
+    "oq-headings -> " + run("archive_sections.py", r"HEADING_LINT",
+                            args=["--lint-headings"], max_lines=1),
     # Recipe-S FS source-harvest coverage + cadence (harvest_sources.py --heartbeat):
     # SOURCE_GAP/LOW/WELL counts + DUE/OK vs the .maintenance.json `harvest` cadence.
     "privacy-repo -> " + privacy_repo(),
