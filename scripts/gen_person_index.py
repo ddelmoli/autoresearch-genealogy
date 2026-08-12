@@ -399,6 +399,43 @@ def match(entry, index_rows, pidmap=None):
     return best[1] if best else None
 
 
+_COUPLE_PLUS = _re_couple = __import__("re").compile(r"\s\+\s")
+_COUPLE_CONJ = __import__("re").compile(r"\s(?:&|and)\s")
+
+
+def _is_couple_name(name):
+    """One person entry whose NAME denotes TWO PEOPLE — e.g. "[FORENAME] [SURNAME] + [FORENAME]".
+
+    ADVISORY, baseline 0. Added 12 AUG 2026 (operator ruling, Open_Questions
+    Q267) after a single record was found carrying one `id`, one `generation`
+    and one `died` for a HUSBAND AND A WIFE. Nothing caught it: DUP_ID checks
+    that ids are UNIQUE, MISSING_ID that they are PRESENT — neither asks whether
+    a name denotes ONE PERSON.
+
+    ⚠ THE COST OF THE DEFECT IS NOT COSMETIC. Children of such a couple cannot
+    be wired at all: a `parents: '[<couple-id>]'` edge records ONE parent where
+    TWO are known, so the row reads as half-wired when it is actually complete —
+    worse than silent, because it looks answered.
+
+    ⭐ THE CONNECTOR SET IS DELIBERATELY NARROW, AND THAT IS THE WHOLE DESIGN.
+    A bare ` + ` always flags. ` & ` and ` and ` flag ONLY when the name carries
+    no bracketed segment and no " of " — because in this corpus those two are
+    overwhelmingly TITLE connectors, not couple connectors. Measured over 1,477
+    records at adoption: a naive scan returned 8 hits, SEVEN of them false
+    positives, every one a single person whose TITLE contained and/& — three
+    peerage styles of the form "[NAME] [Earl of [PLACE] & [PLACE]]" and four
+    territorial styles of the form "[NAME] [of [PLACE] and [PLACE]]". A guard
+    that fires on those would be ignored within a session, so it does not fire.
+
+    Negative controls for all seven live in scripts/test_couple_name.py.
+    """
+    if _COUPLE_PLUS.search(name):
+        return True
+    if _COUPLE_CONJ.search(name) and "[" not in name and " of " not in name.lower():
+        return True
+    return False
+
+
 def integrity_check(entries, args):
     """Narrative-native HARD invariants, post-Person_Index-retirement. Replaces
     the index drift-policing gate (duplicate_rows + harvest_pids) with checks the
@@ -451,6 +488,7 @@ def integrity_check(entries, args):
     needs_meta = [e for e in entries
                   if not (e["id"] and e["gen"] is not None)]
     odd_ids = [e for e in entries if e["id"] and not _ID_GRAMMAR.match(e["id"])]
+    couple_names = [e for e in entries if _is_couple_name(e["name"] or "")]
     dup_keys = [(e, duplicate_meta_keys(e.get("block") or ""))
                 for e in entries]
     dup_keys = [(e, d) for e, d in dup_keys if d]
@@ -463,6 +501,7 @@ def integrity_check(entries, args):
     print(f"  DUP_FS_PID (1 FS PID, >1 entry):     {len(dup_pids)}   [advisory; compare vs your .autoresearch.json baseline]")
     print(f"  NEEDS_META (no id or no generation): {len(needs_meta)}   [advisory]")
     print(f"  ID_GRAMMAR (id not P- + 6 Crockford):  {len(odd_ids)}   [advisory; hand-authored, see docstring]")
+    print(f"  COUPLE_NAME (one entry names TWO people): {len(couple_names)}   [advisory; baseline 0, see docstring]")
     for i, c in list(dup_ids.items())[:args.limit]:
         print(f"    DUP_ID {i} x{c}")
     for e in noid[:args.limit]:
@@ -476,6 +515,8 @@ def integrity_check(entries, args):
         print(f"    NEEDS_META {e['file']:<34} {e['name'][:34]:<34} missing {','.join(miss)}")
     for e in odd_ids[:args.limit]:
         print(f"    ID_GRAMMAR {e['id']:<10} {e['file']:<34} {e['name'][:34]}")
+    for e in couple_names[:args.limit]:
+        print(f"    COUPLE_NAME {e['id'] or '-':<10} {e['file']:<34} {e['name'][:44]}")
     hard = len(dup_ids) + len(noid) + len(dup_keys)
     print(f"\n  HARD violations (DUP_ID + MISSING_ID + DUP_META_KEY): {hard}")
     return 1 if hard else 0

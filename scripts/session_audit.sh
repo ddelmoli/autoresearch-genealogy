@@ -259,7 +259,7 @@ parts = [
     # ranked worklist and draws the lane. Close with scripts/session_close.py.
     "plan -> " + run("session_plan.py", r"PLAN:", args=["--heartbeat"], max_lines=1),
     "integrity -> " + run("gen_person_index.py",
-                          r"DUP_ID \(|MISSING_ID \(|DUP_FS_PID \(|HARD violations",
+                          r"DUP_ID \(|MISSING_ID \(|DUP_FS_PID \(|COUPLE_NAME \(|HARD violations",
                           args=["--integrity"]),
     # prose_audit now also emits DATE_DRIFT (spec/structured-dates Spec 06): the
     # header-vs-field year sync gate for the two-store date model. Advisory,
