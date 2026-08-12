@@ -338,6 +338,15 @@ parts = [
     # A NON-ZERO IS A FUTURE SILENT BACKLOG, not a present error — fix the heading.
     "oq-headings -> " + run("archive_sections.py", r"HEADING_LINT",
                             args=["--lint-headings"], max_lines=1),
+    # Question-register size + triage counts (gen_question_index.py --heartbeat).
+    # ** THE COUNTS ARE COMPUTED, NEVER COPIED. ** The register outgrew a single
+    # context (~800 KB / ~206k tokens at 146 live questions) while the vault's own
+    # prose still described it as "~310 KB" -- 2.6x stale. A hand-written size is a
+    # number that lies; this line regenerates it every session. `Open_Questions_Index.md`
+    # is the READABLE view (~26 KB, one Read); if it disagrees with this line, the
+    # snapshot is stale -- regenerate with `gen_question_index.py --write`.
+    "questions -> " + run("gen_question_index.py", r"QUESTIONS:",
+                          args=["--heartbeat"], max_lines=1),
     # Recipe-S FS source-harvest coverage + cadence (harvest_sources.py --heartbeat):
     # SOURCE_GAP/LOW/WELL counts + DUE/OK vs the .maintenance.json `harvest` cadence.
     "privacy-repo -> " + privacy_repo(),
