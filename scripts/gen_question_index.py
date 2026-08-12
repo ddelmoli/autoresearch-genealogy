@@ -66,6 +66,10 @@ TAGS = [
         r"|OpenAthens", re.I)),
 ]
 
+# The one trailing `## ` section that is NOT question content -- the archiver's
+# compact index. A question block must stop here; see the note in parse().
+RESOLVED_INDEX = re.compile(r"^##\s+Resolved\s*&\s*Closed", re.I)
+
 # The actionable line: the first item under a "what would settle it" heading.
 SETTLE_HDR = re.compile(r"(what would settle it|what is left|what would name|⏭\s*\*\*)", re.I)
 
@@ -100,7 +104,25 @@ def parse(vault):
         lines = open(path, encoding="utf-8").read().split("\n")
         idx = [i for i, l in enumerate(lines) if Q_HEAD.match(l)]
         idx.append(len(lines))
-        for a, b in zip(idx, idx[1:]):
+        for a, b0 in zip(idx, idx[1:]):
+            # ⚠ A QUESTION BLOCK ALSO ENDS AT THE RESOLVED-INDEX SECTION. Without this
+            # the LAST question in the file runs to EOF and swallows the trailing
+            # `## Resolved & Closed — Index`: after an archive run Q266 was reported at
+            # 29.0 KB, falsely flagged BIG, and the total jumped 772 -> 808 KB while the
+            # archive had made the file SMALLER. Same reasoning as the `generation`
+            # heading fallback (deferred 10): a span must stop at the section boundary.
+            #
+            # ⛔ IT MUST NOT STOP AT *ANY* `## `, WHICH WAS THE FIRST ATTEMPT AND WAS
+            # WRONG. Questions legitimately CONTAIN `## ` sub-headings -- the
+            # `## ✅ RESOLVED …` / `## ⏩ WORKED …` / `## OPEN (a): …` blocks this vault
+            # writes into a question body. Stopping at those truncated real content:
+            # Q266 fell to 1.9 KB and the UNREAD-SRC tag count dropped 37 -> 32 because
+            # resolver text living in a question's own sub-section stopped being read.
+            b = b0
+            for k in range(a + 1, b0):
+                if RESOLVED_INDEX.match(lines[k]):
+                    b = k
+                    break
             head = lines[a]
             m = Q_HEAD.match(head)
             status = _heading_status(head)

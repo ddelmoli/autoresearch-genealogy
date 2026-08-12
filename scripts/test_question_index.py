@@ -39,6 +39,12 @@ def main():
         with open(os.path.join(d, "Open_Questions.md"), "w", encoding="utf-8") as fh:
             for h in LIVE + RESOLVED:
                 fh.write(h + "\n\nbody text for " + h[:9] + "\n\n")
+                # a question's OWN sub-heading must stay INSIDE its block
+                fh.write("## \u23e9 WORKED 12 AUG 2026\n\n" + ("padding line\n" * 30))
+            # ⚠ the trailing Resolved index: the LAST question must NOT swallow it
+            fh.write("## Resolved & Closed \u2014 Index\n\n")
+            fh.write(("- **Q999** a migrated question \u2014 "
+                      "[[Open_Questions_Resolved#999]]\n") * 40)
         # a resolved store that must be IGNORED by the glob
         with open(os.path.join(d, "Open_Questions_Resolved.md"), "w", encoding="utf-8") as fh:
             fh.write("### 99. Should never appear\n\nbody\n")
@@ -61,6 +67,17 @@ def main():
         # ...but PARTIALLY_RESOLVED keeps its underscore
         if 3 in by and "PARTIALLY_RESOLVED" not in by[3]["title"]:
             bad.append(f"underscore eaten in title: {by[3]['title']!r}")
+        # the last live question must stop at the `## ` section, not run to EOF
+        last = max(nums)
+        # (a) the last question must NOT swallow the trailing Resolved index...
+        if last in by and by[last]["kb"] > 2.0:
+            bad.append(f"last question swallowed the Resolved index: "
+                       f"Q{last} measured {by[last]['kb']:.1f} KB")
+        # (b) ...but every question MUST keep its own `## WORKED` sub-heading block
+        for n in nums:
+            if by[n]["kb"] < 0.3:
+                bad.append(f"Q{n} truncated at its own '## ' sub-heading "
+                           f"({by[n]['kb']:.2f} KB) -- sub-sections are question content")
     if bad:
         print("QUESTION_INDEX test FAILED:")
         for b in bad:
