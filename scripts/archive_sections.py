@@ -556,15 +556,29 @@ def main():
     if args.lint_headings:
         cfg = load_config()
         rc = 0
+        # ⚠⚠ THE TOTAL IS PRINTED FIRST, AND THAT IS LOAD-BEARING (12 AUG 2026, the
+        # lineage shard split). The SessionStart banner reads this with `max_lines=1`,
+        # so it takes whatever line comes FIRST. While the register was one file that
+        # was the only line and the reading was honest. After the split there are seven
+        # files, the ALPHABETICALLY-FIRST is `Open_Questions.md` -- the ROUTER, which
+        # holds no `### N.` question blocks at all -- so a per-file line would have
+        # reported a permanent, structural **0 from an empty file** and hidden a real
+        # non-zero in any shard. A gate that cannot move is not a gate.
+        # Emitting the aggregate first keeps the banner one line AND keeps it truthful;
+        # the per-file breakdown still follows for a human reading the full output.
+        per_file = []
         for t in cfg.get("targets", []):
             if t.get("policy") != "drop-by-status":
                 continue
             path = VAULT / t["file"]
             if not path.exists():
                 continue
-            hits = lint_headings(path.read_text(encoding="utf-8"))
-            print(f"HEADING_LINT ({t['file']}): {len(hits)}  [advisory]"
-                  "  (terminal-status slot holds a provenance clause -> cannot archive when resolved)")
+            per_file.append((t["file"], lint_headings(path.read_text(encoding="utf-8"))))
+        total = sum(len(h) for _, h in per_file)
+        print(f"HEADING_LINT: {total}  [advisory]  across {len(per_file)} question file(s)"
+              "  (terminal-status slot holds a provenance clause -> cannot archive when resolved)")
+        for fname, hits in per_file:
+            print(f"  HEADING_LINT ({fname}): {len(hits)}")
             for q, last in hits:
                 print(f"    Q{q}: last em-dash segment = {last[:70]!r}")
             if hits:
