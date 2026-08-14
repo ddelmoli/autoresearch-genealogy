@@ -408,7 +408,20 @@ parts = [
 #      so growth is visible while there is still room to act on it.
 # The baseline is ~half of an ~8 KB banner, so the extra 2 KB is a small price for
 # not amputating the tail; the divider, not the cap, is what bounds the real risk.
-BASELINE_CAP = 6000
+#
+# ** RAISED 6000 -> 7500 ON 14 AUG 2026 (operator-directed), FOR THE SAME REASON AS
+# THE FIRST RAISE. ** The file sat at 5975/6000 -- 25 chars of headroom -- so a
+# verified do-not-redo finding (a new `oq-archive` gate and the one legacy row that
+# is expected to trip it) could not be recorded without cutting an unrelated line to
+# make room. That trade is the failure mode, not the safeguard: the cap was built to
+# catch 712 lines of history creeping back, and instead it was rationing ~50 chars of
+# current, load-bearing content. Reasoning (1) and (2) above still hold verbatim --
+# the `----` divider is what actually bounds the history risk, and truncation is
+# still positional, so the file must stay ordered by IMPORTANCE.
+# ⚠ Raising the cap does NOT retire the discipline: keep the file CURRENT-only, move
+# superseded blocks to .audit_baseline_history.txt, and READ THE BANNER after editing
+# rather than trusting your own character count.
+BASELINE_CAP = 7500
 _bp = VAULT / ".audit_baseline.txt"
 _bl_note = ""
 if _bp.exists():
