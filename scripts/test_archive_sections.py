@@ -138,14 +138,78 @@ def main():
             if new_live.index("Resolved & Closed") > new_live.index("### 3."):
                 bad.append("the below-index question was reordered above the index section")
 
+    bad += check_lint_archive()
+
     if bad:
         print("ARCHIVE_SECTIONS test FAILED:")
         for b in bad:
             print("   ", b)
         return 1
     print("ARCHIVE_SECTIONS test ok (block keeps its own '## ' sub-headings; stops at "
-          "the Resolved index; migration moves the full write-up and orphans nothing)")
+          "the Resolved index; migration moves the full write-up and orphans nothing; "
+          "lint_archive catches EMPTY + TRUNCATED and tolerates duplicate Q numbers)")
     return 0
+
+
+# A pre-archive snapshot holding three questions in full, and a store that migrated them
+# with varying damage. Q31 is the case a stub count MISSES: it stored plausible-looking
+# lines and lost only its resolution.
+# ⚠ EVERY LINE MUST BE DISTINCT. The comparison is set-based (line order and repetition
+# carry no meaning across an edit), so a fixture built from repeated identical lines
+# collapses to one element and the truncation it means to stage disappears.
+def _lines(tag, n):
+    return "".join(f"{tag} line {i}\n" for i in range(n))
+
+
+SNAPSHOT = (
+    "### 30. A question that lost EVERYTHING — RESOLVED 01 AUG 2026\n\nQ30 intro\n\n"
+    "## ✅ RESOLVED — the write-up\n\n" + _lines("Q30 resolution", 8) + "\n"
+    "### 31. A question that lost only its RESOLUTION — RESOLVED 01 AUG 2026\n\n"
+    + _lines("Q31 opening statement", 9) + "\n"
+    "## ✅ RESOLVED — the part that went missing\n\n" + _lines("Q31 verdict", 9) + "\n"
+    "### 32. A question that migrated INTACT — RESOLVED 01 AUG 2026\n\nQ32 intro\n\n"
+    "## ✅ RESOLVED — all present\n\n" + _lines("Q32 detail", 8) + "\n"
+    # ⚠ a DUPLICATE question number with a different title: keying on the number would
+    # match this against Q32's snapshot and report a phantom truncation.
+    "### 32. A DIFFERENT question sharing the number — RESOLVED 01 AUG 2026\n\nQ32b intro\n\n"
+    "## ✅ RESOLVED — distinct content\n\n" + _lines("Q32b detail", 8) + "\n"
+)
+STORE = (
+    "### 30. A question that lost EVERYTHING — RESOLVED 01 AUG 2026\n\n---\n\n"
+    "### 31. A question that lost only its RESOLUTION — RESOLVED 01 AUG 2026\n\n"
+    + _lines("Q31 opening statement", 9) + "\n---\n\n"
+    "### 32. A question that migrated INTACT — RESOLVED 01 AUG 2026\n\nQ32 intro\n\n"
+    "## ✅ RESOLVED — all present\n\n" + _lines("Q32 detail", 8) + "\n---\n\n"
+    "### 32. A DIFFERENT question sharing the number — RESOLVED 01 AUG 2026\n\nQ32b intro\n\n"
+    "## ✅ RESOLVED — distinct content\n\n" + _lines("Q32b detail", 8) + "\n---\n"
+)
+
+
+def check_lint_archive():
+    import pathlib
+    bad = []
+    with tempfile.TemporaryDirectory() as d:
+        v = pathlib.Path(d)
+        (v / "Open_Questions_Archive").mkdir()
+        (v / "Open_Questions_Archive" / "Open_Questions_2026-08-01-000000.md").write_text(
+            SNAPSHOT, encoding="utf-8")
+        (v / "Open_Questions_Resolved.md").write_text(STORE, encoding="utf-8")
+        empty, truncated = A.lint_archive(v)
+
+        if len(empty) != 1 or "30." not in empty[0]:
+            bad.append(f"EMPTY should be exactly Q30, got {empty}")
+        titles = " ".join(h for _, h in truncated)
+        if len(truncated) != 1 or "31." not in titles:
+            bad.append(f"TRUNCATED should be exactly Q31, got {[h for _, h in truncated]}")
+        # ⭐ the case a stub count misses: Q31 stored 9 plausible lines and is NOT empty
+        if any("31." in h for h in empty):
+            bad.append("Q31 was reported EMPTY -- it stored 9 lines; only the snapshot "
+                       "comparison can see that its resolution is missing")
+        # the intact question, and its duplicate-numbered neighbour, must both stay clean
+        if "32." in titles:
+            bad.append("a Q32 was reported truncated -- duplicate question NUMBERS must be "
+                       "matched by TITLE, or each duplicate is judged against the other")
+    return bad
 
 
 if __name__ == "__main__":

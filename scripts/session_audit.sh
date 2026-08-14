@@ -338,6 +338,15 @@ parts = [
     # A NON-ZERO IS A FUTURE SILENT BACKLOG, not a present error — fix the heading.
     "oq-headings -> " + run("archive_sections.py", r"HEADING_LINT",
                             args=["--lint-headings"], max_lines=1),
+    # Did an archive run MOVE THE HEADING AND LEAVE THE WRITE-UP BEHIND? Baselines:
+    # EMPTY 0, TRUNCATED 1 (one legacy layout artifact, see the lint_archive
+    # docstring). Found 14 AUG 2026: 8 questions whose resolutions had been orphaned
+    # into unrelated live questions, in the wrong lineage shards, by the pre-fix
+    # splitter. ⚠ A STUB COUNT ALONE DOES NOT SEE THIS -- six of the eight stored
+    # 10-23 plausible lines; one stored its "what would settle it" plan under a
+    # RESOLVED heading, which invites the work to be redone.
+    "oq-archive -> " + run("archive_sections.py", r"ARCHIVE_LINT",
+                           args=["--lint-archive"], max_lines=1),
     # Question-register size + triage counts (gen_question_index.py --heartbeat).
     # ** THE COUNTS ARE COMPUTED, NEVER COPIED. ** The register outgrew a single
     # context (~800 KB / ~206k tokens at 146 live questions) while the vault's own

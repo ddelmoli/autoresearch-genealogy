@@ -225,6 +225,79 @@ def _matches_terminal(status: str, allow) -> bool:
 _PROVENANCE_RE = re.compile(r"^\s*(raised|opened|split out of)\b", re.I)
 
 
+def _block_key(heading: str) -> str:
+    """Identity for matching a stored block to its pre-archive snapshot: the TITLE, not
+    the Q number. ⚠ The number is NOT unique -- this vault has genuine duplicate Q96 and
+    Q205 (upsert_index keys on the anchor for the same reason). Keying on the number
+    matched each duplicate against the OTHER one's snapshot and reported both as
+    truncated: 2 false positives of 11."""
+    t = heading.rstrip("\n")[4:]
+    if EMDASH in t:
+        t = t.rsplit(EMDASH, 1)[0]
+    return re.sub(r"[^a-z0-9]+", "", t.lower().replace("~~", ""))[:60]
+
+
+def _snapshot_bodies(vault):
+    """Largest pre-archive body seen for each block key, across every question snapshot.
+    The snapshot is written BEFORE the archive edits, so it holds the full block."""
+    out = {}
+    for sp in sorted((vault / "Open_Questions_Archive").glob("*.md")):
+        if "Resolved" in sp.name:
+            continue
+        lines = sp.read_text(encoding="utf-8").splitlines(keepends=True)
+        for s, e in _split_h3_blocks(lines):
+            k = _block_key(lines[s])
+            if len(k) < 12:
+                continue
+            body = {l.strip() for l in lines[s + 1:e] if l.strip() and l.strip() != "---"}
+            if k not in out or len(body) > len(out[k]):
+                out[k] = body
+    return out
+
+
+def lint_archive(vault, slack=3):
+    """Report archived questions whose stored write-up is MISSING or SHORTER than the
+    pre-archive snapshot -- i.e. the migration moved a heading and left the resolution
+    behind. Returns (empty_rows, truncated_rows).
+
+    ⚠ WHY A STUB COUNT ALONE IS NOT ENOUGH, measured 14 AUG 2026: of the 8 questions
+    whose write-ups were orphaned by the pre-fix archiver, only ONE stored a completely
+    empty body and one a single line. The other six stored 10-23 plausible-looking lines
+    -- the question and its opening statement -- and read as ordinary short resolutions.
+    Q265 stored its *"⏭ WHAT WOULD SETTLE IT"* research plan under a `— RESOLVED`
+    heading, which is worse than empty: it invites the work to be redone. Only comparing
+    against the snapshot finds those, so this check does both.
+
+    KNOWN BASELINE 1, and it is a layout artifact rather than a defect: in the JULY 2026
+    single-file register Q73 was the last question before three genuine top-level
+    sections (`## Confirmed Brick Walls`, `## Data Acquisition Priorities`, `## FamilySearch
+    Duplicate / Conflation Log`), so its snapshot block absorbs them and they read as
+    'missing'. ⛔ Do NOT enumerate those titles into the splitter to force a 0 -- that is
+    the flattering-direction trap, and the whole point of fa6793a is that only the
+    Resolved index is a non-content `## `. READ THE ROWS.
+    """
+    apath = vault / "Open_Questions_Resolved.md"
+    if not apath.exists():
+        return [], []
+    snaps = _snapshot_bodies(vault)
+    lines = apath.read_text(encoding="utf-8").splitlines(keepends=True)
+    empty, truncated = [], []
+    for s, e in _split_h3_blocks(lines):
+        head = lines[s].rstrip("\n")
+        body = [l.strip() for l in lines[s + 1:e] if l.strip() and l.strip() != "---"]
+        if not body:
+            empty.append(head)
+            continue
+        k = _block_key(lines[s])
+        want = snaps.get(k)
+        if want:
+            missing = want - set(body)
+            if len(missing) > slack:
+                truncated.append((len(missing), head))
+    truncated.sort(key=lambda x: -x[0])
+    return empty, truncated
+
+
 def lint_headings(text):
     """Return [(qlabel, last_segment)] for numbered questions whose terminal-status slot
     holds a provenance clause instead of a status. Advisory: these are not errors today,
@@ -583,7 +656,24 @@ def main():
                     help="advisory: report question headings whose terminal-status slot holds a "
                          "provenance clause ('— raised <date>'), which silently blocks archiving "
                          "once the question is resolved")
+    ap.add_argument("--lint-archive", action="store_true",
+                    help="advisory: report archived questions whose stored write-up is EMPTY "
+                         "or shorter than its pre-archive snapshot (a migration that moved the "
+                         "heading and left the resolution behind)")
     args = ap.parse_args()
+
+    if args.lint_archive:
+        empty, truncated = lint_archive(VAULT)
+        # aggregate FIRST, for the same banner reason as --lint-headings above
+        print(f"ARCHIVE_LINT: EMPTY {len(empty)}  TRUNCATED {len(truncated)}  "
+              f"[advisory; EMPTY baseline 0. TRUNCATED baseline is vault-specific -- a "
+              f"question that preceded genuine top-level sections in an older file layout "
+              f"reads as truncated. READ THE ROWS; see lint_archive docstring]")
+        for h in empty:
+            print(f"  EMPTY      (stored body has NO lines) {h[:105]}")
+        for n, h in truncated:
+            print(f"  TRUNCATED  ({n} snapshot lines absent from the store) {h[:105]}")
+        return 0
 
     if args.lint_headings:
         cfg = load_config()
