@@ -274,6 +274,32 @@ def _negated_tokens(spans: "List[str]") -> "set":
     return toks
 
 
+# ── Q274: a closing markdown backtick is part of the token ─────────────────────
+#
+# A locator token is a NON-SPACE run (`[^\s,;)\]]+`) and a backtick is not in the stop
+# set, so a locator written inside markdown code formatting yields a token that is a
+# DIFFERENT STRING from the same locator written plainly. An entry that cites a record
+# properly AND mentions it in backticked prose was credited with TWO records for one
+# document. Measured 13 AUG 2026: 31 entries over-credited by 47 records, plus 16 entries
+# carrying a malformed-only token. Only ONE row changed category, so the category census
+# barely notices — the damage is in the counts.
+#
+# ⚠ THE STRIP IS RIGHT-HAND ONLY AND THE CHARACTER SET IS CLOSED. A locator legitimately
+# contains `:` and `/` INTERNALLY (`antenati:ark:/12657/an_ua…`, `tna:C1/548/65`), so this
+# must never touch the middle of a token. Nothing in any registered host's grammar ends in
+# markdown punctuation or a sentence mark.
+#
+# ⚠ A trailing `:` is stripped deliberately: it turns a locator FORM written as prose
+# (`fs:1:1:` naming the shape rather than citing an id) into something `is_record_locator`
+# then rejects, which is the Q200 rule "cite a locator, never the locator FORM".
+TRAILING_MARKUP = "`*.,;:'\"“”’)]"
+
+
+def strip_trailing_markup(tok: str) -> str:
+    """Right-strip markdown/sentence punctuation a non-space run swallowed."""
+    return tok.rstrip(TRAILING_MARKUP)
+
+
 def strip_negated_locators(text: str) -> str:
     """Blank every `~`-prefixed locator, and every OTHER spelling of the same token."""
     if not text:
@@ -915,8 +941,12 @@ def record_locators(text: str) -> "List[str]":
 
     Honours `~` negation (deferred_decisions 28): a negated locator is not a citation."""
     text = strip_negated_locators(text)
-    return [m.group(0) for m in FULL_HOST_LOC_RE.finditer(text)
-            if is_record_locator(m.group(0))]
+    out = []
+    for m in FULL_HOST_LOC_RE.finditer(text):
+        tok = strip_trailing_markup(m.group(0))   # Q274
+        if is_record_locator(tok):
+            out.append(tok)
+    return out
 
 
 def per_host_locators(text: str) -> "Dict[str, int]":
