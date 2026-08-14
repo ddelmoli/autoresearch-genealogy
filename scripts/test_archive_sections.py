@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Pin archive_sections.py's question-block BOUNDARY, in both directions.
+
+⚠ THE INVARIANT THIS FILE EXISTS FOR: a `### N.` question block runs to the next
+`### ` heading or to the Resolved-index section, and to NO other `## `. Questions
+legitimately contain `## ✅ RESOLVED …` / `## ⏩ WORKED …` / `## 📏 RE-MEASURED …`
+sub-headings -- that is how this vault writes a resolution -- so a splitter that
+stops at any `## ` truncates every archivable block to its heading.
+
+⛔ AND THE ARCHIVER IS A WRITER, which is why this is pinned separately from
+test_question_index.py rather than trusted to it. A truncated block does not merely
+mis-measure: the tool moves the 2-line stub to the Resolved file, DELETES the
+heading, and leaves the whole resolution write-up orphaned in the live file under no
+question at all. Measured on the two DUE targets 14 AUG 2026, before the fix: 10 of
+10 archivable blocks truncated, 1,065 lines would have been orphaned.
+
+The reader (gen_question_index.py) was fixed for this on 12 AUG 2026 (fa6793a); the
+writer was not, and nothing noticed for two days because both tools "worked". When a
+structure has two parsers, fix both or neither.
+
+BOTH DIRECTIONS ARE REQUIRED. Case (b) alone passes on the pre-12-AUG code and case
+(a) alone passes on the over-fix that fa6793a's message documents as WRONG.
+"""
+import os, sys, tempfile
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+os.environ.setdefault("AUTORESEARCH_VAULT", tempfile.gettempdir())
+import archive_sections as A
+
+# One question whose resolution is written the way this vault writes one: an H2
+# sub-heading inside the body. Everything through the padding is Q1's content.
+Q1_BODY_LINES = 34
+DOC = (
+    "### 1. A resolved question — RESOLVED 14 AUG 2026 (session #165)\n"
+    "\n"
+    "## ✅ RESOLVED 14 AUG 2026 (session #165) — the write-up lives HERE\n"
+    "\n"
+    + "resolution line\n" * 20
+    + "\n"
+    "## \U0001f4cf RE-MEASURED 14 AUG 2026 — a second sub-heading, still Q1's content\n"
+    "\n"
+    + "measurement line\n" * 9
+    + "\n"
+    "### 2. A live question (raised 14 AUG 2026, session #165)\n"
+    "\n"
+    "still open\n"
+    "\n"
+    "## Resolved & Closed — Index (full text in [[Open_Questions_Resolved]])\n"
+    "\n"
+    # 12 rows with DISTINCT anchors -- upsert_index keys on the anchor, so identical
+    # rows would legitimately collapse to one and the survival check would be vacuous.
+    + "".join(f"- **Q{900+i}** a previously migrated question "
+              f"— [[Open_Questions_Resolved#{900+i}-a-previously-migrated-question]]\n"
+              for i in range(12))
+    + "\n"
+    # ⚠ A QUESTION WRITTEN BELOW THE INDEX. The index is appended at EOF when absent,
+    # so a question raised afterwards lands here -- an ordinary layout, not an exotic
+    # one. upsert_index ended the section at the next `## `, and a `### ` heading does
+    # not start with `## `, so this ran to EOF as "index content" and was DESTROYED on
+    # rebuild. Live casualty 14 AUG 2026: Q270, 27 lines, deleted by an archive run of
+    # an unrelated question in the same file.
+    "### 3. A question raised AFTER the index existed (raised 14 AUG 2026)\n"
+    "\n"
+    "content below the index that must survive a rebuild\n"
+)
+
+CFG = {
+    "name": "test", "file": "Open_Questions_Test.md",
+    "archive_file": "Open_Questions_Resolved.md",
+    "tombstone_link": "Open_Questions_Resolved",
+    "archive_statuses": ["RESOLVED", "RULED OUT", "CLOSED"],
+}
+
+
+def main():
+    bad = []
+    lines = DOC.splitlines(keepends=True)
+    blocks = {}
+    for start, end in A._split_h3_blocks(lines):
+        num = lines[start].split(".", 1)[0].replace("### ", "").strip()
+        blocks[num] = (start, end)
+
+    # (a) a question must KEEP its own `## ` sub-headings -- the truncation bug
+    if "1" not in blocks:
+        bad.append("Q1 not found at all")
+    else:
+        start, end = blocks["1"]
+        n = end - start
+        if n < Q1_BODY_LINES:
+            bad.append(f"Q1 TRUNCATED at its own '## ' sub-heading: block is {n} lines, "
+                       f"expected >= {Q1_BODY_LINES} -- sub-sections are question content")
+        body = "".join(lines[start:end])
+        for marker in ("resolution line", "measurement line"):
+            if marker not in body:
+                bad.append(f"Q1 block lost its {marker!r} content")
+
+    # (b) ...but a question must NOT swallow the trailing Resolved index
+    if "2" in blocks:
+        start, end = blocks["2"]
+        if "Resolved & Closed" in "".join(lines[start:end]):
+            bad.append("the last question SWALLOWED the Resolved index "
+                       f"({end - start} lines) -- it is not question content")
+
+    # (c) end to end: the plan must move the whole write-up, not a stub, and must
+    #     leave no orphaned resolution text behind in the live file.
+    new_live, moved, dropped = A.plan_drop_by_status(DOC, CFG, "TS")
+    if not moved or len(moved) != 1:
+        bad.append(f"expected exactly 1 archivable block, got {moved and len(moved)}")
+    else:
+        block = moved[0][3]
+        if "resolution line" not in block or "measurement line" not in block:
+            bad.append("the MOVED block is a stub -- the resolution write-up was left behind")
+        if new_live is not None and "resolution line" in new_live:
+            bad.append("ORPHANED: resolution text stayed in the live file after its "
+                       "heading was removed")
+    # the live file must keep the open question and gain an index row
+    if new_live is not None:
+        if "### 2." not in new_live:
+            bad.append("the live question was removed")
+        if "Q1" not in new_live:
+            bad.append("no compact-index row was written for the migrated question")
+
+    # (d) a question written BELOW the index must survive the section rebuild, and the
+    #     pre-existing index rows must survive with it.
+    if new_live is not None:
+        if "### 3." not in new_live:
+            bad.append("DESTROYED: the question written below the Resolved index was "
+                       "deleted when the section was rebuilt")
+        if "content below the index that must survive" not in new_live:
+            bad.append("DESTROYED: body text below the Resolved index was lost")
+        kept = sum(1 for i in range(12) if f"**Q{900+i}**" in new_live)
+        if kept != 12:
+            bad.append(f"pre-existing index rows lost: {kept} of 12 survived")
+        # and the survivor must still sit BELOW the index, not be hoisted above it.
+        # ⚠ guarded: when the question has been destroyed this check cannot run, and a
+        # traceback here would suppress the findings collected above (a failing control
+        # reported NOTHING at all until this guard was added).
+        if "### 3." in new_live and "Resolved & Closed" in new_live:
+            if new_live.index("Resolved & Closed") > new_live.index("### 3."):
+                bad.append("the below-index question was reordered above the index section")
+
+    if bad:
+        print("ARCHIVE_SECTIONS test FAILED:")
+        for b in bad:
+            print("   ", b)
+        return 1
+    print("ARCHIVE_SECTIONS test ok (block keeps its own '## ' sub-headings; stops at "
+          "the Resolved index; migration moves the full write-up and orphans nothing)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

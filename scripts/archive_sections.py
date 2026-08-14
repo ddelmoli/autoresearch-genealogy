@@ -138,11 +138,33 @@ def plan_keep_n_recent(text: str, cfg: dict):
 # --------------------------------------------------------------------------------------
 EMDASH = "—"
 
+# The ONE trailing `## ` section that is not question content -- the compact index this
+# tool itself writes (INDEX_HEADING below, plus its "(full text in [[…]])" suffix). A
+# question block stops here and at no other `## `; see _split_h3_blocks. Kept identical
+# to gen_question_index.RESOLVED_INDEX so the reader and the writer cut in one place.
+RESOLVED_INDEX = re.compile(r"^##\s+Resolved\s*&\s*Closed", re.I)
+
 
 def _split_h3_blocks(lines):
-    """Yield (start, end) for each '### ' block (ends at next '### '/'## '/EOF)."""
+    """Yield (start, end) for each '### ' block (ends at the next '### ', at the
+    Resolved-index section, or EOF).
+
+    ⛔ IT MUST NOT STOP AT *ANY* `## `, WHICH IS WHAT THIS FUNCTION DID UNTIL 14 AUG
+    2026. Questions legitimately CONTAIN `## ` sub-headings -- the `## ✅ RESOLVED …`
+    / `## ⏩ WORKED …` / `## 📏 RE-MEASURED …` blocks this vault writes into a question
+    body -- so every archivable block truncated to its heading plus one blank line.
+    THE ARCHIVER IS A WRITER, so the consequence was worse than a mis-measurement: it
+    would have moved a 2-line stub to the Resolved file, DELETED the heading, and left
+    the entire resolution write-up orphaned in the live file under no question at all.
+    Measured on the two DUE targets: 10 of 10 archivable blocks truncated, 1,065 lines
+    would have been orphaned (Q236 alone: moves 2, should move 202).
+
+    This is the SAME defect `gen_question_index.py` was fixed for on 12 AUG 2026
+    (fa6793a) -- the READER was corrected and the WRITER was not. When a structure has
+    two parsers, fix both or neither; see the memory note "two readers, one entry".
+    """
     idxs = [i for i, ln in enumerate(lines)
-            if ln.startswith("### ") or ln.startswith("## ")]
+            if ln.startswith("### ") or RESOLVED_INDEX.match(ln)]
     for k, i in enumerate(idxs):
         if not lines[i].startswith("### "):
             continue
@@ -277,7 +299,17 @@ def upsert_index(text: str, rows, link: str) -> str:
     start = next((i for i, ln in enumerate(lines) if ln.startswith(INDEX_HEADING)), None)
     existing = {}   # anchor -> (qlabel, line)
     if start is not None:
-        end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("## ")),
+        # ⚠ THE SECTION ENDS AT THE NEXT HEADING OF *ANY* LEVEL, NOT AT THE NEXT `## `.
+        # Until 14 AUG 2026 this scanned for `## ` alone -- and a `### N.` question
+        # heading does not start with `## `, so a question written BELOW the index ran
+        # to EOF as "index content" and was DESTROYED when the section was rebuilt.
+        # Measured live: a question raised the previous day (27 lines) was deleted
+        # outright by an ordinary archive run of an unrelated question. The
+        # index is appended at EOF when absent, so anything appended after it later
+        # sits in the blast radius -- this is not an exotic layout.
+        # Index rows are `- **Q…**` bullets and never start with '#', so any heading
+        # is a safe terminator.
+        end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("#")),
                    len(lines))
         for ln in lines[start:end]:
             m = _INDEX_ROW_RE.match(ln)
