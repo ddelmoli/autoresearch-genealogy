@@ -621,7 +621,43 @@ BOOK_COLLECTION_MARKERS = (
     "american genealogical-biographical index",
     "american genealogical biographical index",
     "royal descents",
-    "the complete peerage",
+    # ── FREE-TEXT SCHOLARLY APPARATUS, added 13 AUG 2026 (Q269, operator-directed) ──
+    # ⭐⭐ WHY "the complete peerage" BECAME "complete peerage", AND IT IS THE WHOLE
+    # FINDING. The old marker carried the definite article, so it matched the tidy
+    # form and missed the one contributors actually type: verified both ways, "The
+    # Complete Peerage, Vol 6" screened True and "Cokayne's Complete Peerage, Vol 6,
+    # pg. 641-2" screened False. Dropping the article catches every prefix form at
+    # once -- "Cokayne's", "G.E.C.'s", "The" -- which is strictly better than
+    # enumerating possessives, because the next contributor will invent a new one.
+    # The bare phrase is a proper work title and does not occur in record-collection
+    # titles, so the widening stays narrow in the way that matters.
+    #
+    # ⚠ THE REST OF THIS BLOCK IS A MEASURED LIST, NOT A GUESS: these are the works
+    # that returned False on ONE deep profile (Henry of Scotland, 26 attachments,
+    # 18 of them free-text apparatus, 0 of 18 screened by anything). A title screen
+    # was built for COLLECTION titles and deep profiles are mostly free-text
+    # citations, which is the Q182 hole one step over.
+    #
+    # ⚠⚠ EVERY MARKER HERE HAS A MATCHING ALTERNATIVE IN `SCHOLARLY_CITATION_RE`,
+    # AND THAT PAIRING IS LOAD-BEARING (deferred 64). A work moved into the book
+    # class and NOT recognised as apparatus drops its entry into UNCITED -- "nobody
+    # has cited anything" -- about a person cited to the best evidence that exists.
+    # Add to both lists in the same commit or not at all;
+    # `scripts/test_free_text_apparatus.py` fails if this pairing is broken.
+    "complete peerage",
+    "cracroft",
+    "baronage of england",
+    "scots peerage",
+    "dormant and abeyant",
+    "dormant, abeyant",
+    "anglia sacra",
+    "early sources of scottish history",
+    "scottish annals from english",
+    "john of fordun",
+    "dictionary of national biography",
+    "magna charta barons",
+    "pedigrees of charlemagne",
+    "genealogical memoir",
     "new england marriages prior to",   # Torrey's — an abstract INDEX, not the register
     "u.s. and international marriage records",
     "sons of the american revolution",
@@ -642,6 +678,13 @@ BOOK_COLLECTION_MARKERS = (
     "myheritage",
     "rootsfinder",
     "onegreatfamily",
+    # ⚠ `wikitree` as a bare lowercase attachment title (Q269, 13 AUG 2026). It matched
+    # NOTHING before -- not the tree markers, not `reference_work_limb` -- so a title
+    # screen filed a user tree as a record. It belongs HERE and deliberately NOT in
+    # `SCHOLARLY_CITATION_RE`: a WikiTree assertion is limb (d) and earns nothing, and
+    # the vault's separate `WikiTree corroboration` bullet is already off the metric
+    # by policy, so nothing legitimate loses standing.
+    "wikitree",
 )
 
 # Titles that CONTAIN a book marker but ARE a record collection. Kept for the same
@@ -1953,7 +1996,16 @@ SCHOLARLY_CITATION_RE = re.compile(
     r"|\bWeis\b|Ancestral Roots"
     r"|Flodoard|Regino|Monumenta Germaniae|\bMGH\b|Primary Chronicle"
     r"|Great Migration|NEHGR|NEHGS|\bTAG\b|Silver Book"
-    r"|Visitation of|Chamberlain|Savage.{0,20}Genealogical Dictionary",
+    r"|Visitation of|Chamberlain|Savage.{0,20}Genealogical Dictionary"
+    # ── PAIRED WITH THE 13 AUG 2026 BOOK MARKERS (Q269). See the ⚠⚠ note on
+    # BOOK_COLLECTION_MARKERS: these exist so that widening the book screen cannot
+    # push an entry into UNCITED. Every alternative below answers a marker there,
+    # and `scripts/test_free_text_apparatus.py` pins the pairing in both directions.
+    r"|Cracroft|Baronage of England|Scots Peerage"
+    r"|Dormant.{0,5}Abeyant|Anglia Sacra"
+    r"|Early Sources of Scottish History|Scottish Annals from English"
+    r"|John of Fordun|Dictionary of National Biography"
+    r"|Magna Charta Barons|Pedigrees of Charlemagne|Genealogical Memoir",
     re.I,
 )
 
