@@ -1,5 +1,20 @@
 # Open Question Resolution
 
+> ⛔⛔ **THIS PROMPT'S COMMANDS ARE BROKEN AND FAIL SILENTLY — DO NOT RUN THEM AS WRITTEN
+> (reviewed 15 AUG 2026, rewrite not yet done).** Its `Verify` and its step-1 triage both
+> parse `Open_Questions.md`, which has held **zero question blocks** since the 12 AUG
+> lineage shard split. Run verbatim today they report `OPEN 0 (of 0 numbered)` and return
+> **0 candidates against a register of 135 live questions** — i.e. a sitting dispatched on
+> this prompt triages nothing and then measures itself successful, which is the exact
+> defect its own 03 AUG rewrite note ridicules in its predecessor.
+> **Until it is rewritten:** triage from `Open_Questions_Index.md` or
+> `gen_question_index.py --tag free`; locate a block with `question_store.py --where N`;
+> write EVERY outcome through `question_store.py` (`--new` / `--append` / `--resolve`),
+> never by hand-editing a heading; verify with `gen_question_index.py --heartbeat` plus
+> `question_audit.py`. **The POLICY below is sound and still governs** — the ranking
+> heuristic, the outcome taxonomy, the Strong Signal bar, calibrated nulls, and
+> "a failed resolver, rewritten, IS the deliverable". Only the embedded parsers are dead.
+
 Work the vault's register of unresolved research, `Open_Questions.md`, question by
 question: pick the ones a named resolver can actually settle, execute that resolver,
 and record the outcome so the register shrinks instead of accumulating.
