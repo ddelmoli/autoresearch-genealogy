@@ -147,6 +147,65 @@ def op_new(vault, args):
     return 0
 
 
+def op_move(vault, args):
+    """Move a whole question block from one lineage shard to another (Q286).
+
+    WHY THIS EXISTS. A question filed under the wrong lineage is invisible to the
+    sitting equipped to answer it -- the register is triaged by shard, so a Colonial
+    question sitting in the Italian register is read by nobody who can advance it.
+    Q286 found one that had sat misfiled since the 12 AUG split, and nothing noticed:
+    not the archiver, not the index, not question_audit, not the pre-commit hook.
+
+    ⚠ THE POINT IS THAT THIS IS THE ONLY SUPPORTED WAY. Before it existed the only
+    option was a hand cut-and-paste between two 100-200 KB markdown files, which is
+    the exact operation that orphaned eight write-ups in August. The block is located
+    and carried through the shared grammar (`question_block`), so a move cannot drop
+    its body or land outside a block boundary.
+
+    ⛔ Refuses on anything ambiguous: no live block, more than one live block for the
+    number (a duplicate must be repaired, not moved through), or a no-op self-move.
+    """
+    num, suffix = parse_qlabel(args.move)
+    dest = resolve_shard(vault, args.shard)
+    hits = QB.find_live_blocks(vault, num, suffix)
+    label = f"Q{num}{suffix}"
+    if not hits:
+        raise SystemExit(f"{label}: no LIVE block found (already resolved, or wrong number)")
+    if len(hits) > 1:
+        where = ", ".join(f"{os.path.basename(x[0])}:{x[1]+1}" for x in hits)
+        raise SystemExit(f"{label}: {len(hits)} live blocks ({where}) — repair the "
+                         f"duplicate first; a move must not pick one silently")
+    src, start, end, head, _blines = hits[0]
+    if os.path.abspath(src) == os.path.abspath(dest):
+        raise SystemExit(f"{label} is already in {os.path.basename(dest)} — nothing to do")
+
+    with open(src, encoding="utf-8") as fh:
+        src_lines = fh.read().split("\n")
+    block = src_lines[start:end]
+    # Trim trailing blanks off the carried block; the insert re-adds exactly one.
+    while block and not block[-1].strip():
+        block.pop()
+
+    with open(dest, encoding="utf-8") as fh:
+        dest_lines = fh.read().split("\n")
+    blocks = list(QB.split_blocks(dest_lines))
+    at = blocks[-1][1] if blocks else next(
+        (i for i, ln in enumerate(dest_lines) if QB.RESOLVED_INDEX.match(ln)), len(dest_lines))
+
+    new_src = src_lines[:start] + src_lines[end:]
+    new_dest = dest_lines[:at] + block + [""] + dest_lines[at:]
+
+    print(f"{label}: {os.path.basename(src)}:{start+1} -> {os.path.basename(dest)}:{at+1}")
+    print(f"  {head.get('title','')[:130]}")
+    print(f"  carrying {len(block)} line(s)")
+    _write(src, new_src, args.apply, f"remove {label} from")
+    _write(dest, new_dest, args.apply, f"insert {label} into")
+    if args.apply:
+        print("  (regenerate the index: gen_question_index.py --write "
+              "<vault>/Open_Questions_Index.md)")
+    return 0
+
+
 def op_resolve(vault, args):
     num, suffix = parse_qlabel(args.resolve)
     status = args.status.strip().upper()
@@ -269,6 +328,9 @@ def main():
     ap.add_argument("--sub-heading", help="wrap the appended text under '## <H>'")
     ap.add_argument("--text", help="content for --append")
     ap.add_argument("--body-file", help="file holding content for --new/--append")
+    ap.add_argument("--move", metavar="QLABEL",
+                    help="move a live question block to another lineage shard "
+                         "(requires --shard). The ONLY supported way to re-file one.")
     ap.add_argument("--where", metavar="QLABEL", help="locate a question")
     ap.add_argument("--show", metavar="QLABEL",
                     help="print one question block whole (shared boundary; "
@@ -290,6 +352,10 @@ def main():
         return op_resolve(vault, args)
     if args.append:
         return op_append(vault, args)
+    if args.move:
+        if not args.shard:
+            raise SystemExit("--move needs --shard (the destination lineage shard)")
+        return op_move(vault, args)
     if args.show:
         return op_show(vault, args)
     if args.where:
