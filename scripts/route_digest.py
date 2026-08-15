@@ -28,10 +28,32 @@ generated digest that quoted a bold name at line start would mint a phantom entr
 and silently steal the following lines from a real one. Every emitted line is
 prefixed with `> `.
 
+⭐⭐ **THE REGISTER IS THE SOURCE, THE SCRAPE IS THE INTAKE (inverted 15 AUG 2026,
+operator goals).** Originally this tool SCRAPED route statements out of entry prose
+and quoted them into the digest — which duplicated text inside its own lineage
+(5 of one file's 19 digest rows quoted that same file) and meant the knowledge's
+only home was whichever person's entry it happened to be written in. Now:
+
+  `Route_Register.md`   ONE curated file, a `## <lineage-root>` section per
+                        lineage; rows are `- ⊘ <closed/bounded route>` and
+                        `- ⏭ <open named route>`. THIS is where a route fact
+                        lives (CLAUDE.method.md → "Knowledge routing").
+  the digest blocks     rendered FROM the register by --apply — a view, no
+                        longer a scrape.
+  the scrape            demoted to intake: --candidates lists route-shaped
+                        statements found in entry prose that are NOT yet in the
+                        register (the burn-down worklist); --seed writes a first
+                        register from them (one-time).
+
+A vault with NO Route_Register.md keeps the legacy scrape-to-digest behavior, so
+the tool stays upstream-safe and a fresh vault needs no config.
+
 Usage:
     python3 scripts/route_digest.py                 # report (default)
     python3 scripts/route_digest.py --lineage Family_Tree_[REGION]
     python3 scripts/route_digest.py --apply         # write/refresh the blocks
+    python3 scripts/route_digest.py --candidates    # prose statements not registered
+    python3 scripts/route_digest.py --seed          # one-time: register from scrape
     python3 scripts/route_digest.py --heartbeat
 """
 import argparse
@@ -141,12 +163,105 @@ def harvest(paths):
 def dedupe(items):
     seen, out = set(), []
     for kind, text, person, base in items:
-        key = re.sub(r"[^a-z0-9]+", "", text.lower())[:90]
+        key = _key(text)
         if key in seen:
             continue
         seen.add(key)
         out.append((kind, text, person, base))
     return out
+
+
+def _key(text):
+    return re.sub(r"[^a-z0-9]+", "", text.lower())[:90]
+
+
+# a register row's trailing provenance (" — *person* `[file]`"), which is part of
+# the curated TEXT but not of the finding — stripped before keying, or a short
+# row would mismatch its own scraped source
+_PROV_TAIL = re.compile(r"\s+—\s+\*[^*]+\*\s*(`\[[^\]]+\]`)?\s*$|\s+`\[[^\]]+\]`\s*$")
+
+
+def _reg_key(text):
+    return _key(_PROV_TAIL.sub("", text))
+
+
+# --------------------------------------------------------------------------------------
+# The register (the SOURCE since 15 AUG 2026; the scrape is intake)
+# --------------------------------------------------------------------------------------
+REGISTER = "Route_Register.md"
+REG_ROW = re.compile(r"^-\s*(⊘|⏭)\s*(.+)$")
+
+REGISTER_HEADER = """---
+type: reference
+tags: [genealogy, routes, register]
+---
+
+# Route Register — routes tried, bounded, and open, per lineage
+
+**The curated home for ROUTE KNOWLEDGE** (CLAUDE.method.md → "Knowledge routing"):
+facts about a SOURCE or REPOSITORY that hold whichever person you research —
+coverage boundaries, spent searches, index-only collections, named next actions.
+One `##` section per lineage root. Rows:
+
+    - ⊘ <closed or bounded route — say the boundary FACT, not just the alarm>
+    - ⏭ <open named route — the next action>
+
+`scripts/route_digest.py --apply` renders each lineage's section into the
+blockquoted digest at the head of its Family_Tree files; `--candidates` lists
+route statements still sitting in entry prose that this register does not carry
+(move them here as entries get touched). Keep rows ONE line each; put the
+provenance (person, file or log) at the end after an em-dash.
+"""
+
+
+def load_register(vault):
+    """{lineage-root: [(kind, text)]} from Route_Register.md; {} when absent."""
+    path = os.path.join(vault, REGISTER)
+    if not os.path.exists(path):
+        return {}
+    out, cur = {}, None
+    for line in open(path, encoding="utf-8"):
+        if line.startswith("## "):
+            cur = line[3:].strip()
+            out.setdefault(cur, [])
+        elif cur is not None:
+            m = REG_ROW.match(line.strip())
+            if m:
+                kind = "closure" if m.group(1) == "⊘" else "route"
+                out[cur].append((kind, m.group(2).strip()))
+    return out
+
+
+def register_items(rows):
+    """Register rows in the internal item shape (person/file provenance is part
+    of the curated text, so those slots stay empty)."""
+    return [(kind, text, "", "") for kind, text in rows]
+
+
+def seed_register(vault, groups):
+    """One-time: write Route_Register.md from the scrape. Refuses to overwrite."""
+    path = os.path.join(vault, REGISTER)
+    if os.path.exists(path):
+        print(f"  {REGISTER} already exists — curate it; --seed never overwrites.")
+        return 1
+    out = [REGISTER_HEADER]
+    n = 0
+    for root, paths in sorted(groups.items()):
+        items = dedupe(harvest(paths))
+        if not items:
+            continue
+        out.append(f"\n## {root}\n")
+        for kind, text, person, base in items:
+            mark = "⊘" if kind == "closure" else "⏭"
+            prov = f" — *{person}*" if person else ""
+            out.append(f"- {mark} {text}{prov} `[{base}]`")
+            n += 1
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+    print(f"  seeded {REGISTER}: {n} row(s) across "
+          f"{sum(1 for r in groups if dedupe(harvest(groups[r])))} lineage section(s).")
+    print("  Rows are verbatim scrape output — curate on touch (boundary FACTS, one line).")
+    return 0
 
 
 def render(root, paths, items, cap):
@@ -177,14 +292,16 @@ def render(root, paths, items, cap):
         out.append("> **⊘ CLOSED / BOUNDED — do not re-run these:**")
         for _k, text, person, base in closures:
             who = f" — *{person}*" if person else ""
-            out.append(f"> - {text}{who} `[{base}]`")
+            src = f" `[{base}]`" if base else ""
+            out.append(f"> - {text}{who}{src}")
         out.append(">")
     rest = [i for i in keep if i[0] == "route"]
     if rest:
         out.append("> **⏭ NAMED NEXT ROUTES (open):**")
         for _k, text, person, base in rest:
             who = f" — *{person}*" if person else ""
-            out.append(f"> - {text}{who} `[{base}]`")
+            src = f" `[{base}]`" if base else ""
+            out.append(f"> - {text}{who}{src}")
     dropped = len(items) - len(keep)
     if dropped > 0:
         out.append(f">\n> *({dropped} further route statement(s) in this lineage not shown "
@@ -213,6 +330,11 @@ def main(argv=None):
     ap.add_argument("--lineage")
     ap.add_argument("--cap", type=int, default=18)
     ap.add_argument("--heartbeat", action="store_true")
+    ap.add_argument("--candidates", action="store_true",
+                    help="route-shaped statements in entry prose NOT in the register "
+                         "(the burn-down worklist; requires Route_Register.md)")
+    ap.add_argument("--seed", action="store_true",
+                    help="one-time: write Route_Register.md from the scrape")
     args = ap.parse_args(argv)
 
     vault = vault_config.resolve_vault(args.vault)
@@ -220,9 +342,38 @@ def main(argv=None):
     if args.lineage:
         groups = {k: v for k, v in groups.items() if k == args.lineage}
 
+    if args.seed:
+        return seed_register(vault, groups)
+
+    register = load_register(vault)
+
+    if args.candidates:
+        if not register:
+            print(f"  no {REGISTER} — run --seed first.")
+            return 1
+        total = 0
+        for root, paths in sorted(groups.items()):
+            reg_keys = {_reg_key(t) for _k, t in register.get(root, [])}
+            fresh = [i for i in dedupe(harvest(paths)) if _key(i[1]) not in reg_keys]
+            for kind, text, person, base in fresh:
+                mark = "⊘" if kind == "closure" else "⏭"
+                print(f"  {root}: - {mark} {text[:120]}"
+                      + (f" — *{person}*" if person else "") + f" `[{base}]`")
+            total += len(fresh)
+        print(f"\n  ROUTE_CANDIDATES: {total} prose statement(s) not in {REGISTER} "
+              f"(move each to the register when its entry is touched)")
+        return 0
+
     total_items = total_lineages = 0
     for root, paths in sorted(groups.items()):
-        items = dedupe(harvest(paths))
+        # ⭐ the register section is the SOURCE when one exists; the scrape is the
+        # legacy fallback so a register-less vault keeps working unchanged
+        if root in register and register[root]:
+            items = register_items(register[root])
+            src = "register"
+        else:
+            items = dedupe(harvest(paths))
+            src = "scrape"
         if not items:
             continue
         total_items += len(items)
@@ -236,17 +387,21 @@ def main(argv=None):
         else:
             c = sum(1 for i in items if i[0] == "closure")
             print(f"  {root:52} {len(paths):2} file(s)  "
-                  f"{c:3} closure  {len(items)-c:3} open route")
+                  f"{c:3} closure  {len(items)-c:3} open route  [{src}]")
 
     if args.heartbeat:
+        n_reg = sum(len(v) for v in register.values())
         print(f"ROUTE_DIGEST: {total_items} route statements across {total_lineages} "
-              f"lineage(s)  [advisory; refresh with --apply]")
+              f"lineage(s); register rows {n_reg}"
+              + ("" if register else f" (no {REGISTER}; scrape mode)")
+              + "  [advisory; refresh with --apply]")
         return 0
     if args.apply:
-        print(f"\n  APPLIED: route digest written into {total_lineages} lineage(s).")
+        print(f"\n  APPLIED: route digest written into {total_lineages} lineage(s)"
+              + (f" from {REGISTER}." if register else " from the scrape (no register)."))
     else:
         print(f"\n  {total_items} statements, {total_lineages} lineages. "
-              f"(report only; --apply writes the blocks)")
+              f"(report only; --apply writes the blocks; --candidates for un-registered prose)")
     return 0
 
 

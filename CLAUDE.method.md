@@ -118,7 +118,7 @@ bullet:
 | kind | test | home |
 |---|---|---|
 | person fact — including a person-scoped negative ("no [SURNAME] death in the printed town VR 1710-1720") | about ONE life | the entry: biography, `Sources`, negated apparatus |
-| route/source fact ("FreeREG Droitwich coverage is 1929-1948 only"; "England Marriages 1538-1973 has no widow field on any record") | true whichever person you research | the lineage's **route register** (`Route_Register_<Lineage>` section files; `route_digest.py` renders the per-file view) |
+| route/source fact ("FreeREG Droitwich coverage is 1929-1948 only"; "England Marriages 1538-1973 has no widow field on any record") | true whichever person you research | the **route register** — `Route_Register.md`, one `##` section per lineage; `route_digest.py --apply` renders the per-file digest view from it, `--candidates` lists prose statements not yet moved |
 | method/tooling ruling | about how the vault itself works | a rule in this file, its incident narrative in the case-law companion |
 
 A route fact written into one person's entry is findable only by accident — that is
