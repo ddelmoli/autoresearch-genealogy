@@ -75,7 +75,56 @@ for phrase in [
 print()
 print("The explicit marker is the unambiguous form and must always declare:")
 check("FRONTIER DECLARATION 03 AUG 2026", declares("FRONTIER DECLARATION 03 AUG 2026"), True)
-check("lowercase marker", declares("frontier declaration 03 aug 2026"), True)
+
+# ⛔ CASE-SENSITIVE SINCE 15 AUG 2026 (session #171, Q285). This assertion used to read
+# `True` -- tolerance was the documented intent. It is REVERSED, and the reversal is the
+# whole fix: the marker is also an ordinary English noun phrase, so a case-insensitive
+# reader cannot tell AUTHORING from DISCUSSING, and prose about a declaration silently
+# closed live EXPAND rows. Measured across every declared row before the change:
+# 235 -> 228 declared, 7 re-opened, and every one of the 7 was a REFERENCE to another
+# entry's declaration or a RETRACTION of one. Nothing real was lost -- the 5 real
+# declarations not written as a line-leading bold marker are all in capitals.
+check("lowercase marker does NOT declare (Q285)",
+      declares("frontier declaration 03 aug 2026"), False)
+check("mixed case does NOT declare",
+      declares("Frontier Declaration 03 AUG 2026"), False)
+
+print()
+print("Q285: DISCUSSING a declaration must not BE one (the 6th instance of this class):")
+# Every string below is real prose from this vault that closed a row under `re.I`.
+check("a RETRACTION of a declaration",
+      declares("I read his vitals header but never opened his family panel, then wrote "
+               "a frontier declaration as if I had."), False)
+check("a reference to ANOTHER entry's declaration",
+      declares("See the frontier declaration on her entry; CP adds her death."), False)
+check("a note that another row's declaration was RESOLVED",
+      declares("MINTED 25 JUL 2026, resolving the Margaret Deincourt frontier declaration."),
+      False)
+check("a note that another row's declaration was LIFTED",
+      declares("Minted after her own entry's frontier declaration was lifted."), False)
+check("a pointer to declarations kept in ANOTHER FILE",
+      declares("full entries and the frontier declarations are in the Deep file"), False)
+
+print()
+print("...while every REAL authoring form still declares, including the non-bold-first ones:")
+check("bare marker mid-bullet",
+      declares("Tiered moderate for that reason. **FRONTIER DECLARATION 27 JUL 2026: her "
+               "parentage is unstated by the authority**"), True)
+check("marker at END of a bullet",
+      declares("His own parentage is unknown per the sources consulted. "
+               "**FRONTIER DECLARATION: recorded stop.**"), True)
+check("marker behind a compound prefix (would break a bold-first rule)",
+      declares("- **SCHOLARLY-UPGRADED + FRONTIER DECLARATION 24 JUL 2026: his parentage "
+               "is not yet identified, per Cawley's own words.**"), True)
+
+print()
+print("MARKER_MENTION is the advisory companion, and it is the COMPLEMENT of declaring:")
+def mentions(t):
+    return bool(EF.MARKER_MENTION_RE.search(t)) and not EF.DECLARED_RE.search(t)
+check("sentence-case marker is a MENTION", mentions("see the frontier declaration above"), True)
+check("a real declaration is NOT a mention",
+      mentions("**FRONTIER DECLARATION: recorded stop.**"), False)
+check("text with no marker at all is not a mention", mentions("no parents recorded"), False)
 
 print()
 print("Plain prose must not declare (guards against over-broad matching):")

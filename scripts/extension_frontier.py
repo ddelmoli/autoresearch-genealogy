@@ -114,12 +114,49 @@ LIVING_RE = re.compile(r"life_status:\s*(living|unknown)")
 # pool permanently and silently, and nothing re-examines it. A false SILENT merely
 # nags. That asymmetry is why this check is now deliberately hard to satisfy.
 #
-# ⚠ TO DECLARE A ROW, WRITE THE MARKER. There is no longer any other way, by design.
-# ⚠ CASE-INSENSITIVE, deliberately. The reader must be tolerant of what is already
-# written -- the same rule the FS write-back grammar states in CLAUDE.method.md
-# ("match case-insensitively ... count on the words, never on the decoration").
-# A declaration must not fail because someone typed it in sentence case.
-DECLARED_RE = re.compile(r"FRONTIER DECLARATION", re.I)
+# ⚠ TO DECLARE A ROW, WRITE THE MARKER **IN CAPITALS**. There is no other way, by design.
+#
+# ⛔⛔ CASE-SENSITIVE SINCE 15 AUG 2026 (session #171, Open_Questions Q285). THIS
+# REVERSES THE PRIOR `re.I`, AND THE REASONING THAT JUSTIFIED IT.
+#
+# The old comment argued for tolerance by analogy with the FS write-back grammar
+# ("match case-insensitively ... count on the words, never on the decoration"), so
+# that "a declaration must not fail because someone typed it in sentence case." The
+# analogy does not hold, and Q285 is the sixth instance of why. The write-back tokens
+# (QUEUED / DONE / DROPPED) are jargon; nobody writes them by accident. **This marker
+# is also an ordinary English noun phrase.** "I wrote a frontier declaration as if I
+# had", "resolving the Margaret Deincourt frontier declaration", "see the frontier
+# declaration on her entry" -- all real sentences from this vault, none of them an act
+# of declaring, every one of them silently closing a live EXPAND row under `re.I`.
+#
+# ⭐ CASE IS THE ONLY SIGNAL THAT SEPARATES AUTHORING FROM DISCUSSING, and it was
+# measured across every declared row before this changed (Q285 required exactly that):
+#
+#     DECLARED, case-insensitive (old) : 235
+#     DECLARED, case-sensitive   (new) : 228
+#     rows re-opened into EXPAND       :   7
+#
+# All 7 were read one by one. Every one is a REFERENCE to some other entry's
+# declaration, or a retraction of one -- including `P-MT0TCC`, whose bullet exists to
+# say a declaration was written in error and which the old rule therefore re-closed.
+# ⭐ And nothing real was lost: the 5 declarations NOT written as a line-leading bold
+# marker (`**SCHOLARLY-UPGRADED + FRONTIER DECLARATION ...**`, `**FRONTIER
+# DECLARATION: recorded stop.**`) are all in capitals and all survive. That is why the
+# discriminator is CASE and not "bolded at the start of a bullet", which was the
+# obvious tightening and would have wrongly un-declared those 5.
+#
+# ⚠ The failure mode is now the CHEAP one, by construction. A declaration typed in
+# sentence case does not declare, so the row stays SILENT and someone re-reads it. A
+# false DECLARED removes a real row from the EXPAND pool permanently and silently, and
+# nothing re-examines it. Given that asymmetry, failing toward "look again" is correct.
+# (pinned: scripts/test_frontier_declaration.py)
+DECLARED_RE = re.compile(r"FRONTIER DECLARATION")
+
+# Advisory companion (Q285 option 2): the marker written in a form that does NOT
+# declare. Not a defect on its own -- discussing a declaration is legitimate and was
+# the thing the old rule made impossible -- but a sentence-case marker on a row whose
+# author MEANT to declare is now a silent no-op, and this is what makes that visible.
+MARKER_MENTION_RE = re.compile(r"frontier declaration", re.I)
 
 
 # A declaration is only worth the SILENT row it closes if it says WHY on some
@@ -221,6 +258,13 @@ def rows_with_bodies(vault):
             "declared": bool(DECLARED_RE.search(body)),
             # scoped to the declaring bullet, not the whole body -- see BACKED_RE
             "backed": any(BACKED_RE.search(l) for l in declaring_lines(body)),
+            # Q285 advisory: the marker appears, but NOT in the declaring form. Either
+            # the entry is discussing some other row's declaration (fine, and the
+            # common case) or someone meant to declare and typed sentence case, which
+            # is now a silent no-op. Only the second is a defect -- so this is a
+            # candidate list to READ, never a count to drive to zero.
+            "marker_mention": bool(MARKER_MENTION_RE.search(body))
+                              and not DECLARED_RE.search(body),
         })
     return out
 
@@ -237,6 +281,10 @@ def main(argv=None):
     ap.add_argument("--all", action="store_true", help="include DECLARED rows")
     ap.add_argument("--csv", action="store_true")
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--marker-mentions", action="store_true",
+                    help="list entries where the closure marker appears in a NON-declaring "
+                         "form (Q285). Advisory: discussing another row's declaration is "
+                         "legitimate; the defect is a sentence-case marker meant to declare.")
     ap.add_argument("--heartbeat", action="store_true",
                     help="one-line SILENT/DECLARED status for the SessionStart audit suite")
     a = ap.parse_args(argv)
@@ -251,6 +299,14 @@ def main(argv=None):
     silent = [r for r in rows if not r["declared"]]
     declared = [r for r in rows if r["declared"]]
 
+    if a.marker_mentions:
+        hits = [r for r in rows if r.get("marker_mention")]
+        print(f"MARKER_MENTION: {len(hits)} entr(ies) mention the closure marker in a "
+              f"non-declaring form  [advisory — READ them, do not drive to 0]")
+        for r in sorted(hits, key=lambda r: (r["gen"] is None, r["gen"] or 0)):
+            print(f"  Gen {str(r['gen']):>3}  {r['id']}  {r['name'][:44]:<44} [{r['file']}]")
+        return 0
+
     if a.heartbeat:
         # STANDING GOAL: drive SILENT to 0 — every parentless person either gains
         # parents or gains a written reason. Reported every session so the goal is
@@ -260,7 +316,14 @@ def main(argv=None):
         tot = n_s + n_d
         pct = (100 * n_d // tot) if tot else 100
         unbacked = sum(1 for r in declared if not r["backed"])
+        mentions = sum(1 for r in rows if r.get("marker_mention"))
         line = (f"FRONTIER: SILENT {n_s}, DECLARED {n_d} ({pct}% closed; target SILENT 0)")
+        if mentions:
+            # Advisory, NOT a target. Most are legitimate discussion of another row's
+            # declaration; the one to catch is a sentence-case marker whose author
+            # meant it to declare, which is now a silent no-op. READ the rows:
+            #   python3 scripts/extension_frontier.py --marker-mentions
+            line += f", {mentions} MARKER_MENTION [advisory; read, do not zero]"
         if unbacked:
             line += f", {unbacked} DECLARED cite no source/route [review]"
         print(line)
