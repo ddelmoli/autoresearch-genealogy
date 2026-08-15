@@ -156,6 +156,25 @@ _matches_terminal = QB.matches_terminal
 _PROVENANCE_RE = QB.PROVENANCE_RE
 _block_key = QB.block_key
 
+# `## N.`-numbered ITEM files (deferred_decisions.md): same em-dash status
+# convention, one heading level up. Selected per target via `item_heading: "## "`.
+_H2_ITEM = re.compile(r"^##\s+\d+[a-z]?\.")
+
+
+def _split_h2_items(lines):
+    """Boundary iterator for `## N.` item files. An item runs to the next `## `
+    or `# ` heading of any kind; every `### ` line — including the
+    `### (original) …` preserved wordings and even `### N.` shapes — is CONTENT
+    that travels with its item (the same one-level-down hazard 8ace440 fixed
+    for questions)."""
+    idxs = [i for i, ln in enumerate(lines)
+            if ln.startswith("## ") or ln.startswith("# ")]
+    for k, i in enumerate(idxs):
+        if not _H2_ITEM.match(lines[i]):
+            continue
+        end = idxs[k + 1] if k + 1 < len(idxs) else len(lines)
+        yield i, end
+
 
 def _snapshot_bodies(vault):
     """The pre-archive body for each block key, taken from THE SNAPSHOT OF THE RUN THAT
@@ -272,7 +291,8 @@ def _trailer_split(block_lines):
 # --migrate-tombstones.
 # --------------------------------------------------------------------------------------
 INDEX_HEADING = "## Resolved & Closed — Index"
-_INDEX_ROW_RE = re.compile(r"^- \*\*Q(?P<q>[^*]+)\*\*.*?#(?P<anchor>[^\]]+)\]\]")
+# row label prefix is "Q" for questions, "D" for deferred-decision items
+_INDEX_ROW_RE = re.compile(r"^- \*\*[QD](?P<q>[^*]+)\*\*.*?#(?P<anchor>[^\]]+)\]\]")
 # terminal-status keywords — canonical list lives in question_block.STATUS_KWS
 _STATUS_KWS = QB.STATUS_KWS
 
@@ -290,11 +310,11 @@ def _qsort_key(qlabel: str):
     return (0, int(m.group())) if m else (1, qlabel)
 
 
-def _index_line(qlabel, short_title, status_kw, anchor, link) -> str:
-    return f"- **Q{qlabel}** {short_title} ({status_kw}) {EMDASH} [[{link}#{anchor}]]\n"
+def _index_line(qlabel, short_title, status_kw, anchor, link, prefix="Q") -> str:
+    return f"- **{prefix}{qlabel}** {short_title} ({status_kw}) {EMDASH} [[{link}#{anchor}]]\n"
 
 
-def upsert_index(text: str, rows, link: str) -> str:
+def upsert_index(text: str, rows, link: str, prefix="Q") -> str:
     """Insert/merge compact-index rows into the '## Resolved & Closed — Index' section
     (create at EOF if absent). rows = [(qlabel, short_title, status_kw, anchor)]. Keyed on
     the unique ANCHOR (not the Q number — the vault has a genuine duplicate Q96), so a
@@ -328,7 +348,7 @@ def upsert_index(text: str, rows, link: str) -> str:
     else:
         body_before, body_after = lines, []
     for q, st, kw, anc in rows:
-        existing[anc] = (q, _index_line(q, st, kw, anc, link))
+        existing[anc] = (q, _index_line(q, st, kw, anc, link, prefix))
     ordered = [v[1] for v in sorted(existing.values(), key=lambda v: _qsort_key(v[0]))]
     section = [heading_line, "\n"] + ordered + ["\n"]
     pre = "".join(body_before)
@@ -394,13 +414,15 @@ def migrate_tombstones(text: str, link: str):
 def plan_drop_by_status(text: str, cfg: dict, ts: str):
     allow = cfg.get("archive_statuses", [])
     link = cfg.get("tombstone_link", "Open_Questions_Resolved")
+    item_heading = cfg.get("item_heading", "### ")
+    splitter = _split_h2_items if item_heading == "## " else _split_h3_blocks
     lines = text.splitlines(keepends=True)
 
     moved = []          # list of (qlabel, status_kw, anchor, full_block_text)
     index_rows = []     # list of (qlabel, short_title, status_kw, anchor)
     edits = []
 
-    for start, end in _split_h3_blocks(lines):
+    for start, end in splitter(lines):
         heading = lines[start].rstrip("\n")
         if _is_tombstone(heading):
             continue
@@ -410,8 +432,8 @@ def plan_drop_by_status(text: str, cfg: dict, ts: str):
         # archive this block
         block_lines = lines[start:end]
         hline, body, trailer = _trailer_split(block_lines)
-        # title = heading text between "### " and the last em-dash
-        title = hline.rstrip("\n")[len("### "):]
+        # title = heading text between the item heading and the last em-dash
+        title = hline.rstrip("\n")[len(item_heading):]
         if EMDASH in title:
             title = title.rsplit(EMDASH, 1)[0]
         # drop any residual strikethrough markers so a hand-struck heading
@@ -434,7 +456,8 @@ def plan_drop_by_status(text: str, cfg: dict, ts: str):
     new_lines = list(lines)
     for start, end, repl in sorted(edits, key=lambda e: -e[0]):
         new_lines[start:end] = [repl]
-    new_live = upsert_index("".join(new_lines), index_rows, link)
+    new_live = upsert_index("".join(new_lines), index_rows, link,
+                            prefix=cfg.get("index_prefix", "Q"))
     return new_live, moved, [f"Q{q} ({kw})" for q, kw, a, _ in moved]
 
 
@@ -625,7 +648,10 @@ def main():
         # the per-file breakdown still follows for a human reading the full output.
         per_file = []
         for t in cfg.get("targets", []):
-            if t.get("policy") != "drop-by-status":
+            # H2-item targets (deferred_decisions) are out of scope for the
+            # QUESTION heading lint — their `### …` lines are item content
+            if t.get("policy") != "drop-by-status" \
+                    or t.get("item_heading", "### ") != "### ":
                 continue
             path = VAULT / t["file"]
             if not path.exists():
