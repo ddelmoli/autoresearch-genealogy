@@ -347,6 +347,11 @@ parts = [
     # RESOLVED heading, which invites the work to be redone.
     "oq-archive -> " + run("archive_sections.py", r"ARCHIVE_LINT",
                            args=["--lint-archive"], max_lines=1),
+    # The MIGRATE-OR-NEGATE backlog (Q211, operator decision 14 AUG 2026). ADVISORY and
+    # deliberately NOT 0: ~91% of it is ordinary evidence nobody migrated, and bulk-
+    # negating would destroy real citations. The BLOCKING half is the pre-commit
+    # `--changed-only` gate, so this number should only ever go DOWN.
+    "bare-arks -> " + run("bare_ark_audit.py", r"BARE_ARK backlog", max_lines=1),
     # Question-register size + triage counts (gen_question_index.py --heartbeat).
     # ** THE COUNTS ARE COMPUTED, NEVER COPIED. ** The register outgrew a single
     # context (~800 KB / ~206k tokens at 146 live questions) while the vault's own
