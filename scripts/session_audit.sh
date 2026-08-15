@@ -347,6 +347,14 @@ parts = [
     # RESOLVED heading, which invites the work to be redone.
     "oq-archive -> " + run("archive_sections.py", r"ARCHIVE_LINT",
                            args=["--lint-archive"], max_lines=1),
+    # Register STRUCTURE (question_audit.py). The HARD half (baseline 0): a live block
+    # below the Resolved index (the index-rebuild blast radius that destroyed a live
+    # question), a duplicated live Q number, and a ZOMBIE -- a live block whose number
+    # is already terminal in the Resolved store (Q197 sat that way for 9 days, being
+    # indexed and offered as work). The pre-commit hook blocks new ones; this line
+    # watches the whole register. Advisory tail: BIG_BLOCK (>=15 KB of accreted
+    # narration -- triage current state up, chronology to logs/) and RESOLVERLESS.
+    "oq-structure -> " + run("question_audit.py", r"QUESTION_AUDIT:", max_lines=1),
     # The MIGRATE-OR-NEGATE backlog (Q211, operator decision 14 AUG 2026). ADVISORY and
     # deliberately NOT 0: ~91% of it is ordinary evidence nobody migrated, and bulk-
     # negating would destroy real citations. The BLOCKING half is the pre-commit

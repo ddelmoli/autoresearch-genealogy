@@ -135,146 +135,26 @@ def plan_keep_n_recent(text: str, cfg: dict):
 
 # --------------------------------------------------------------------------------------
 # policy: drop-by-status  (Open_Questions)
+#
+# ⚠ THE BLOCK GRAMMAR LIVES IN `question_block.py` — ONE HOME (15 AUG 2026). The
+# boundary rule, the last-em-dash status rule, the tombstone test and the provenance
+# trap all moved there so the archiver, the index, the writer (`question_store`) and
+# the gate (`question_audit`) cannot disagree. The three 12-14 AUG truncation/orphaning
+# incidents (fa6793a, 8477d95, 8ace440) were each ONE parser being fixed while another
+# kept the bug; their full case histories are on those commits and in git history of
+# this file. The aliases below keep this module's public names stable for importers.
 # --------------------------------------------------------------------------------------
-EMDASH = "—"
+import question_block as QB
 
-# The ONE trailing `## ` section that is not question content -- the compact index this
-# tool itself writes (INDEX_HEADING below, plus its "(full text in [[…]])" suffix). A
-# question block stops here and at no other `## `; see _split_h3_blocks. Kept identical
-# to gen_question_index.RESOLVED_INDEX so the reader and the writer cut in one place.
-RESOLVED_INDEX = re.compile(r"^##\s+Resolved\s*&\s*Closed", re.I)
-
-# A `### ` line that really STARTS A QUESTION -- a boundary. Everything else at `### `
-# is question CONTENT that must travel WITH its question.
-#
-# THE DISCRIMINATOR IS "A NUMBER IMMEDIATELY FOLLOWED BY A PERIOD", and both halves
-# were learned from real headings in this vault:
-#   BOUNDARY  `### 12.`                     an ordinary question
-#             `### ~~31. …~~ — Merged…`     an already-migrated tombstone
-#             `### 143a. Maddalena…`        ⚠ a SPLIT-OUT SUB-QUESTION, still LIVE
-#             `### (original) 238. …`       a preserved earlier wording of a question
-#   CONTENT   `### 28 JUL 2026 (session…)`  ⚠ a dated write-up -- STARTS WITH DIGITS
-#             `### 48 (original cluster…)`  a number with no period
-#             `### 📏 STEP 1 DONE …`        an emoji-led write-up
-#
-# ⛔ "STARTS WITH A DIGIT" IS THE OBVIOUS RULE AND IT IS WRONG: `### 28 JUL 2026` is
-# Q111's own resolution write-up, and treating it as a boundary is exactly the
-# orphaning bug this function exists to prevent.
-# ⛔ AND OMITTING THE NUMBERED SUB-QUESTIONS IS EQUALLY WRONG IN THE OTHER DIRECTION:
-# a dry run that treated `### 143a.` as content proposed MOVING A LIVE SUB-QUESTION
-# INTO THE RESOLVED STORE when its parent was archived -- burying it, which is worse
-# than orphaning it. Both failure directions were observed on 14 AUG 2026.
-_QUESTION_HEAD = re.compile(r"^###\s+(?:~~)?(?:\(original\)\s*)?\d+[a-z]?\.")
-
-
-def _split_h3_blocks(lines):
-    """Yield (start, end) for each '### ' block (ends at the next '### ', at the
-    Resolved-index section, or EOF).
-
-    ⛔ IT MUST NOT STOP AT *ANY* `## `, WHICH IS WHAT THIS FUNCTION DID UNTIL 14 AUG
-    2026. Questions legitimately CONTAIN `## ` sub-headings -- the `## ✅ RESOLVED …`
-    / `## ⏩ WORKED …` / `## 📏 RE-MEASURED …` blocks this vault writes into a question
-    body -- so every archivable block truncated to its heading plus one blank line.
-    THE ARCHIVER IS A WRITER, so the consequence was worse than a mis-measurement: it
-    would have moved a 2-line stub to the Resolved file, DELETED the heading, and left
-    the entire resolution write-up orphaned in the live file under no question at all.
-    Measured on the two DUE targets: 10 of 10 archivable blocks truncated, 1,065 lines
-    would have been orphaned (Q236 alone: moves 2, should move 202).
-
-    This is the SAME defect `gen_question_index.py` was fixed for on 12 AUG 2026
-    (fa6793a) -- the READER was corrected and the WRITER was not. When a structure has
-    two parsers, fix both or neither; see the memory note "two readers, one entry".
-
-    ⛔⛔ AND THE SAME HAZARD EXISTS ONE LEVEL DOWN, FOUND LATER THE SAME DAY: a block
-    must end only at a heading that IS A QUESTION (`### N.`), never at any `### `.
-    This vault writes `### 📏 STEP 1 DONE …`, `### ✅ WHAT IS NOW ESTABLISHED …` and
-    `### ⛔⛔ RETRACTED …` sub-sections INSIDE a question body, and it deliberately
-    writes non-question variants -- `### 143a.`, `### (original) 238.` -- as content.
-    Measured 14 AUG 2026: 14 questions carry 44 such sub-headings, and archiving them
-    under the old rule would have orphaned **1,208 lines** (Q110 alone 469).
-
-    ⭐ It was found the expensive way. Reading Q211 through this splitter showed only
-    the text above its `### 📏 STEP 1 DONE` sub-heading, so a step that session #159
-    had already completed looked un-worked, and it was redone. **A truncating parser
-    does not merely lose data; it hides prior work and causes it to be repeated** --
-    the failure this vault names as its dominant one.
-
-    The boundary is now the SAME test the index uses (`^### \\d+\\.`, plus an
-    already-migrated tombstone heading), so the reader and the writer agree by
-    construction rather than by coincidence.
-    """
-    idxs = [i for i, ln in enumerate(lines)
-            if _QUESTION_HEAD.match(ln) or RESOLVED_INDEX.match(ln)]
-    for k, i in enumerate(idxs):
-        if not lines[i].startswith("### "):
-            continue
-        end = idxs[k + 1] if k + 1 < len(idxs) else len(lines)
-        yield i, end
-
-
-def _heading_status(heading: str):
-    """Return the status phrase (text after the LAST em-dash) of a '### ' heading,
-    or '' if the heading carries no em-dash status segment."""
-    if EMDASH not in heading:
-        return ""
-    return heading.rsplit(EMDASH, 1)[1].strip()
-
-
-def _is_tombstone(heading: str) -> bool:
-    """A block is already-archived ONLY if its heading carries the migration pointer
-    ('full entry in [[...]]'). A bare '### ~~strikethrough~~' is NOT sufficient:
-    sessions routinely hand-strike a freshly-resolved heading (### ~~Title~~ — RESOLVED)
-    expecting it to archive — but if a plain strikethrough counted as a tombstone the
-    engine would skip it forever and the full body would never migrate (the 30 JUN 2026
-    backlog: 12 fat resolved entries stuck inline, file 24k tokens over threshold while
-    the engine reported 'nothing to archive'). Keying on the pointer instead lets a
-    hand-struck-but-unlinked resolved heading migrate normally; plan_drop_by_status
-    strips any residual '~~' from the title so the rewritten tombstone is well-formed."""
-    return "full entry in [[" in heading
-
-
-def _matches_terminal(status: str, allow) -> bool:
-    """Whole-token, anchored at the start of the status phrase. 'PARTIALLY_RESOLVED'
-    will not match (it starts with PARTIALLY); 'RESOLVED NEGATIVE' matches RESOLVED."""
-    for kw in allow:
-        if re.match(re.escape(kw) + r"\b", status):
-            return True
-    return False
-
-
-# --------------------------------------------------------------------------------------
-# HEADING LINT (added 11 AUG 2026) — the trap that hides a RESOLVED question from this tool.
-#
-# `_heading_status` reads the status as the text after the LAST em-dash. A heading whose
-# last segment is a PROVENANCE clause ("— raised 05 AUG 2026 (session #144)") therefore
-# reports that clause as its status, and no terminal keyword ever matches — so when the
-# question is later resolved by inserting "— RESOLVED <date>" BEFORE the stable trailing
-# provenance, the block silently stops being archivable.
-#
-# ** THIS IS NOT HYPOTHETICAL. ** Q188 and Q219 were both fully resolved on 09 AUG 2026 and
-# both sat live because of exactly this, and a scan on 11 AUG found the shape in 28 of 144
-# numbered questions (19%) — 2 blocked, 26 latent. It is the same class of failure as the
-# 30 JUN 2026 backlog in `_is_tombstone`: the engine reporting "nothing to archive" while
-# resolved blocks pile up inline and the file runs over threshold.
-#
-# ⛔ THE FIX BELONGS AT THE AUTHORING END, NOT HERE. Widening the detector to accept a
-# terminal status in ANY em-dash segment was considered and REJECTED on measurement: it
-# would archive Q134 and Q254, both LIVE, because their headings cite ANOTHER question's
-# status ("split out of the RESOLVED Q195"). The last-em-dash rule is correct; what is
-# needed is a warning when a heading is authored into the trap. Hence: advisory only.
-_PROVENANCE_RE = re.compile(r"^\s*(raised|opened|split out of)\b", re.I)
-
-
-def _block_key(heading: str) -> str:
-    """Identity for matching a stored block to its pre-archive snapshot: the TITLE, not
-    the Q number. ⚠ The number is NOT unique -- this vault has genuine duplicate Q96 and
-    Q205 (upsert_index keys on the anchor for the same reason). Keying on the number
-    matched each duplicate against the OTHER one's snapshot and reported both as
-    truncated: 2 false positives of 11."""
-    t = heading.rstrip("\n")[4:]
-    if EMDASH in t:
-        t = t.rsplit(EMDASH, 1)[0]
-    return re.sub(r"[^a-z0-9]+", "", t.lower().replace("~~", ""))[:60]
+EMDASH = QB.EMDASH
+RESOLVED_INDEX = QB.RESOLVED_INDEX
+_QUESTION_HEAD = QB.QUESTION_HEAD
+_split_h3_blocks = QB.split_blocks
+_heading_status = QB.heading_status
+_is_tombstone = QB.is_tombstone
+_matches_terminal = QB.matches_terminal
+_PROVENANCE_RE = QB.PROVENANCE_RE
+_block_key = QB.block_key
 
 
 def _snapshot_bodies(vault):
@@ -393,9 +273,8 @@ def _trailer_split(block_lines):
 # --------------------------------------------------------------------------------------
 INDEX_HEADING = "## Resolved & Closed — Index"
 _INDEX_ROW_RE = re.compile(r"^- \*\*Q(?P<q>[^*]+)\*\*.*?#(?P<anchor>[^\]]+)\]\]")
-# terminal-status keywords, longest/most-specific first so the search below is unambiguous
-_STATUS_KWS = ["FULLY RESOLVED", "RESOLVED NEGATIVE", "RULED OUT", "CONFIRMED FAIL",
-               "RESOLVED", "CLOSED", "CONFIRMED", "DIGITALLY CLOSED"]
+# terminal-status keywords — canonical list lives in question_block.STATUS_KWS
+_STATUS_KWS = QB.STATUS_KWS
 
 
 def _clean_short_title(title: str) -> str:

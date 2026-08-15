@@ -194,6 +194,52 @@ def main(argv=None):
     report.append(("archive", label, out))
     failed |= (not ok)
 
+    # 6b. QUESTION register close (added 15 AUG 2026). Until now the close ran the
+    # handoff archive target and NONE of the question targets, so terminal-status
+    # blocks sat live for days (8 at the time this step was added) and the index /
+    # router counts went stale between manual runs. Three sub-steps:
+    #   q-archive   every drop-by-status target (dry-run; --apply-archive applies)
+    #   q-index     regenerate Open_Questions_Index.md (a generated view is only a
+    #               view if something regenerates it)
+    #   q-router    refresh the shard-table counts in Open_Questions.md
+    #   q-structure question_audit summary (the hook blocks NEW findings; this line
+    #               is the whole-register reading for the close block)
+    import json
+    q_targets = []
+    try:
+        with open(os.path.join(vault, ".maintenance.json"), encoding="utf-8") as fh:
+            q_targets = [t["name"] for t in json.load(fh).get("targets", [])
+                         if t.get("policy") == "drop-by-status"]
+    except (OSError, ValueError):
+        pass
+    if q_targets:
+        outs, ok_all = [], True
+        for name in q_targets:
+            t_args = ["--target", name] + (["--apply"] if a.apply_archive else [])
+            ok, out = run("archive_sections.py", *t_args, vault=vault)
+            ok_all &= ok
+            if "nothing to do" not in out:
+                outs.append(f"{name}: {out[:80]}")
+        label = ("PASS" if a.apply_archive else "INFO") if ok_all else "FAIL"
+        report.append(("q-archive", label,
+                       "; ".join(outs) if outs else
+                       f"nothing to archive across {len(q_targets)} question target(s)"))
+        failed |= not ok_all
+    else:
+        report.append(("q-archive", "SKIP", "no drop-by-status targets configured"))
+
+    ok, out = run("gen_question_index.py", "--write",
+                  os.path.join(vault, "Open_Questions_Index.md"), vault=vault)
+    report.append(("q-index", "PASS" if ok else "FAIL", out))
+    failed |= not ok
+
+    ok, out = run("gen_question_index.py", "--router", vault=vault)
+    report.append(("q-router", "PASS" if ok else "FAIL", out))
+    failed |= not ok
+
+    ok, out = run("question_audit.py", vault=vault)
+    report.append(("q-structure", "PASS" if ok and "hard 0" in out else "CHECK", out))
+
     # 7. The NEXT session's draw — LAST, after the outcome above is recorded.
     # session_plan.py --record clears `pending`, so a plan run before this command
     # loses the draw it just registered (see the module docstring).

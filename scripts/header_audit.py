@@ -262,14 +262,15 @@ def _git(vault, *args):
 _HUNK = re.compile(r"^@@ -\S+ \+(\d+)(?:,(\d+))? @@")
 
 
-def staged_header_lines(vault):
+def staged_header_lines(vault, pathspecs=("Family_Tree*.md",)):
     """{repo-relative path: {1-based line numbers ADDED or MODIFIED in the index}}.
 
-    Restricted to Family_Tree*.md. Returns {} when the vault is not a git repo or
-    nothing relevant is staged.
+    Restricted to `pathspecs` (default Family_Tree*.md — this tool's own scope;
+    bare_ark_audit passes a wider set). Returns {} when the vault is not a git
+    repo or nothing relevant is staged.
     """
     r = _git(vault, "diff", "--cached", "--unified=0", "--diff-filter=ACMR",
-             "--", "Family_Tree*.md")
+             "--", *pathspecs)
     if r.returncode != 0:
         return {}
     out, path = {}, None

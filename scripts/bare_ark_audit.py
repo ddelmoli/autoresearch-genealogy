@@ -48,8 +48,24 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
 import harvest_sources as H
+import question_block as QB
 import vault_config
 from header_audit import staged_header_lines, materialise_staged   # ONE home for the diff plumbing
+
+# The files this gate scans: the tree files (where a bare token inflates the
+# census) AND the LIVE question shards (where retraction prose most often quotes
+# an ARK bare — Q211's own origin — and from which write-ups get folded back
+# into entries). ⚠ `_Resolved`/`_Archive` are DELIBERATELY excluded: the archiver
+# MOVES old blocks there verbatim, and a changed-only gate that scanned the
+# destination would block the archiver's own commit on backlog it is relocating.
+PATHSPECS = ("Family_Tree*.md", "Open_Questions*.md")
+
+
+def scan_files(vault):
+    """Every file the whole-vault (advisory) mode reads."""
+    files = sorted(vault.glob("Family_Tree*.md"))
+    files += [pathlib.Path(p) for p in QB.question_files(vault)]
+    return files
 
 
 def bare_tokens(line: str):
@@ -66,7 +82,8 @@ def bare_tokens(line: str):
 
 
 def audit(vault, only=None):
-    """-> [(relpath, lineno, [tokens], line)] over Family_Tree*.md.
+    """-> [(relpath, lineno, [tokens], line)] over Family_Tree*.md + live
+    Open_Questions shards (see PATHSPECS).
 
     `only` = {relpath: {linenos}} restricts the scan (the --changed-only mode).
     ⚠ Blockquoted lines are skipped: `route_digest.py` mirrors entry prose into a
@@ -74,7 +91,7 @@ def audit(vault, only=None):
     every finding twice and make a fix look ineffective.
     """
     out = []
-    for path in sorted(vault.glob("Family_Tree*.md")):
+    for path in scan_files(vault):
         rel = path.name
         if only is not None and rel not in only:
             continue
@@ -104,10 +121,13 @@ def main():
     vault = pathlib.Path(vault_config.resolve_vault(a.vault))
 
     if a.changed_only:
-        changed = staged_header_lines(vault)
+        changed = staged_header_lines(vault, pathspecs=PATHSPECS)
+        # keep the archive-side exclusion in the staged view too
+        changed = {p: v for p, v in changed.items()
+                   if not ("_Resolved" in p or "_Archive" in p or "_Index" in p)}
         if not changed:
             print("=== bare ARKs in prose (spec/migrate-or-negate) — changed lines (staged) ===")
-            print("  no Family_Tree line added or modified in this commit.\n")
+            print("  no Family_Tree / Open_Questions line added or modified in this commit.\n")
             print("=== SUMMARY ===\n  changed lines evaluated:  0\n  BARE_ARK (changed):       0  [BLOCKING]")
             return 0
         with tempfile.TemporaryDirectory() as tmp:

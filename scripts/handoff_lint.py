@@ -102,6 +102,11 @@ METRICS = [
     "ENTRY_MISATTRIBUTION", "SOURCE_MISATTRIBUTION",
     "DUP_NAME_STRONG", "DUP_NAME_POSSIBLE",
     "CHRONOLOGY",
+    # question-register metrics (15 AUG 2026) — the banner computes all of these
+    # (oq-structure / oq-headings / oq-archive / questions lines); a hand-copied
+    # live-question count was the THIRD disagreeing number the register carried
+    "QUESTION_AUDIT", "ZOMBIE_Q", "DUP_LIVE_Q", "Q_BELOW_INDEX",
+    "HEADING_LINT", "ARCHIVE_LINT", "BARE_ARK",
 ]
 _METRIC_ALT = "|".join(sorted((re.escape(m) for m in METRICS), key=len, reverse=True))
 

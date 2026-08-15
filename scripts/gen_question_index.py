@@ -46,9 +46,13 @@ import argparse
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 import vault_config
-from archive_sections import _heading_status, _matches_terminal, _is_tombstone, _STATUS_KWS
+import question_block as QB
 
-Q_HEAD = re.compile(r"^### (\d+)\.\s*(.*)$")
+# ⚠ THE BLOCK GRAMMAR IS IMPORTED FROM question_block, NEVER REIMPLEMENTED — the
+# boundary rule as well as the status rule (until 15 AUG 2026 only the STATUS was
+# shared; the two boundary parsers diverged on `### 143a.` / `### (original) N.`,
+# which made a live sub-question invisible and misattributed its content to the
+# preceding question's row).
 # provenance clause at the end of a title: "(raised 12 AUG 2026, session #162, ...)"
 RAISED = re.compile(r"\s*\((?:raised|opened|migrated)\b[^)]*\)", re.I)
 
@@ -66,12 +70,14 @@ TAGS = [
         r"|OpenAthens", re.I)),
 ]
 
-# The one trailing `## ` section that is NOT question content -- the archiver's
-# compact index. A question block must stop here; see the note in parse().
-RESOLVED_INDEX = re.compile(r"^##\s+Resolved\s*&\s*Closed", re.I)
-
 # The actionable line: the first item under a "what would settle it" heading.
 SETTLE_HDR = re.compile(r"(what would settle it|what is left|what would name|⏭\s*\*\*)", re.I)
+
+# A row of the ROUTER's shard table in Open_Questions.md:
+#   | [[Open_Questions_Method]] | 17 | CROSS-CUTTING questions: … |
+# The count is GENERATED (this tool); the `covers` prose is HAND-WRITTEN and must
+# survive an update — only the number moves.
+ROUTER_ROW = re.compile(r"^(\|\s*\[\[(Open_Questions_\w+)\]\]\s*\|\s*)(\d+)(\s*\|.*)$")
 
 
 def _clean(s, n):
@@ -81,68 +87,42 @@ def _clean(s, n):
 
 
 def question_files(vault):
-    """Every LIVE question file: Open_Questions*.md minus the resolved/archive stores
-    AND minus this tool's OWN OUTPUT.
-
-    ⚠ `_Index` IS EXCLUDED BECAUSE THE GENERATED INDEX MATCHES ITS OWN GLOB. It carries
-    no `### N.` headings so it adds no questions, but it inflated the file COUNT the
-    banner prints (reporting "2 files" over one register) and would be re-read on every
-    run. A generated view that reads itself is a drift source, not a view."""
-    out = []
-    for p in sorted(glob.glob(os.path.join(vault, "Open_Questions*.md"))):
-        base = os.path.basename(p)
-        if "_Resolved" in base or "_Archive" in base or "_Index" in base:
-            continue
-        out.append(p)
-    return out
+    """Every LIVE question file — delegated to question_block (one home). `_Index`
+    is excluded because the generated index matches its own glob (a generated view
+    that reads itself is a drift source, not a view)."""
+    return QB.question_files(vault)
 
 
 def parse(vault):
-    """[(num, title, file, kb, tags, resolver)] for every LIVE question, all files."""
+    """[(num, title, file, kb, tags, resolver)] for every LIVE question, all files.
+    Boundary + liveness come from question_block: suffixed sub-questions
+    (`### 143a.`) get their OWN row; `(original)` preserved wordings, tombstones
+    and hand-struck headings are skipped."""
     rows = []
     for path in question_files(vault):
         lines = open(path, encoding="utf-8").read().split("\n")
-        idx = [i for i, l in enumerate(lines) if Q_HEAD.match(l)]
-        idx.append(len(lines))
-        for a, b0 in zip(idx, idx[1:]):
-            # ⚠ A QUESTION BLOCK ALSO ENDS AT THE RESOLVED-INDEX SECTION. Without this
-            # the LAST question in the file runs to EOF and swallows the trailing
-            # `## Resolved & Closed — Index`: after an archive run Q266 was reported at
-            # 29.0 KB, falsely flagged BIG, and the total jumped 772 -> 808 KB while the
-            # archive had made the file SMALLER. Same reasoning as the `generation`
-            # heading fallback (deferred 10): a span must stop at the section boundary.
-            #
-            # ⛔ IT MUST NOT STOP AT *ANY* `## `, WHICH WAS THE FIRST ATTEMPT AND WAS
-            # WRONG. Questions legitimately CONTAIN `## ` sub-headings -- the
-            # `## ✅ RESOLVED …` / `## ⏩ WORKED …` / `## OPEN (a): …` blocks this vault
-            # writes into a question body. Stopping at those truncated real content:
-            # Q266 fell to 1.9 KB and the UNREAD-SRC tag count dropped 37 -> 32 because
-            # resolver text living in a question's own sub-section stopped being read.
-            b = b0
-            for k in range(a + 1, b0):
-                if RESOLVED_INDEX.match(lines[k]):
-                    b = k
-                    break
+        for a, b in QB.split_blocks(lines):
             head = lines[a]
-            m = Q_HEAD.match(head)
-            status = _heading_status(head)
-            if _is_tombstone(head) or (status and _matches_terminal(status, _STATUS_KWS)):
-                continue                      # resolved: the archiver owns it
+            h = QB.parse_heading(head)
+            if h is None or not QB.is_live(h):
+                continue                      # resolved/preserved: the archiver owns it
             body = "\n".join(lines[a:b])
-            title = RAISED.sub("", m.group(2))
+            title = RAISED.sub("", h["rest"])
             tags = [name for name, rx in TAGS if rx.search(body)]
             kb = len(body) / 1024
             if kb >= 15:
                 tags.append("BIG")
             rows.append({
-                "num": int(m.group(1)),
+                "num": h["num"],
+                "suffix": h["suffix"],
+                "qlabel": h["qlabel"],
                 "title": _clean(title, 96),
                 "file": os.path.basename(path),
                 "kb": kb,
                 "tags": tags,
                 "resolver": _resolver(body),
             })
-    rows.sort(key=lambda r: r["num"])
+    rows.sort(key=lambda r: (r["num"], r["suffix"]))
     return rows
 
 
@@ -198,10 +178,43 @@ def render(rows, vault):
         w.append("| Q | KB | tags | title | first named resolver |")
         w.append("|---|---|---|---|---|")
         for r in files[fn]:
-            w.append(f"| **Q{r['num']}** | {r['kb']:.1f} | "
+            w.append(f"| **Q{r['qlabel']}** | {r['kb']:.1f} | "
                      f"{' '.join('`'+t+'`' for t in r['tags']) or '—'} | "
                      f"{r['title']} | {r['resolver'] or '—'} |")
     return "\n".join(w) + "\n"
+
+
+def update_router(vault, rows, write=False):
+    """Refresh the live-Q counts in the ROUTER's shard table (Open_Questions.md),
+    keeping the hand-written `covers` prose intact. Returns (n_updated, warnings).
+    The hand-kept counts were a THIRD live-question number (disk 145 / index 134 /
+    router 141 on 15 AUG 2026), agreeing with neither computed one — a number
+    nobody regenerates is a number that lies."""
+    path = os.path.join(vault, "Open_Questions.md")
+    if not os.path.exists(path):
+        return 0, ["router Open_Questions.md not found"]
+    counts = {}
+    for r in rows:
+        counts[r["file"][:-3]] = counts.get(r["file"][:-3], 0) + 1
+    lines = open(path, encoding="utf-8").read().split("\n")
+    seen, n_upd, warnings = set(), 0, []
+    for i, ln in enumerate(lines):
+        m = ROUTER_ROW.match(ln)
+        if not m:
+            continue
+        shard = m.group(2)
+        seen.add(shard)
+        want = counts.get(shard, 0)
+        if int(m.group(3)) != want:
+            lines[i] = f"{m.group(1)}{want}{m.group(4)}"
+            n_upd += 1
+    for shard in sorted(set(counts) - seen):
+        warnings.append(f"shard {shard} ({counts[shard]} live) has NO router-table row "
+                        f"— add one (the covers prose is yours to write)")
+    if n_upd and write:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines))
+    return n_upd, warnings
 
 
 def main():
@@ -210,9 +223,19 @@ def main():
     ap.add_argument("--write", metavar="PATH")
     ap.add_argument("--tag", help="only questions carrying this tag")
     ap.add_argument("--heartbeat", action="store_true")
+    ap.add_argument("--router", action="store_true",
+                    help="refresh the shard-table counts in Open_Questions.md "
+                         "(the covers prose is preserved)")
     args = ap.parse_args()
     vault = vault_config.resolve_vault(args.vault)
     rows = parse(vault)
+    if args.router:
+        n, warnings = update_router(vault, rows, write=True)
+        print(f"ROUTER: {n} count(s) updated in Open_Questions.md"
+              + (f"; {len(warnings)} warning(s)" if warnings else ""))
+        for w in warnings:
+            print(f"  ⚠ {w}")
+        return 0
     if args.tag:
         rows = [r for r in rows if args.tag in r["tags"]]
     if args.heartbeat:
