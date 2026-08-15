@@ -875,15 +875,25 @@ def open_question_ids(vault):
     demoted row is still offered, just later. Resolved questions live in
     `Open_Questions_Resolved.md` and are NOT read here: a resolved question should stop
     suppressing its row.
+
+    ⚠⚠ SHARD-AWARE since 15 AUG 2026, and the gap was MEASURED before fixing. The 12 AUG
+    lineage shard split left this function reading the ROUTER alone -- which holds zero
+    question blocks -- so the suppression set silently collapsed **238 -> 3** and the
+    function's own motivating case came back: Q126's two fully-characterised PARENT-GEN
+    mismatch rows (the pair the 03 AUG measurement was about) ranked 1-2 in the IMPROVE
+    lane on 15 AUG. The file set now comes from `question_block.question_files` (the ONE
+    home), so the next register re-layout cannot silently detach this reader again.
     """
-    import os
     import re
-    p = os.path.join(vault, "Open_Questions.md")
-    try:
-        with open(p, encoding="utf-8") as fh:
-            return set(re.findall(r"P-[0-9A-Za-z]{5,7}", fh.read()))
-    except OSError:
-        return set()          # no register -> nothing is tracked; never a hard failure
+    import question_block as QB
+    out = set()
+    for p in QB.question_files(vault):
+        try:
+            with open(p, encoding="utf-8") as fh:
+                out |= set(re.findall(r"P-[0-9A-Za-z]{5,7}", fh.read()))
+        except OSError:
+            continue          # no register -> nothing is tracked; never a hard failure
+    return out
 
 
 def _edge_audit_qualifies(meta, cat, tier):
