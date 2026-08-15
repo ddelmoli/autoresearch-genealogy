@@ -1,201 +1,199 @@
 # Open Question Resolution
 
-> ⛔⛔ **THIS PROMPT'S COMMANDS ARE BROKEN AND FAIL SILENTLY — DO NOT RUN THEM AS WRITTEN
-> (reviewed 15 AUG 2026, rewrite not yet done).** Its `Verify` and its step-1 triage both
-> parse `Open_Questions.md`, which has held **zero question blocks** since the 12 AUG
-> lineage shard split. Run verbatim today they report `OPEN 0 (of 0 numbered)` and return
-> **0 candidates against a register of 135 live questions** — i.e. a sitting dispatched on
-> this prompt triages nothing and then measures itself successful, which is the exact
-> defect its own 03 AUG rewrite note ridicules in its predecessor.
-> **Until it is rewritten:** triage from `Open_Questions_Index.md` or
-> `gen_question_index.py --tag free`; locate a block with `question_store.py --where N`;
-> write EVERY outcome through `question_store.py` (`--new` / `--append` / `--resolve`),
-> never by hand-editing a heading; verify with `gen_question_index.py --heartbeat` plus
-> `question_audit.py`. **The POLICY below is sound and still governs** — the ranking
-> heuristic, the outcome taxonomy, the Strong Signal bar, calibrated nulls, and
-> "a failed resolver, rewritten, IS the deliverable". Only the embedded parsers are dead.
+Work the vault's register of unresolved research question by question: pick the ones a
+named resolver can actually settle, execute that resolver, and record the outcome so the
+register drains instead of accumulating.
 
-Work the vault's register of unresolved research, `Open_Questions.md`, question by
-question: pick the ones a named resolver can actually settle, execute that resolver,
-and record the outcome so the register shrinks instead of accumulating.
+**Rewritten 15 AUG 2026 (session #169). The previous version's COMMANDS WERE DEAD and
+failed silently** — its `Verify` and its triage both parsed `Open_Questions.md`, which has
+held zero question blocks since the 12 AUG lineage shard split, so run verbatim they
+reported `OPEN 0 (of 0 numbered)` and returned **0 candidates against 135 live questions**.
+A sitting dispatched on it would have triaged nothing and then measured itself successful.
 
-**Rewritten 03 AUG 2026 (session #135).** The previous version had never been revised
-for content since the initial release, and by then it disagreed with the vault in ways
-that would have caused damage rather than staleness: it told you to hand move resolved
-text into `Open_Questions_Resolved.md` under a level 2 heading (the file uses level 3,
-and `archive_sections.py` owns that move, with a versioned snapshot and a compact index
-row), to update "person files" (a `narrative` vault has none), and to parse the whole
-register (388 KB on the reference vault, which the standing context rules forbid). Its
-`Verify` counted **lines containing the word OPEN**, reporting 29 against 41 genuinely
-open questions. Every one of those is corrected below.
+⭐ **THE LESSON IS WHY THIS VERSION EMBEDS NO PARSER.** The 03 AUG rewrite had already
+fixed that generation's parser bugs; the register was re-laid-out underneath it and the
+prompt could not follow, because it carried its own copy of the grammar. **Every command
+below calls a tool that reads the ONE home (`scripts/question_block.py`).** When the
+register moves again, the tools move and this prompt keeps working. Do not reintroduce an
+`awk` range, a `grep -vi` status filter, or an inline heading regex — each has already
+shipped a silent wrong answer here.
 
-> **Sharded trees (optional):** if `Family_Tree.md` has grown and been split into shard
-> files (listed in its File Index), treat every reference to `Family_Tree.md` as covering
-> those shards: route each person to the shard whose Region matches their line. Locate a
-> person with `python3 scripts/tree_locator.py`. Un-sharded vaults can ignore this note.
+> **Sharded trees:** route each person to the shard whose Region matches their line;
+> locate one with `python3 scripts/tree_locator.py`.
 
-**This is a THEMED prompt, not a lane.** The session loop's three lanes (EXPAND,
-IMPROVE, ROTATE) are drawn by `session_plan.py`; this prompt is not one of them and
-produces **no lane observation**. Run it when the operator asks for it, or when the
-register has grown faster than the lanes are draining it. Two real interactions:
+**This is a THEMED prompt, not a lane.** The loop's lanes (EXPAND, IMPROVE, ROTATE) are
+drawn by `session_plan.py`; this produces **no lane observation**. Two relationships:
 
-- **Raising a question is a DISPOSITION in the IMPROVE lane, counted once.** If a
-  question you resolve here was somebody's IMPROVE unit, that is fine; but resolving it
-  does not re-credit the row.
+- **Prompt 22 covers the INCIDENTAL case** — when a drawn lane runs dry or is blocked
+  mid-sitting, its drain rule sends the session to the register for the rest of the
+  iteration. **This prompt is the DELIBERATE case:** a whole sitting pointed at the
+  register because it has grown faster than the lanes drain it.
 - **Resolving a question UN-SUPPRESSES its people in the IMPROVE defect pool**
-  (deferred 44): `session_plan.open_question_ids()` reads the LIVE register only, so a
-  gate finding demoted while its question was open returns to normal rank once the
-  question is archived out. That is intended.
+  (deferred 44). `session_plan.open_question_ids()` reads every LIVE shard, so a gate
+  finding demoted while its question was open returns to normal rank once the question is
+  archived out. That is intended. ⚠ That function read only the router between 12 and 15
+  AUG and the suppression set had collapsed 238 -> 3; if IMPROVE starts offering rows that
+  are fully characterised in a live question, suspect it again.
 
 ## Inputs To Replace
 
 - **[VAULT_PATH]** — absolute path to the vault working tree. Every command runs with
   `AUTORESEARCH_VAULT="[VAULT_PATH]"`; there is no default vault.
 - **[ITERATIONS]** (optional, default 5) — how many questions to attempt.
-- **[FILTER]** (optional) — narrow the triage, e.g. a surname, a region, `direct line`.
+- **[FILTER]** (optional) — narrow the triage to a tag (`free`, `UNREAD-SRC`, `op-gated`,
+  `BIG`) or grep the index for a surname, region or shard.
 
 ## Autoresearch Configuration
 
-**Goal**: Reduce the count of live numbered questions in `Open_Questions.md` by
-executing the resolver each one already names, and leave every question you touch either
-closed with its evidence, advanced with what changed, or annotated with why its stated
-resolver failed.
+**Goal**: Drain the register. Leave every question you touch in one of five recorded
+states — closed with its evidence, advanced with what changed, its failed resolver
+rewritten, its missing resolver supplied, or its bloated block triaged — and leave the
+register's structure at baseline.
 
-**Metric**: Live numbered questions, i.e. `### N.` headings with no terminal status.
-`PARTIALLY_RESOLVED` counts as LIVE: it is a progress marker, not a terminal state.
+**Metric**: Live questions, computed by the shared model (`gen_question_index.py`), never
+by a hand-rolled count. `PARTIALLY_RESOLVED` is LIVE: it is a progress marker, not a
+terminal state.
 
 **Direction**: Minimize.
 
 **Verify**:
 
 ```bash
-python3 -c "
-import re,os
-p=os.path.join(os.environ['AUTORESEARCH_VAULT'],'Open_Questions.md')
-h=[l for l in open(p) if re.match(r'^### \d+\.',l)]
-T=r'(RESOLVED|RULED OUT|CLOSED|CONFIRMED FAIL|FULLY RESOLVED|SUPERSEDED|MOVED|WITHDRAWN)'
-term=[l for l in h if re.search(r'—\s*'+T+r'\b',l)]
-part=[l for l in h if 'PARTIALLY' in l.upper()]
-print(f'OPEN {len(h)-len(term)} (of {len(h)} numbered; {len(part)} PARTIALLY_RESOLVED, still live; {len(term)} terminal, awaiting archive)')
-"
+AUTORESEARCH_VAULT="[VAULT_PATH]" python3 scripts/gen_question_index.py --heartbeat
+AUTORESEARCH_VAULT="[VAULT_PATH]" python3 scripts/question_audit.py
 ```
+
+The first line is the metric (live count, KB, and the triage tag totals). The second is the
+register's structural health: HARD findings are baseline 0, and the advisory tail
+(`RESOLVERLESS`, `BIG_BLOCK`) is itself a worklist this prompt can work.
 
 **Guard**:
 
-- ⛔ **NEVER FULL READ `Open_Questions.md`.** It is a few hundred KB and the standing
-  context rules forbid it. Triage from HEADINGS, then extract only the blocks you chose
-  (`awk '/^### 114\./,/^### 115\./'`). A prompt that begins by reading the whole register
-  has spent the sitting before it starts.
-- ⛔ **DO NOT hand move resolved text into `Open_Questions_Resolved.md`.** Change the
-  heading in place and leave the write-up in the body; `archive_sections.py --target
-  open-questions` performs the migration (versioned snapshot, full text to the Resolved
-  file, ONE row into `## Resolved & Closed — Index`). Hand moving bypasses the snapshot
-  and the index row, and gets the heading level wrong.
-- ⛔ **DO NOT hand wrap a resolved heading in `~~strikethrough~~`.** The compact index
-  model replaced the old struck-heading tombstones on 01 JUL 2026.
-- **Terminal status must be the FIRST word after the LAST em dash.** Put any qualifier
-  in parentheses AFTER it: `— RESOLVED 03 AUG 2026 (parish register)`, never
-  `— parish register RESOLVED`. The archiver detects on that position.
-- **RESOLVED requires the Strong Signal standard**: two independent sources, or one
-  authoritative primary record. Anything less is `PARTIALLY_RESOLVED` with what was
-  found and what remains.
-- **Do not overturn a question already marked RESOLVED** unless you have contradicting
-  evidence, and then say so explicitly rather than editing the old conclusion away.
+- ⛔ **WRITE EVERY OUTCOME THROUGH `scripts/question_store.py`, NEVER the Edit tool.**
+  `--resolve` writes an archivable heading and refuses a duplicate or an already-terminal
+  block; `--append` lands a write-up INSIDE the right block; `--new` mints the next global
+  number and requires a resolver. Hand-editing a shard is how eight resolution write-ups
+  were orphaned, a live question was destroyed by an index rebuild, and a resolved question
+  sat live for nine days. The pre-commit gate (`question_audit --changed-only`) now blocks
+  the structural half of that, but it cannot un-orphan a write-up after the fact.
+- ⛔ **NEVER hand-move text into `Open_Questions_Resolved.md`, and never hand-strike a
+  heading.** `--resolve` marks it; `archive_sections.py` performs the migration with a
+  versioned snapshot and one compact-index row; `session_close.py` runs that archive step
+  every sitting, so a resolved block does not need you to chase it.
+- ⛔ **NEVER hand-number a question.** `--new` mints across all ten shards AND the Resolved
+  store. Numbers are global and never reused.
+- **Terminal status is the FIRST word after the LAST em-dash**, qualifiers in parens after
+  it. `--resolve` constructs this for you and verifies the result is archivable — which is
+  the point of using it.
+- **`RESOLVED` requires the Strong Signal standard**: two independent sources, or one
+  authoritative primary record. Anything less is an ADVANCE, recorded with what was found
+  and what remains.
+- **Do not overturn a question already marked RESOLVED** without contradicting evidence,
+  and then say so explicitly rather than editing the old conclusion away.
 - **A null is a statement about the SEARCH, not the record.** Name what was searched and
-  what that search structurally cannot contain. Calibrate it: prove the surface holds the
-  population before reporting a zero (a nonsense control that returns the same answer
-  means the METHOD is broken, not the data).
-- **Check before searching, per source.** Grep `logs/` and the question's own body for
-  what has already been tried. A resolver already run and failed is recorded, not rerun.
-- **Never web search a person whose `life_status` is `living` or `unknown`.**
-- **Outward mutations stay operator gated.** A FamilySearch attach, merge, edit or
-  create is QUEUED on the person's entry in the rule 8 grammar, never performed here.
+  what that search structurally cannot contain, and calibrate it: a nonsense control that
+  returns the same answer means the METHOD is broken, not the data. ⚠ Identical failures
+  across every probe in a batch is that signature.
+- **Check before searching, per source.** Read the question's own body and grep `logs/`
+  for what has already been tried. ⚠ **A resolver already run is recorded, not rerun** —
+  #168 re-read an article the vault had read in full three weeks earlier and gained
+  nothing; the question's own resolver line had said "same repository already used".
+- **ROUTE FACTS GO TO THE ROUTE REGISTER, NOT INTO THE QUESTION.** A coverage boundary or
+  a spent search is true whichever person you research: put it in `Route_Register.md`
+  (CLAUDE.method.md, "Knowledge routing") and let the question keep only what is specific
+  to it. A route fact buried in a question body is findable only by accident.
+- **Never web-search a person whose `life_status` is `living` or `unknown`.**
+- **Outward mutations stay operator-gated.** A FamilySearch attach, merge, edit or create
+  is QUEUED on the person's entry in the rule 8 grammar, never performed here.
 - **If the stated resolver turns out to be wrong or exhausted, that IS the deliverable.**
-  Rewrite the question's resolver with what you learned; a question whose route has been
-  disproved is more useful than one nobody has touched.
-- **A question with no named resolver is a complaint, not a research task.** If you meet
-  one, give it a resolver or say plainly that none exists.
-- **Cascade in the same commit.** A resolution that changes a fact must update the
-  narrative entry, any prose that paraphrases it, and `Timeline.md` where dated. Then run
-  `prose_audit.py`; `DATE_DRIFT` is blocking.
+  Rewrite the resolver with what you learned. A question whose route has been disproved is
+  worth more than one nobody has touched.
+- **A question with no named resolver is a complaint, not a research task** — and there
+  are currently 31 of them. Supplying one is a full iteration.
+- **Cascade in the same commit.** A resolution that changes a fact updates the narrative
+  entry (biography shape: conclusion into the life, not a new dated audit bullet), any
+  prose that paraphrases it, and `Timeline.md` where dated. Then run `prose_audit.py`;
+  `DATE_DRIFT` is blocking.
 - **`Research_Log.md` is appended with `scripts/log_session.py`, never the Edit tool.**
-  It is a large append only file and an Edit forces a full read of it.
 - One logical unit per commit; the pre-commit gates pass every time; no `--no-verify`.
 
 **Iterations**: [ITERATIONS] (default 5) — one iteration is ONE question attempted and
-recorded. Attempting a question and failing to move it is a legitimate iteration **only
-if the failure is written down**; an untouched question is not an iteration.
+recorded. Attempting a question and failing to move it is a legitimate iteration **only if
+the failure is written down**; an untouched question is not an iteration.
 
 **Protocol**:
 
-1. **TRIAGE FROM HEADINGS, NOT FROM THE FILE.** Build the candidate list without reading
-   the register:
+1. **TRIAGE FROM THE GENERATED INDEX.** It is ~26 KB and already carries the tags, the
+   sizes and each question's first named resolver:
 
    ```bash
-   python3 -c "
-   import re,os,sys
-   p=os.path.join(os.environ['AUTORESEARCH_VAULT'],'Open_Questions.md')
-   T=r'(RESOLVED|RULED OUT|CLOSED|CONFIRMED FAIL|FULLY RESOLVED|SUPERSEDED|MOVED|WITHDRAWN)'
-   needle=(sys.argv[1].lower() if len(sys.argv)>1 else '')
-   for n,l in enumerate(open(p),1):
-       m=re.match(r'^### (\d+)\.\s*(.*)\$',l.rstrip())
-       if not m or re.search(r'—\s*'+T+r'\b',l): continue
-       if needle and needle not in l.lower(): continue
-       tag='PART' if 'PARTIALLY' in l.upper() else 'OPEN'
-       print(f'{n:>6}  {tag}  Q{m.group(1):<4} {m.group(2)[:104]}')
-   " '[FILTER]'
+   AUTORESEARCH_VAULT="[VAULT_PATH]" python3 scripts/gen_question_index.py --tag [FILTER]
    ```
 
-   ⚠ **It must test the terminal status by POSITION, not by `grep -vi` on the words.**
-   A keyword filter drops any heading that merely *mentions* one: measured on the
-   reference vault it returned **33** live questions against a true **54**, silently
-   hiding 21 of them, including several whose titles contain the word "RESOLVED" in a
-   non-terminal position. That is the same defect this rewrite exists to fix, and it was
-   caught only by checking the count against an independently computed one.
+   Omit `--tag` for the whole register; read `Open_Questions_Index.md` directly if it is
+   fresher for you. ⚠ **If the index looks stale, regenerate it** (`--write
+   [VAULT_PATH]/Open_Questions_Index.md`) rather than working from a snapshot.
 
-   Rank what comes back by **solvability first, then stakes**:
-   a. a **named resolver that is free and reachable now** (a printed vital record on
-      archive.org, an FS collection, a free index the vault already has an account for);
-   b. a resolver that needs a subscription the operator holds;
-   c. **direct line** ahead of collateral at equal solvability, because a direct line
-      answer moves a whole branch;
-   d. everything whose resolver is an archive visit or a paid request goes LAST, and is
-      usually better left than half attempted.
+   **Rank by cost-to-answer, then stakes:**
+   a. **`UNREAD-SRC` — the cheapest class in the register.** The source is already located
+      or attached and simply has not been read. No search at all; open it.
+   b. **`free`** — a named resolver executable now. ⚠ The tag is keyword-derived and does
+      NOT know about the operator's subscriptions: **"free" means no NEW cost**, so an
+      Ancestry, JewishGen, Gesher Galicia, Internet Archive, OpenAthens, FCPL or GRONI
+      route is also cheap even when untagged. Judge the resolver, not the tag.
+   c. **`RESOLVERLESS` questions** (from `question_audit`) — give one a resolver, or say
+      plainly that none exists. Cheap, and it converts a dead entry into workable stock.
+   d. **direct line before collateral** at equal solvability: it moves a whole branch.
+   e. **`BIG` blocks** — over 15 KB is accreted session narration, not a question. Triage
+      it: current state plus resolver at the top, chronology to `logs/`, route facts to the
+      route register. ⚠ Diff the census by row if moved prose carries locators.
+   f. **`op-gated`, archive visits and paid requests go LAST**, and are usually better left
+      than half-attempted.
 
-2. **READ ONLY THE CHOSEN BLOCKS**, one at a time:
-   `awk '/^### 114\./,/^### 115\./' "$AUTORESEARCH_VAULT/Open_Questions.md"`.
-   Extract the actual question, the stated resolver, the evidence already gathered, and
-   any recorded negative. Then grep `logs/` for the names involved.
+2. **READ THE CHOSEN BLOCK, whole and by itself:**
 
-3. **EXECUTE THE RESOLVER AS WRITTEN.** If it names a specific book, register or
-   collection, go to that, not to a general search. Read the source itself rather than a
-   summary of it, and calibrate every zero before believing it.
+   ```bash
+   AUTORESEARCH_VAULT="[VAULT_PATH]" python3 scripts/question_store.py --show 114
+   ```
 
-4. **RECORD THE OUTCOME, in the register and on the entries.**
-   - **Resolved**: heading becomes
-     `### N. Title — RESOLVED <DD MMM YYYY> (<short note>)`; the resolution write up
-     stays in the body with its citations. Do not move it; do not strike it.
-   - **Advanced**: keep the heading live, add a dated block saying what changed, what is
-     now known, and what specifically remains. Mark `PARTIALLY_RESOLVED` in the heading
-     only when there is a real partial answer, not merely effort spent.
-   - **Resolver failed**: keep the question live and **rewrite its resolver**. Record the
-     calibrated negative: what was searched, what it structurally cannot contain, and the
-     next route. This is a successful iteration.
-   - **Cascade**: update the narrative entry (route by shard), any prose that paraphrases
-     it, `Timeline.md` if dated, and cross link the entry to the question both ways.
-   - **New questions**: a resolution that opens a new problem gets its own numbered
-     question with a resolver. Batch several thin findings of one shape into ONE question
-     with a table rather than proliferating near empty entries.
+   Then grep `logs/` for the names involved. ⛔ Do NOT `awk` a line range: questions are
+   not contiguous and do not share a file. `--where` locates a number in any state
+   (including a copy already archived).
 
-5. **ARCHIVE, ONLY IF THE FILE IS OVER THRESHOLD.** Resolved blocks accumulate harmlessly
-   until then:
-   `python3 scripts/archive_sections.py --target open-questions` (dry run), review, then
-   `--apply`. ⚠ Numbers are never reused: a question archived out keeps its number, so
-   the next new question continues past the highest number in EITHER file.
+3. **EXECUTE THE RESOLVER AS WRITTEN.** If it names a book, register or collection, go to
+   that, not to a general search. Read the source itself rather than a summary of it, and
+   calibrate every zero before believing it.
+
+4. **RECORD THE OUTCOME.** One of five, all through the writer:
+
+   | outcome | command |
+   |---|---|
+   | **Resolved** (Strong Signal met) | `--resolve N --status RESOLVED --note "<short>" --apply` |
+   | **Advanced** | `--append N --sub-heading "⏩ WORKED <date> (session #N)" --body-file F --apply` |
+   | **Resolver failed / rewritten** | `--append` with the calibrated negative AND the next route |
+   | **Resolver supplied** | `--append` a `⏭ WHAT WOULD SETTLE IT` block to a RESOLVERLESS question |
+   | **Block triaged** | `--append` the current-state summary; move chronology to `logs/`, route facts to `Route_Register.md` |
+
+   Terminal keywords: `RESOLVED`, `FULLY RESOLVED`, `RESOLVED NEGATIVE`, `RULED OUT`,
+   `CONFIRMED FAIL`, `CLOSED`, `CONFIRMED`, `DIGITALLY CLOSED`.
+   **Cascade** to the entry, its prose and `Timeline.md`; cross-link entry and question
+   both ways. **A resolution that opens a new problem** gets `--new` with a resolver —
+   ⚠ but first check the index for an existing question of the same SHAPE and `--append`
+   to it instead. Proliferating near-duplicates is how the register became unreadable.
+
+5. **DO NOT CHASE THE ARCHIVE.** `session_close.py` runs every question archive target,
+   regenerates the index and refreshes the router counts at close. Only if you need a
+   shard smaller mid-sitting, run ONE named target (`--target` takes a single name, not a
+   glob; `--list` shows them all):
+
+   ```bash
+   AUTORESEARCH_VAULT="[VAULT_PATH]" python3 scripts/archive_sections.py --target open-questions-method
+   ```
+
+   Review the dry-run, then re-run with `--apply`.
 
 6. **LOG AND REPORT.** Write the narrative to `logs/<today>-<slug>.md`: per question, the
-   resolver executed, what was found, every negative, and every retraction. Append one row
-   to the session index with
-   `python3 scripts/log_session.py --log "logs/<today>-<slug>" --summary "..."`.
-   Report resolved / advanced / resolver rewritten / new questions raised, and re-run the
-   **Verify** command so the movement is measured rather than asserted.
+   resolver executed, what was found, every negative, every retraction. Append the index
+   row with `log_session.py`. Then **re-run both Verify commands** and report the movement
+   measured, not asserted: resolved / advanced / resolvers rewritten / resolvers supplied /
+   blocks triaged / new questions raised, and the live count before and after.

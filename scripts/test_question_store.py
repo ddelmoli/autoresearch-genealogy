@@ -161,6 +161,23 @@ def main():
         except SystemExit:
             pass
 
+        # --show prints the WHOLE block, cut by the shared boundary, and prefers
+        # the LIVE copy. It exists so no consumer re-implements an awk range: Q11
+        # carries `## ✅ …` and `### 📏 …` sub-headings that an awk to the next
+        # `### ` would truncate away.
+        import io
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            QS.op_show(d, Namespace(show="11"))
+        shown = buf.getvalue()
+        check("show carries H2 sub-heading", "RESOLVED 03 AUG 2026" in shown)
+        check("show carries emoji sub-heading", "STEP 1 DONE" in shown)
+        check("show carries dated content heading", "28 JUL 2026" in shown)
+        check("show stops at the next question", "12a." not in shown)
+        check("show prefers the LIVE copy over (original)",
+              "preserved text" not in shown)
+
         # --resolve refuses a DUPLICATED live number instead of writing through it
         with open(shard, "a", encoding="utf-8") as fh:
             fh.write("\n### 10. A duplicate of Q10 (raised twice by mistake)\n\ndup body\n")
