@@ -75,6 +75,58 @@ The generic style rules (no hyphens-as-punctuation, no emojis, source-first, log
   - **Gated by `archive_sections.py --lint-headings`** (advisory, baseline 0, in the SessionStart banner as `oq-headings`). A non-zero is a FUTURE silent backlog, not a present error.
   - ⛔ **Do NOT "fix" this by widening the detector to accept a terminal status in any em-dash segment.** That was measured and rejected: it archives **live** questions whose headings cite ANOTHER question's status (`split out of the RESOLVED Q195` — Q134 and Q254 both). The last-em-dash rule is correct; the authoring end is what needed the guard.
 
+## The entry is a biography (entry shape; operator goals, 15 AUG 2026)
+
+**The target for a person entry is a Wikipedia-style biographical article**, and the
+order of an entry is the order of that article:
+
+1. **Header + `- meta:`** — the title and infobox (machine layer; grammar below).
+2. **`- **Prior work**`** — the generated pointer, directly under the meta.
+3. **The biography** — a lede (who this person was, in a sentence), then the life in
+   chronological order: origin, parents, occupation, residences, migration,
+   marriage(s), children, death, burial. Prose or fact bullets; this is the axis
+   `bio_completeness.py` measures and the part a human reads. Narrative prose is
+   WANTED here — "thirty ARKs and no prose is not finished work."
+4. **`- **Sources**`** — the references (Spec 03 grammar, rule 8).
+5. **Compact apparatus, LAST** — `Named-in` / `Sibling records` / negated locators /
+   `FS write-back` bullets.
+
+**Process narration is the TALK PAGE and stays off the article.** How a fact was
+found, corrected, retracted or re-counted is session history: it belongs in the
+session log (which `Prior work` points at) — or, when it is reusable, in the route
+register. Measured 15 AUG 2026, and it is why this rule exists: the worst audited
+entry held 9,952 bytes of which **46 stated the person's life (0.5%)**, and across
+the six busiest files the first plain life fact sat a median of 5-19 bullets below
+the audit stack, under headline-bolded process history.
+
+- **Emphasis marks live hazards, not history.** `⛔`/`⚠` on an entry is for a
+  same-name trap, a refuted identity, a privacy constraint — something the next
+  reader must not miss. A corrected count or a superseded estimate is not shouted;
+  it moves to the log with the rest of the chronology.
+- **Burn down on touch, never in bulk.** When a lane draws a person, part of the
+  disposition is triaging the entry toward this shape: conclusions into the
+  biography, source/route facts into the route register, chronology into the log.
+  ⚠ Diff the census by row whenever moved prose carries locators — negation scope
+  is the ENTRY, and moving a quoted token can silently negate or credit it.
+
+## Knowledge routing: three kinds, three homes (operator goals, 15 AUG 2026)
+
+Everything a session learns is one of three kinds. **File it where the next session
+will already be standing** — the same placement principle as the `Prior work`
+bullet:
+
+| kind | test | home |
+|---|---|---|
+| person fact — including a person-scoped negative ("no [SURNAME] death in the printed town VR 1710-1720") | about ONE life | the entry: biography, `Sources`, negated apparatus |
+| route/source fact ("FreeREG Droitwich coverage is 1929-1948 only"; "England Marriages 1538-1973 has no widow field on any record") | true whichever person you research | the lineage's **route register** (`Route_Register_<Lineage>` section files; `route_digest.py` renders the per-file view) |
+| method/tooling ruling | about how the vault itself works | a rule in this file, its incident narrative in the case-law companion |
+
+A route fact written into one person's entry is findable only by accident — that is
+the misfiling the old digest scraped around, and it is how one archive's coverage
+boundary was re-derived in three separate sittings. The routing decides where the
+KNOWLEDGE lives; `Open_Questions` still decides what is OWED (an unresolved item of
+any kind gets its register entry, per the standing rule).
+
 ## Person entry meta block (the machine-readable person record; v3 YAML-flow grammar adopted 24 JUN 2026)
 
 **This section describes the `narrative` person model** (`person_model: narrative` in `.autoresearch.json`) — many people per lineage file, each a `- meta:` entry. The framework also supports the default **`file`** model (one `type: person` Markdown file per person, YAML frontmatter); the two encode the SAME `PersonRecord` fields and are inter-convertible (`scripts/convert_person_model.py`, runbook [workflows/switch-person-model.md](workflows/switch-person-model.md)). All record-consuming tooling reads/writes through the model-agnostic seam `scripts/person_store.py` (`iter_people`/`write_person`, dispatched by `vault_config.get_person_model`); the meta-block grammar below is how the narrative backend spells each field. See spec `optional-person-model`. The file-model spelling of the same fields is the person-file frontmatter (the optional `id`/`generation`/`parents`/`spouse`/`flags` keys added upstream), per the field-map at the end of this section.

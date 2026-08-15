@@ -77,12 +77,20 @@ a `pids` rule in the vault's `.autoresearch.json` `structural_gap`, which moves 
 actionable SOURCE_GAP count. **Prose alone is not a disposition.** If you cannot close it in the
 data, it stays on the worklist and does not count.
 
-⭐ **RAISING AN OPEN QUESTION *IS* A DISPOSITION** (operator, 02 AUG 2026). A person you researched,
-whose problem you characterised, and for whom you filed a numbered `Open_Questions` entry naming a
-resolver **has been addressed** — the next session inherits a specified action instead of a blank
-row, and that is the thing the lane target is counting. **Correction work counts on the same
-footing**: proving a vault value wrong, retracting a bad declaration, or showing a route hint is
-misleading all advance the record even though they cite no new locator.
+⭐ **RAISING AN OPEN QUESTION IS A DISPOSITION ONLY FOR A ROW THIS SITTING CANNOT ADVANCE**
+(operator, 02 AUG 2026; scope sharpened 15 AUG 2026 with the operator's clarification of intent).
+The 02 AUG ruling exists to keep sessions WORKING — prior sessions constantly stopped, thinking
+they had "done enough", and the register is the mechanism that parks a blocker and keeps the
+sitting moving. It was never meant to make filing a cheap way to score, and by 15 AUG the register
+showed what that reading produces: ~140 live questions, nearly all raised within the month, the
+audit lanes minting defect questions faster than research absorbed them. So the rule now has an
+edge: **a filed question counts as the disposition ONLY when the row is genuinely BLOCKED this
+sitting** — the resolver is op-gated, in-person, paywalled, or depends on work that cannot happen
+now. **If the question you just filed names a FREE resolver, the filing is not the end of the
+row: working that resolver is the same sitting's natural next step, and the disposition is
+whatever the work then earns** (`--sourced` / `--corroborated` / `--verified`, or the blocked
+filing if the free route dead-ends). **Correction work still counts on the same footing** —
+proving a vault value wrong, retracting a bad declaration — that was never the churn.
 
 ⚠ **AND IT SITS IN TENSION WITH THE RULE DIRECTLY ABOVE — read both.** A question does NOT shrink
 `SOURCE_GAP`; the row stays in the candidate pool. So the two rules are reconciled by SCOPE, not by
@@ -92,10 +100,22 @@ one overriding the other:
 - **Say which kind each disposition was** when recording: `--sourced` / `--corroborated` for cited
   records, and name the question numbers in the `--note` for question-dispositions. A draw that was
   ALL questions and no records is legitimate and must be visible as such.
+- **A finding of an already-registered SHAPE joins the existing batch question, never a new
+  number.** Check `Open_Questions_Index.md` before minting; `question_store.py --append N` puts
+  the row under the right heading mechanically. Proliferating near-duplicate questions is how the
+  register became unreadable.
 - **It is not a substitute for closing what can be closed.** If the person can be sourced, source
-  them; if the negative can land in `structural_gap`, land it. A question is the right disposition
-  for a problem that genuinely needs work you cannot do now — not a cheaper way to score a row you
-  could have finished.
+  them; if the negative can land in `structural_gap`, land it.
+
+⭐⭐ **WHEN THE LANE RUNS DRY, DRAIN THE REGISTER — do not stop, and do not conclude "done
+enough" (standing rule, operator-directed 15 AUG 2026).** The register IS the fallback work
+queue: `Open_Questions_Index.md` marks which live questions name a `free` resolver and which
+carry an unread located source (`UNREAD-SRC`). When the drawn lane's target is met or its pool
+is exhausted and iterations remain, take the next `free`-tagged question (oldest first), work
+its named resolver, and record the outcome against the lane you are in with the question number
+in the `--note`. Ten consecutive sittings ran off-lane on question work before this rule existed
+because it was the most productive thing available; the rule makes that path legitimate and
+RECORDED instead of invisible to the bandit.
 
 Copy-paste prompt (fill the placeholders):
 
@@ -152,6 +172,11 @@ movement honestly.
      negative with no route left — that is a declaration. Batch thin ones into
      one question, cross-link both ways, and name what would settle it. Full
      rule in CLAUDE.method.md.
+   - ! WRITE QUESTIONS THROUGH scripts/question_store.py, NEVER the Edit tool —
+     `--new` mints the number and requires the resolver, `--append` lands a
+     write-up inside the right block, `--resolve` writes an archivable heading.
+     Same rule and same reason as log_session.py for the Research_Log: every
+     orphaned write-up and zombie question came from hand-splicing a shard.
    - A null is a statement about the SEARCH, not about the record. Name what was
      searched and what that search structurally cannot contain: one spelling,
      one field value, one repository. Calibrating a zero proves the index holds

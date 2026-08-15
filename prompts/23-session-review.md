@@ -112,9 +112,18 @@ do NOT perform any FamilySearch write.
    - For each hit, ask the threshold question: does resolving it need work NOT
      YET DONE? If yes it is owed a question; if you settled it, or it is a closed
      negative with no route left, it is not.
+   - BEFORE MINTING, check Open_Questions_Index.md for an existing question of
+     the same SHAPE: a finding that fits a registered batch or defect-class
+     question JOINS it (`question_store.py --append N`), never takes a new
+     number. A new number needs a new shape AND a named resolver — both are
+     enforced by `question_store.py --new`, which is the ONLY way to write one
+     (the Edit tool is how write-ups got orphaned).
    - Report the count RAISED this sitting and the count you judged not owed, with
      one line each. ! A sitting that harvested many people and raised zero
-     questions is the signal to look again, not a clean result.
+     questions is the signal to look again, not a clean result. ! And the
+     mirror check, added when the register hit ~140 live: report how many live
+     questions this sitting CLOSED or ADVANCED. A sitting that only opens is
+     filling the queue it should also be draining (prompt 22's drain rule).
    - Batch thin findings of the same shape into one numbered question.
 
 5. CONFIRM THE SESSION LOG IS COMPLETE: logs/<today>-<slug>.md exists, carries

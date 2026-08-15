@@ -33,6 +33,18 @@ They encode the same fields and are inter-convertible with
 | The `- meta:` field vocabulary and every key's semantics | `CLAUDE.method.md` § "Person entry meta block" |
 | The bold-name header (date slot, place, free prose) | `workflows/header-grammar.md` § "Writing a header by hand" |
 | `born` / `died` as GEDCOM 7 `DateValue` | `workflows/structured-dates.md` § "Writing a date by hand" |
+| The entry SHAPE — biography above apparatus, process narration to logs | `CLAUDE.method.md` § "The entry is a biography" |
+
+## The shape (operator goals, 15 AUG 2026)
+
+The entry is a small biographical article: meta, Prior work, **the biography**
+(lede + the life in chronological order — this is what the entry is FOR), then
+`Sources`, then the compact machine apparatus (Named-in, negated locators,
+write-back queue) LAST. **Process narration — how a fact was found, corrected or
+re-counted — goes to the session log, never the entry**; reusable source/route
+facts go to the lineage's route register. When you edit an entry for any reason,
+move what is misfiled (burn down on touch; diff the census by row if moved prose
+carries locators).
 
 Copy-paste shapes: `vault-template/templates/person_narrative.md` and
 `vault-template/templates/person.md`.

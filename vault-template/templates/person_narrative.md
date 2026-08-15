@@ -23,13 +23,21 @@ is the copy-paste shape.
 
 ## Full entry (direct ancestor / sourced person)
 
+The shape is a small biographical article: infobox (meta), biography, references
+(Sources), then compact machine apparatus LAST. Process narration (how a fact was
+found or corrected) goes to the session log, never the entry — see
+`CLAUDE.method.md` → "The entry is a biography".
+
 ```
 **[Full Name]** (b. [DateValue], [place]; d. [DateValue], [place]; FS PID [XXXX-XXX])
 - meta: {id: P-XXXXXX, evidence_tier: strong_signal, profile_status: complete, life_status: deceased, generation: [N], fs: [XXXX-XXX], born: '3 SEP 1780', died: 'BET 1816 AND 13 FEB 1823'}
-- [sourced biographical detail — cite inline, source-first]
+- [lede: who this person was, in one sentence]
+- [the life, chronological, source-first: origin, parents, occupation, residences,
+  migration, marriage(s), children, death, burial — cite inline]
 - **Sources** (harvested YYYY-MM-DD, N records):
   - [record descriptor, e.g. 1910 US Census, Manhattan] — fs:1:1:AAAA-AAA
   - [record descriptor] — fs:3:1:BBBB-CCCC-DDDD, anc:dbid=NNNN   (one record, several hosts)
+- **Named-in** (off the ARK coverage metric; …): [compact apparatus, always after Sources]
 ```
 
 **Sources grammar:** one sub-bullet per RECORD (the primary source), each carrying
