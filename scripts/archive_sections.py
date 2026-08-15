@@ -144,6 +144,28 @@ EMDASH = "—"
 # to gen_question_index.RESOLVED_INDEX so the reader and the writer cut in one place.
 RESOLVED_INDEX = re.compile(r"^##\s+Resolved\s*&\s*Closed", re.I)
 
+# A `### ` line that really STARTS A QUESTION -- a boundary. Everything else at `### `
+# is question CONTENT that must travel WITH its question.
+#
+# THE DISCRIMINATOR IS "A NUMBER IMMEDIATELY FOLLOWED BY A PERIOD", and both halves
+# were learned from real headings in this vault:
+#   BOUNDARY  `### 12.`                     an ordinary question
+#             `### ~~31. …~~ — Merged…`     an already-migrated tombstone
+#             `### 143a. Maddalena…`        ⚠ a SPLIT-OUT SUB-QUESTION, still LIVE
+#             `### (original) 238. …`       a preserved earlier wording of a question
+#   CONTENT   `### 28 JUL 2026 (session…)`  ⚠ a dated write-up -- STARTS WITH DIGITS
+#             `### 48 (original cluster…)`  a number with no period
+#             `### 📏 STEP 1 DONE …`        an emoji-led write-up
+#
+# ⛔ "STARTS WITH A DIGIT" IS THE OBVIOUS RULE AND IT IS WRONG: `### 28 JUL 2026` is
+# Q111's own resolution write-up, and treating it as a boundary is exactly the
+# orphaning bug this function exists to prevent.
+# ⛔ AND OMITTING THE NUMBERED SUB-QUESTIONS IS EQUALLY WRONG IN THE OTHER DIRECTION:
+# a dry run that treated `### 143a.` as content proposed MOVING A LIVE SUB-QUESTION
+# INTO THE RESOLVED STORE when its parent was archived -- burying it, which is worse
+# than orphaning it. Both failure directions were observed on 14 AUG 2026.
+_QUESTION_HEAD = re.compile(r"^###\s+(?:~~)?(?:\(original\)\s*)?\d+[a-z]?\.")
+
 
 def _split_h3_blocks(lines):
     """Yield (start, end) for each '### ' block (ends at the next '### ', at the
@@ -162,9 +184,27 @@ def _split_h3_blocks(lines):
     This is the SAME defect `gen_question_index.py` was fixed for on 12 AUG 2026
     (fa6793a) -- the READER was corrected and the WRITER was not. When a structure has
     two parsers, fix both or neither; see the memory note "two readers, one entry".
+
+    ⛔⛔ AND THE SAME HAZARD EXISTS ONE LEVEL DOWN, FOUND LATER THE SAME DAY: a block
+    must end only at a heading that IS A QUESTION (`### N.`), never at any `### `.
+    This vault writes `### 📏 STEP 1 DONE …`, `### ✅ WHAT IS NOW ESTABLISHED …` and
+    `### ⛔⛔ RETRACTED …` sub-sections INSIDE a question body, and it deliberately
+    writes non-question variants -- `### 143a.`, `### (original) 238.` -- as content.
+    Measured 14 AUG 2026: 14 questions carry 44 such sub-headings, and archiving them
+    under the old rule would have orphaned **1,208 lines** (Q110 alone 469).
+
+    ⭐ It was found the expensive way. Reading Q211 through this splitter showed only
+    the text above its `### 📏 STEP 1 DONE` sub-heading, so a step that session #159
+    had already completed looked un-worked, and it was redone. **A truncating parser
+    does not merely lose data; it hides prior work and causes it to be repeated** --
+    the failure this vault names as its dominant one.
+
+    The boundary is now the SAME test the index uses (`^### \\d+\\.`, plus an
+    already-migrated tombstone heading), so the reader and the writer agree by
+    construction rather than by coincidence.
     """
     idxs = [i for i, ln in enumerate(lines)
-            if ln.startswith("### ") or RESOLVED_INDEX.match(ln)]
+            if _QUESTION_HEAD.match(ln) or RESOLVED_INDEX.match(ln)]
     for k, i in enumerate(idxs):
         if not lines[i].startswith("### "):
             continue
@@ -238,8 +278,23 @@ def _block_key(heading: str) -> str:
 
 
 def _snapshot_bodies(vault):
-    """Largest pre-archive body seen for each block key, across every question snapshot.
-    The snapshot is written BEFORE the archive edits, so it holds the full block."""
+    """The pre-archive body for each block key, taken from THE SNAPSHOT OF THE RUN THAT
+    ARCHIVED IT -- the EARLIEST snapshot in which the heading already carries a terminal
+    status. A snapshot is written BEFORE that run's edits, so it holds the full block.
+
+    ⛔ IT USED TO TAKE THE LARGEST BODY ACROSS ALL SNAPSHOTS, AND THAT IS A FALSE-POSITIVE
+    GENERATOR. A question's surroundings change over 43 snapshots (a shard split, a
+    neighbour resolved, sub-sections added), so "largest" can capture a span that was
+    never that question's content -- and the wider a correct splitter gets, the more it
+    over-captures. Measured 14 AUG 2026: after the `### ` sub-heading fix, "largest"
+    reported TRUNCATED 1 -> 10, and reading the biggest row (Q111, 85 lines "missing")
+    showed those lines are the LIVE Q110's own nine research sub-sections about a
+    different man entirely. Keying on the archiving run instead is exact, and it is what
+    the manual repair earlier that day actually used.
+
+    ⚠ A question with no terminal-status snapshot is simply absent from the map and is
+    never judged -- silence is correct here, since without a pre-archive copy there is
+    nothing to compare against."""
     out = {}
     for sp in sorted((vault / "Open_Questions_Archive").glob("*.md")):
         if "Resolved" in sp.name:
@@ -247,11 +302,12 @@ def _snapshot_bodies(vault):
         lines = sp.read_text(encoding="utf-8").splitlines(keepends=True)
         for s, e in _split_h3_blocks(lines):
             k = _block_key(lines[s])
-            if len(k) < 12:
+            if len(k) < 12 or k in out:          # EARLIEST wins; do not widen later
                 continue
-            body = {l.strip() for l in lines[s + 1:e] if l.strip() and l.strip() != "---"}
-            if k not in out or len(body) > len(out[k]):
-                out[k] = body
+            status = _heading_status(lines[s].rstrip("\n"))
+            if not status or not _matches_terminal(status, _STATUS_KWS):
+                continue
+            out[k] = {l.strip() for l in lines[s + 1:e] if l.strip() and l.strip() != "---"}
     return out
 
 

@@ -138,6 +138,7 @@ def main():
             if new_live.index("Resolved & Closed") > new_live.index("### 3."):
                 bad.append("the below-index question was reordered above the index section")
 
+    bad += check_h3_boundary()
     bad += check_lint_archive()
 
     if bad:
@@ -183,6 +184,48 @@ STORE = (
     "### 32. A DIFFERENT question sharing the number — RESOLVED 01 AUG 2026\n\nQ32b intro\n\n"
     "## ✅ RESOLVED — distinct content\n\n" + _lines("Q32b detail", 8) + "\n---\n"
 )
+
+
+# ⚠ BOTH DIRECTIONS ARE LOAD-BEARING AND EACH WAS OBSERVED FAILING ON 14 AUG 2026:
+# treating any `### ` as a boundary ORPHANED 1,208 lines of question write-ups; treating
+# every `### ` as content proposed BURYING a live sub-question (`### 143a.`) inside its
+# archived parent. The discriminator is a number followed immediately by a period.
+H3_DOC = (
+    "### 50. A question whose resolution is written as `### ` sub-sections — RESOLVED 01 AUG 2026\n\n"
+    "opening statement\n\n"
+    "### 28 JUL 2026 (session #106): resolver (a) is CLOSED\n\n"
+    "resolver a detail\n\n"
+    "### ✅ WHAT IS NOW ESTABLISHED (do not re-derive)\n\n"
+    "established detail\n\n"
+    "### 50a. A split-out SUB-QUESTION that is still LIVE\n\n"
+    "sub-question body\n\n"
+    "### 51. The next question (raised 02 AUG 2026)\n\n"
+    "next body\n"
+)
+
+
+def check_h3_boundary():
+    bad = []
+    lines = H3_DOC.splitlines(keepends=True)
+    spans = {}
+    for s, e in A._split_h3_blocks(lines):
+        spans[lines[s].split(".", 1)[0].replace("### ", "").strip()] = (s, e)
+
+    for want in ("50", "50a", "51"):
+        if want not in spans:
+            bad.append(f"Q{want} was not recognised as a question boundary")
+    if "50" in spans:
+        body = "".join(lines[slice(*spans["50"])])
+        # (a) its own dated / emoji write-ups must travel WITH it
+        for m in ("resolver a detail", "established detail"):
+            if m not in body:
+                bad.append(f"Q50 lost {m!r} -- a `### ` write-up is question CONTENT")
+        # (b) ...but a numbered sub-question must NOT be swallowed
+        if "sub-question body" in body:
+            bad.append("Q50 SWALLOWED the live sub-question 50a -- archiving it would bury 50a")
+        if "next body" in body:
+            bad.append("Q50 ran past the next question")
+    return bad
 
 
 def check_lint_archive():
