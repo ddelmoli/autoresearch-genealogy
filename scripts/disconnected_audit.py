@@ -80,6 +80,13 @@ import vault_config  # noqa: E402
 META_RE = re.compile(r"- meta: \{id: (P-[0-9A-Z]{6})(.*)")
 ID_RE = re.compile(r"P-[0-9A-Z]{6}")
 BOLD_RE = re.compile(r"^\*\*(.+?)\*\*")
+# ⚠ NAME capture accepts the BULLET entry form too (`- **Name** (...)`), while
+# entry TERMINATION deliberately still keys on the line-start form only. Widening
+# both would let a body bullet like `- **Sources**` end the entry and truncate the
+# prose this tool reads. Discovered 15 AUG 2026: a line-start-only name reader
+# attached the PREVIOUS entry's name to two bullet-form entries, which read as two
+# mis-attached FS PIDs until the entries were opened.
+BOLD_ANY_RE = re.compile(r"^\s*(?:[-*]\s*)?\*\*(.+?)\*\*")
 
 # Relationship phrasings actually used in this vault's entries. Each captures the
 # text that should hold the RELATIVE's name. Deliberately narrow: a missed
@@ -158,9 +165,10 @@ def load(vault):
             lines = fh.read().split("\n")
         name, cur = None, None
         for line in lines:
-            bold = BOLD_RE.match(line)
-            if bold:
-                name, cur = bold.group(1), None
+            if BOLD_RE.match(line):
+                name, cur = BOLD_RE.match(line).group(1), None
+            elif BOLD_ANY_RE.match(line) and not line.lstrip().startswith(">"):
+                name = BOLD_ANY_RE.match(line).group(1)   # name only; entry continues
             m = META_RE.match(line)
             if m:
                 pid, rest = m.group(1), m.group(2)

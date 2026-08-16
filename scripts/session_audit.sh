@@ -308,6 +308,15 @@ parts = [
     # boundary — the silent defect that under-credited 92 people. SOURCE_MISATTRIBUTION
     # is the subset that lands on a `Sources` bullet, i.e. moves the census today.
     "entry-boundary -> " + run("entry_boundary_audit.py", r"ENTRY_BOUNDARY:", max_lines=1),
+    # Generation labels vs the GRAPH (generation_audit.py). build_edges --validate
+    # compares ONE edge at a time and is blind to a label that is wrong consistently
+    # — which is the failure that happened: an edge DISPROVED and detached 03 AUG
+    # left every generation computed through it behind, surfacing two weeks later as
+    # four unrelated-looking mismatches. Baseline 0.
+    # ⛔ The walk is COLLAPSE-AWARE and must stay so: a naive shortest-path walk
+    # flags the whole ancestry above every declared collapse (26 rows, all correct)
+    # and acting on it would silently undo the declarations.
+    "gen-drift -> " + run("generation_audit.py", r"GEN_DRIFT:", args=["--heartbeat"], max_lines=1),
     "watchlist -> " + run("watchlist_age.py", r"Watchlist:"),
     # New-Records Watch (discovery) aging: reads .maintenance.json `new_records`
     # tiers (A/B/C = 90/180/365d) + prints per-tier DUE/OK. Sibling of the
