@@ -195,6 +195,19 @@ BACKED_RE = re.compile(
     r"|Copinger|Otis|Barnstable Families|North Bridgewater|Davy MSS"
     r"|Geneteka|Antenati|metryki|ScotlandsPeople|tavola alfabetica|town records"
     r"|Vital Records"
+    # ⚠ SAME DEFECT AS THE 08 AUG BLOCK ABOVE, ONE REGION OVER (added 15 AUG 2026,
+    # session #172). The list knew the Anglo-medieval and the Continental authorities
+    # and still did not know the standard apparatus of COLONIAL NEW ENGLAND, which is
+    # a large share of this vault. Measured before adding, across Family_Tree*.md:
+    # **GSMD 113 mentions, Anderson 78, Silver Book 73, Great Migration 65** — none of
+    # them recognisable to this check. A declaration resting on Anderson's *Great
+    # Migration* is about as well-backed as a New England declaration gets, and it read
+    # as "cites no source".
+    # ⚠ This widening moves an advisory in the FLATTERING direction, so the test it was
+    # held to is the one the note above implies: are these authorities the vault
+    # ALREADY leans on across many entries (yes, hundreds), or were they picked to
+    # rescue a particular row (no)? Do NOT extend this list to rescue a row.
+    r"|Anderson|Great Migration|Mayflower Migration|Silver Book|\bGSMD\b|Banks|Pope"
     # `route` in ANY form: the vault's own word for "here is where to look next", which
     # is exactly the third thing this check accepts. `[Rr]oute:` only matched the colon
     # form and missed "⏭ **Routes**:" and "the route is ...".
