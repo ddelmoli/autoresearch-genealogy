@@ -197,6 +197,74 @@ class ResetEpochTests(unittest.TestCase):
         self.assertNotIn("bootstrap", reason)
 
 
+class NoSignalGuard(unittest.TestCase):
+    """A dry spell must be REPORTED as a prior, not dressed up as an exploit (#173).
+
+    ** THE MIRROR OF THE 31 JUL RESET. ** That reset happened because sixteen straight
+    HITS meant "an arm that never loses carries no signal". The opposite ran unnoticed
+    for two weeks: measured 17 AUG 2026, **49 consecutive misses**, last hit on either
+    bandit lane 12-14 days earlier, both rates collapsed onto the +1 prior (EXPAND 3/56
+    = 0.069 vs IMPROVE 1/53 = 0.036). The banner still printed `exploit: win rate 0.07`,
+    which reads as a learned result and is not one -- the whole gap was TWO stale wins.
+
+    ⚠ **The guard REPORTS; it must never STEER.** Picking a different lane on the same
+    absence of evidence would be inventing the preference that is the defect.
+    """
+
+    def _dry(self, n, lanes=("EXPAND", "IMPROVE")):
+        # n miss observations per lane, all inside the epoch, enough sittings that the
+        # bootstrap and staleness floors are both satisfied and we reach the exploit.
+        return [{"date": "2026-08-1%d" % (i % 10), "lane": ln, "outcome": "miss",
+                 "session": 200 + i}
+                for i in range(n) for ln in lanes]
+
+    def test_a_long_dry_spell_is_reported_as_a_prior_not_an_exploit(self):
+        st = {"arms": {"EXPAND": {"wins": 3, "iterations": 56},
+                       "IMPROVE": {"wins": 1, "iterations": 53}},
+              "pending": None, "history": self._dry(8)}
+        lane, reason = sp.draw_lane(st, ALL_FULL)
+        self.assertIn("NO SIGNAL", reason)
+        self.assertNotIn("exploit:", reason)
+
+    def test_the_guard_does_NOT_change_the_pick(self):
+        # The whole contract: same lane as the exploit branch would have chosen.
+        st = {"arms": {"EXPAND": {"wins": 3, "iterations": 56},
+                       "IMPROVE": {"wins": 1, "iterations": 53}},
+              "pending": None, "history": self._dry(8)}
+        lane, _ = sp.draw_lane(st, ALL_FULL)
+        self.assertEqual(lane, "EXPAND", "the guard steered the draw; it must only report")
+
+    def test_a_single_hit_ends_the_warning(self):
+        # NEGATIVE CONTROL. The reward moved, so the rate means something again.
+        hist = self._dry(8)
+        hist.append({"date": "2026-08-19", "lane": "IMPROVE", "outcome": "hit",
+                     "session": 999})
+        st = {"arms": {"EXPAND": {"wins": 3, "iterations": 56},
+                       "IMPROVE": {"wins": 2, "iterations": 54}},
+              "pending": None, "history": hist}
+        _, reason = sp.draw_lane(st, ALL_FULL)
+        self.assertNotIn("NO SIGNAL", reason)
+        self.assertIn("exploit:", reason)
+
+    def test_a_SHORT_dry_spell_is_not_accused(self):
+        # NEGATIVE CONTROL, and the reason NO_SIGNAL_AFTER exists: a freshly reset epoch
+        # legitimately has few observations and no hits yet. Crying "no signal" there
+        # would make the warning routine, which is how a warning stops being read.
+        st = {"arms": {"EXPAND": {"wins": 3, "iterations": 56},
+                       "IMPROVE": {"wins": 1, "iterations": 53}},
+              "pending": None, "history": self._dry(2)}
+        _, reason = sp.draw_lane(st, ALL_FULL)
+        self.assertNotIn("NO SIGNAL", reason)
+
+    def test_the_floors_still_take_precedence(self):
+        # The guard sits in the exploit branch and must not shadow either floor: a lane
+        # that is stale or under-sampled is still DUE regardless of the dry spell.
+        st = {"arms": {}, "pending": None, "history": self._dry(8, lanes=("EXPAND",))}
+        _, reason = sp.draw_lane(st, ALL_FULL)
+        self.assertTrue("bootstrap" in reason or "staleness" in reason,
+                        f"a floor should have fired before the guard: {reason}")
+
+
 class PendingGuardTests(unittest.TestCase):
     """** A RECORD CLEARS ONLY THE DRAW IT CONSUMED (31 JUL 2026). **
 

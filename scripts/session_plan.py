@@ -221,6 +221,13 @@ PER_LANE = 5          # rows shown per lane (DISPLAY only -- not a work target)
 LANE_TARGET_PERCENT = 1.5
 MIN_SAMPLE = 2        # bootstrap floor: no exploitation until every lane has this many
 STALE_AFTER = 6       # staleness floor: a lane undrawn for this many draws is due
+# no-signal guard: this many in-epoch observations with ZERO hits across every live lane
+# means the win rates have collapsed onto the Laplace prior and the "exploit" branch is
+# reporting a preference it did not learn. Counted in OBSERVATIONS, not sittings —
+# unlike the floors, which ask "is this lane worth a session"; this asks "has the reward
+# moved at all", and a ten-draw sitting is ten chances for it to have moved. Set at 10
+# so a freshly-reset epoch is not accused of a dry spell it has not had yet.
+NO_SIGNAL_AFTER = 10
 
 # ** CANDIDATE ROTATION (operator-directed, 01 AUG 2026, session #127). **
 #
@@ -1431,6 +1438,37 @@ def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER)
         a = arms[ln]
         return (a["wins"] + 1) / (a["iterations"] + 2)
     pick = max(live, key=lambda ln: (rate(ln), -LANES.index(ln)))
+
+    # ** IS THERE ANY SIGNAL LEFT TO EXPLOIT? (session #173, 17 AUG 2026) **
+    # The arms reset of 31 JUL exists because sixteen straight HITS meant "an arm that
+    # never loses carries no signal". The mirror case is now live and nothing detected
+    # it: measured 17 AUG, **49 consecutive misses**, with the last hit on either bandit
+    # lane 12-14 days earlier. Both rates had collapsed onto the prior -- EXPAND 3/56 vs
+    # IMPROVE 1/53, i.e. 0.069 vs 0.036 -- so the entire "preference" was TWO stale wins
+    # plus the +1 smoothing, and the same lane came out every draw.
+    #
+    # The banner printed `exploit: win rate 0.07`, which reads as a learned result. It
+    # was not one. Worse, the failure is self-entrenching: every honestly recorded miss
+    # grows the denominator of the lane being worked, so doing the work and reporting it
+    # truthfully WIDENS the gap that caused the draw. (Recording 4 IMPROVE misses on
+    # 16 AUG moved it 0.039 -> 0.036 while EXPAND stood still.)
+    #
+    # ! THE PICK IS DELIBERATELY UNCHANGED. This reports honestly; it does not steer.
+    # Choosing differently here would be inventing a preference out of the same absence
+    # of evidence, which is the defect, not the fix. What the operator needs is to know
+    # the number is a prior, so a lane is not trusted on the strength of it.
+    in_window = [h for h in hist if h.get("lane") in live]
+    hits = [h for h in in_window if h.get("outcome") == "hit"]
+    if in_window and not hits and len(in_window) >= NO_SIGNAL_AFTER:
+        alts = ", ".join(f"{ln} {rate(ln):.3f}" for ln in sorted(live, key=lambda l: -rate(l)))
+        return pick, (f"NO SIGNAL — {pick} is the LAPLACE PRIOR's choice, not a learned "
+                      f"preference: no live lane has recorded a hit in the last "
+                      f"{len(in_window)} observations of this epoch, so every rate is "
+                      f"decaying toward its prior ({alts}). Treat the recommendation as "
+                      f"arbitrary and pick on what the work actually needs; the floors "
+                      f"still protect rotation. ONE hit on any lane ends this warning; "
+                      f"whether it also changes the PICK depends on how far apart the "
+                      f"rates already are.")
     return pick, (f"exploit: win rate {rate(pick):.2f} over "
                   f"{arms[pick]['iterations']} iterations in "
                   f"{len(lane_sittings.get(pick, ()))} sitting(s)")
