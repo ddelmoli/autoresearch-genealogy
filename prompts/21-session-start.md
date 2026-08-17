@@ -69,11 +69,33 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
        grep -rhE "P-[0-9A-Z]{6}\?" [VAULT_PATH]/Family_Tree*.md | grep -v "^>" | grep -oE "P-[0-9A-Z]{6}\?" | wc -l
    # ⚠ THE `grep -v "^>"` IS REQUIRED as of 03 AUG 2026: `route_digest.py`
    # BLOCKQUOTES entry text at the head of every Family_Tree file, so a naive
-   # grep double-counts every `?` token it quotes (measured: 98 vs the true 88).
+   # grep double-counts every `?` token it quotes.
    # ⚠ This count is still LOOSE -- it counts `?`-marked ids in PROSE as well as
-   # in `parents:`/`spouse:` lists. Restricting to `^- meta:` lines gives 75, not
-   # 88. NOT adopted here, because changing the definition would silently move a
-   # tracked baseline; recorded so the next person knows which number is which.   # ? edges
+   # in `parents:`/`spouse:` lists, so it reads HIGHER than a `^- meta:`-restricted
+   # count. The loose form is the tracked one: NOT changed here, because changing
+   # the definition would silently move a tracked baseline.
+   #
+   # ⛔⛔ DO NOT CALIBRATE AGAINST A NUMBER WRITTEN IN THIS FILE -- MEASURE IT.
+   # This prompt used to print 98 / 88 / 75 (naive / blockquote-excluded / meta-
+   # restricted) as if they were current. They were a 03 AUG 2026 snapshot, and by
+   # 17 AUG the same vault read 324 / 307 -- roughly 4x. A session comparing today
+   # against the frozen figures would read an ordinary sitting as a catastrophe.
+   # The DIRECTION is the durable part (naive > blockquote-excluded > meta-
+   # restricted); the magnitudes are not, because this metric tracks vault GROWTH:
+   # every hand-authored edge is wired `?` by rule, so book-derived minting drives
+   # it up by construction. Measured on one vault: 75 (03 AUG) -> 193 (09 AUG) ->
+   # 307 (15 AUG) meta-restricted, while entries grew only ~14%.
+   #
+   # ⚠ AND THE TOTAL CONFLATES THREE POPULATIONS WITH THREE DIFFERENT ACTIONS.
+   # Classify by the FAR END of each `?` before reading the number as a worklist:
+   #   far end has a live FS PID   -> walk the edge (this is the real edge work)
+   #   far end is `fs: TBD`        -> an EXISTENCE PROBE is owed first; no FS walk
+   #                                  can clear it, so it is not edge work at all
+   #   far end searched, no profile-> FS-GAP by construction; adjudicate `fs-gap`
+   # On one vault 59% of the total sat in the middle bucket, i.e. the metric was
+   # mostly measuring "nobody has looked yet". `session_plan.py` now prints the
+   # walkable/blocked split for the IMPROVE defect tier; prefer that to the raw
+   # total when deciding whether the backlog is actionable.   # ? edges
      Phase 3 compares against these four, and a session that never wrote down a
      "before" cannot honestly report movement.
 
