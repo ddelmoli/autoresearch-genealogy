@@ -613,7 +613,7 @@ def lane_verify(vault, include_adjudicated=False):
                                    f"both ends carry a live FS PID, so a contributor may have "
                                    f"linked them since. Cheap: reload the family panel. If still "
                                    f"unlinked, leave the `?` and the adjudication as they are."})
-        marked, settled = [], 0
+        marked, settled, open_targets = [], 0, []
         for kind, ids in edge_re.findall(meta):
             # Count only `?` tokens whose TARGET id is not already adjudicated.
             open_n = 0
@@ -625,16 +625,43 @@ def lane_verify(vault, include_adjudicated=False):
                     settled += 1
                 else:
                     open_n += 1
+                    if tid:
+                        open_targets.append(tid.group(0))
             if open_n:
                 marked.append(f"{open_n} {kind}")
         if marked:
-            why = "unconfirmed edges: " + ", ".join(marked) \
-                  + " — read entry before stripping ? (FS-gap/hedge)"
+            # ** IS THIS ROW ACTUALLY WORKABLE? (session #173, 16 AUG 2026) **
+            # A `?` is cleared by walking the edge on FamilySearch, which needs a live
+            # FS PID at the FAR end. Until now a row whose far ends were all `fs: TBD`
+            # printed IDENTICALLY to one whose far ends were live -- so a draw could not
+            # tell "walk this edge" from "nobody has yet established whether this person
+            # is even ON FamilySearch", and the difference only surfaced mid-iteration.
+            # Measured on this vault at the time of the change: of 141 `edge` rows, 81
+            # were walkable and 60 were blocked -- so a drawn edge row was close to a
+            # coin flip.
+            # ! WALKABLE means a FAR END is live, NOT both ends. An earlier hand
+            # measurement required both and reported 76/65; that was wrong. The case that
+            # proves it: an entry whose own `fs` is TBD but whose SPOUSE carries a live
+            # PID -- the edge was walked from the spouse's profile in the same sitting.
+            # Requiring the near end too would have called a walk that was actually
+            # performed impossible. The far-end state was ALREADY computed
+            # here (`recheckable`, used by the fs-gap re-check tier); it simply was not
+            # surfaced. Nothing is REMOVED: a blocked row is real work, just a different
+            # job (an existence probe first), and the lane size stays honest.
+            walkable = [t for t in open_targets if recheckable(t)]
+            why = "unconfirmed edges: " + ", ".join(marked)
+            if walkable:
+                why += f" — {len(walkable)} far end(s) carry a live FS PID: WALKABLE now." \
+                       " Read entry before stripping ? (FS-gap/hedge)"
+            else:
+                why += " — ! BLOCKED: no far end has a live FS PID, so no FS walk can" \
+                       " clear this. Probe the far end's EXISTENCE first (via a relative's" \
+                       " family panel, not a name search), THEN the edge."
             if settled:
                 why += f" [{settled} already adjudicated, not offered]"
             rows.append({"id": p.get("id"), "name": p.get("name") or "?",
                          "gen": p.get("gen"), "file": p.get("file") or "?",
-                         "why": why})
+                         "_walkable": bool(walkable), "why": why})
     rows.sort(key=lambda r: (r["gen"] is None, r["gen"] or 0))
     # Re-checks go LAST: a settled edge worth a second look must never outrank an edge
     # nobody has looked at. A row already in `rows` (it has other open `?` edges) is not
@@ -772,7 +799,14 @@ def lane_defects(vault, include_adjudicated=False):
             continue
         seen.add(r["id"])
         rows.append(r)
+    # ** WALKABLE EDGE ROWS SORT AHEAD OF BLOCKED ONES, WITHIN their tier (#173). **
+    # Same principle as `revisit` ranking last: work nobody can do yet must not outrank
+    # work that is ready. A blocked row keeps its `_defect` tag and its place in the
+    # pool -- this orders the tier, it does not shrink it, so the printed counts and the
+    # lane size stay honest. `.get(..., True)` makes every NON-edge tier neutral: only
+    # rows that carry the flag are demoted by it.
     rows.sort(key=lambda r: (_DEFECT_RANK.get(r.get("_defect"), 9),
+                             not r.get("_walkable", True),
                              r["gen"] is None, r["gen"] or 0))
     return rows
 
@@ -1712,6 +1746,17 @@ def main(argv=None):
             _nedge = sum(1 for r in i_defects if r.get("_defect") == "edge")
             _naud = sum(1 for r in i_defects if r.get("_defect") == "audit")
             _nbank = sum(1 for r in i_defects if r.get("_defect") == "banked")
+            # The `?` tier splits into work that can be done now and work that cannot;
+            # printing only the total hid a near 50/50 split (#173).
+            _nedge_walk = sum(1 for r in i_defects
+                              if r.get("_defect") == "edge" and r.get("_walkable"))
+            _nedge_blocked = _nedge - _nedge_walk
+            if _nedge:
+                print(f"    OF THE {_nedge} `?` EDGE ROWS: {_nedge_walk} WALKABLE now "
+                      f"(a far end carries a live FS PID) + {_nedge_blocked} BLOCKED on a "
+                      f"far end nobody has searched — the blocked ones need an EXISTENCE "
+                      f"PROBE first and sort last within their tier. Both are real work; "
+                      f"only the ORDER differs.")
             print(f"    IMPROVE holds THREE populations: {len(i_defects)} DEFECT "
                   f"({_ngate} gate finding(s) + {_nedge} `?` edges + {_nbank} BANKED "
                   f"parent pairs + {_naud} unmarked-edge AUDIT rows), "

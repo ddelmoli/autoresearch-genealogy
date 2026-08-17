@@ -123,5 +123,74 @@ class RevisitTagSurvives(unittest.TestCase):
                         "a settled re-check outranked an edge nobody has looked at")
 
 
+class WalkableEdgesSortFirst(unittest.TestCase):
+    """A `?` row you cannot work yet must not outrank one you can (session #173).
+
+    ** THE DEFECT. ** A `?` is cleared by walking the edge on FamilySearch, which needs a
+    live FS PID at the FAR end. Rows whose far ends were all `fs: TBD` printed IDENTICALLY
+    to rows whose far ends were live, so a draw could not tell "walk this edge" from
+    "nobody has yet established whether this person is even ON FamilySearch" — the
+    difference only surfaced mid-iteration, after the row had been drawn. Measured on the
+    live vault at the time of the change: **of 141 `edge` rows, 81 walkable and 60
+    blocked**, so a drawn edge row was close to a coin flip.
+
+    Same shape as the `revisit` fix above, and the same rule: **DEMOTED, NEVER REMOVED.**
+    A blocked row is real work (an existence probe first, then the edge), it keeps its
+    `_defect` tag, and the pool size does not change — only the order does.
+    """
+
+    def _defects(self, verify_rows, banked=None, audit=None):
+        import gen_person_index as g
+        saved = (g.parse_narrative, sp.lane_verify,
+                 sp.lane_banked, sp.lane_edge_audit)
+        try:
+            g.parse_narrative = lambda *a, **k: []
+            sp.lane_verify = lambda *a, **k: verify_rows
+            sp.lane_banked = lambda *a, **k: banked or []
+            sp.lane_edge_audit = lambda *a, **k: audit or []
+            return sp.lane_defects(tempfile.mkdtemp())
+        finally:
+            (g.parse_narrative, sp.lane_verify,
+             sp.lane_banked, sp.lane_edge_audit) = saved
+
+    def test_a_blocked_edge_sorts_behind_a_walkable_one_despite_generation(self):
+        # The blocked row is Gen 4 and the walkable row Gen 40, so plain generation
+        # sorting puts the blocked one first. Walkability must beat generation.
+        out = self._defects([
+            {"id": "P-BLOCKD", "name": "Blocked", "gen": 4, "file": "F.md",
+             "_walkable": False, "why": "unconfirmed edges: 1 parents — BLOCKED"},
+            {"id": "P-WALKAB", "name": "Walkable", "gen": 40, "file": "F.md",
+             "_walkable": True, "why": "unconfirmed edges: 1 parents — WALKABLE now"},
+        ])
+        order = [r["id"] for r in out]
+        self.assertLess(order.index("P-WALKAB"), order.index("P-BLOCKD"),
+                        "a row nobody can work yet outranked one that is ready")
+
+    def test_the_blocked_row_is_kept_not_dropped(self):
+        # The lane size has to stay honest — this orders the tier, it does not hide it.
+        out = self._defects([
+            {"id": "P-BLOCKD", "name": "Blocked", "gen": 4, "file": "F.md",
+             "_walkable": False, "why": "x"},
+        ])
+        self.assertEqual([r["id"] for r in out], ["P-BLOCKD"])
+        self.assertEqual(out[0]["_defect"], "edge",
+                         "a blocked row must keep its tier, not be re-tagged")
+
+    def test_rows_without_the_flag_are_NEUTRAL_not_demoted(self):
+        # NEGATIVE CONTROL, and the reason the sort uses .get(..., True): every non-edge
+        # tier (banked, audit, gate) carries no `_walkable` key at all. If absence read as
+        # False, the flag would silently demote whole tiers it says nothing about.
+        out = self._defects(
+            [{"id": "P-WALKAB", "name": "W", "gen": 40, "file": "F.md",
+              "_walkable": True, "why": "x"}],
+            banked=[{"id": "P-BANKED", "name": "B", "gen": 5, "file": "F.md",
+                     "_defect": "banked", "why": "x"}])
+        ranks = {r["id"]: sp._DEFECT_RANK[r["_defect"]] for r in out}
+        self.assertLess(ranks["P-WALKAB"], ranks["P-BANKED"])
+        order = [r["id"] for r in out]
+        self.assertLess(order.index("P-WALKAB"), order.index("P-BANKED"),
+                        "an unflagged banked row was demoted by a flag it never carried")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
