@@ -1453,22 +1453,48 @@ def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER)
     # truthfully WIDENS the gap that caused the draw. (Recording 4 IMPROVE misses on
     # 16 AUG moved it 0.039 -> 0.036 while EXPAND stood still.)
     #
-    # ! THE PICK IS DELIBERATELY UNCHANGED. This reports honestly; it does not steer.
-    # Choosing differently here would be inventing a preference out of the same absence
-    # of evidence, which is the defect, not the fix. What the operator needs is to know
-    # the number is a prior, so a lane is not trusted on the strength of it.
+    # ** UNDER NO SIGNAL THE DRAW ALTERNATES (operator-directed, 17 AUG 2026). **
+    # Reporting the dry spell was not enough on its own: the prior's tie-break is stable,
+    # so the same lane came out every sitting. Simulated 18 sittings forward with every
+    # iteration a miss and no manual override -- **IMPROVE drew 2 of 18 (11%)**, and all
+    # 2 came from the staleness floor rather than the draw. An 89/11 split resting on two
+    # wins from 05 AUG is a systematic bias with nothing behind it; with no information
+    # about either arm the even split is the honest one.
+    #
+    # ** LEAST-RECENTLY-DRAWN, NOT RANDOM, AND THE DIFFERENCE IS MEASURED. ** A coin flip
+    # only AVERAGES even -- simulated across 8 seeds it ran 33%-61%, drifting on any one
+    # run. Alternation gives exactly 50% every time, and it keeps `draw_lane` a pure
+    # function of (state, lane_sizes), which is what lets 50 tests pin it and what lets a
+    # past draw be re-derived. The codebase already made this call once: rotate_candidates
+    # samples SEEDED, not randomly.
+    #
+    # ! SCOPED TO THIS BRANCH ONLY. The moment any lane records a hit the guard stops
+    # firing and the bandit exploits real evidence again; the bootstrap and staleness
+    # floors still take precedence above. This changes WHAT IS WORKED, unlike the
+    # reporting half -- it was an operator decision, not a tidy-up.
     in_window = [h for h in hist if h.get("lane") in live]
     hits = [h for h in in_window if h.get("outcome") == "hit"]
     if in_window and not hits and len(in_window) >= NO_SIGNAL_AFTER:
+        # "Least recently drawn" is measured in SITTINGS, the same unit the staleness
+        # floor uses -- a ten-iteration sitting is one sample of "was this lane worth a
+        # session", however many rows it worked. A lane absent from the window sorts
+        # first (-1); ties fall back to the exploit ordering so the result stays total.
+        order = sittings_in_order(hist)
+        def last_seen(ln):
+            seen = lane_sittings.get(ln, set())
+            idxs = [i for i, sit in enumerate(order) if sit in seen]
+            return idxs[-1] if idxs else -1
+        prior_pick = pick
+        pick = min(live, key=lambda ln: (last_seen(ln), -rate(ln), LANES.index(ln)))
         alts = ", ".join(f"{ln} {rate(ln):.3f}" for ln in sorted(live, key=lambda l: -rate(l)))
-        return pick, (f"NO SIGNAL — {pick} is the LAPLACE PRIOR's choice, not a learned "
-                      f"preference: no live lane has recorded a hit in the last "
-                      f"{len(in_window)} observations of this epoch, so every rate is "
-                      f"decaying toward its prior ({alts}). Treat the recommendation as "
-                      f"arbitrary and pick on what the work actually needs; the floors "
-                      f"still protect rotation. ONE hit on any lane ends this warning; "
-                      f"whether it also changes the PICK depends on how far apart the "
-                      f"rates already are.")
+        note = ("" if pick == prior_pick else
+                f" (the prior alone would have said {prior_pick} again)")
+        return pick, (f"NO SIGNAL — ALTERNATING to the least-recently-drawn lane, "
+                      f"{pick}{note}: no live lane has recorded a hit in the last "
+                      f"{len(in_window)} observations of this epoch, so every rate has "
+                      f"decayed onto its prior ({alts}) and the recommendation carries no "
+                      f"evidence. With nothing to exploit the lanes are drawn evenly. "
+                      f"ONE hit on any lane ends this and restores the exploit branch.")
     return pick, (f"exploit: win rate {rate(pick):.2f} over "
                   f"{arms[pick]['iterations']} iterations in "
                   f"{len(lane_sittings.get(pick, ()))} sitting(s)")

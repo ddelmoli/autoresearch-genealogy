@@ -207,8 +207,20 @@ class NoSignalGuard(unittest.TestCase):
     = 0.069 vs IMPROVE 1/53 = 0.036). The banner still printed `exploit: win rate 0.07`,
     which reads as a learned result and is not one -- the whole gap was TWO stale wins.
 
-    ⚠ **The guard REPORTS; it must never STEER.** Picking a different lane on the same
-    absence of evidence would be inventing the preference that is the defect.
+    ** AND SINCE 17 AUG 2026 (operator-directed) IT ALSO ALTERNATES. ** Reporting alone
+    left the prior's stable tie-break in charge: simulated 18 sittings forward, all
+    misses, no override, **IMPROVE drew 2 of 18 (11%)** and both came from the staleness
+    floor rather than the draw. With no information about either arm an even split is the
+    honest one, so under NO SIGNAL the draw goes to the least-recently-drawn lane.
+
+    ⚠ **DELIBERATE CONTRACT CHANGE.** An earlier version of this class pinned the exact
+    opposite -- `test_the_guard_does_NOT_change_the_pick` -- because the reporting half
+    shipped first and was explicitly scoped not to steer. That pin was REPLACED, not
+    deleted quietly: the operator asked for the tie-break after seeing the 11% measurement.
+
+    ⚠ **LEAST-RECENTLY-DRAWN, NOT RANDOM.** A coin flip only averages even (measured
+    33%-61% across 8 seeds) and would break the "pure function of (state, lane_sizes)"
+    contract these 50 tests rest on.
     """
 
     def _dry(self, n, lanes=("EXPAND", "IMPROVE")):
@@ -226,13 +238,51 @@ class NoSignalGuard(unittest.TestCase):
         self.assertIn("NO SIGNAL", reason)
         self.assertNotIn("exploit:", reason)
 
-    def test_the_guard_does_NOT_change_the_pick(self):
-        # The whole contract: same lane as the exploit branch would have chosen.
+    def test_the_guard_alternates_to_the_least_recently_drawn_lane(self):
+        # REPLACES an earlier pin that asserted the pick was unchanged (see class
+        # docstring). EXPAND is drawn most recently, so the next draw must be IMPROVE
+        # even though EXPAND holds the higher smoothed rate.
+        hist = self._dry(8)
+        hist.append({"date": "2026-08-19", "lane": "EXPAND", "outcome": "miss",
+                     "session": 998})
+        st = {"arms": {"EXPAND": {"wins": 3, "iterations": 57},
+                       "IMPROVE": {"wins": 1, "iterations": 53}},
+              "pending": None, "history": hist}
+        lane, reason = sp.draw_lane(st, ALL_FULL)
+        self.assertEqual(lane, "IMPROVE",
+                         "under NO SIGNAL the draw must alternate, not repeat the prior")
+        self.assertIn("ALTERNATING", reason)
+
+    def test_alternating_gives_an_even_split_not_an_average(self):
+        # The reason it is not a coin flip: this must be EXACTLY even, every run.
+        import collections
         st = {"arms": {"EXPAND": {"wins": 3, "iterations": 56},
                        "IMPROVE": {"wins": 1, "iterations": 53}},
               "pending": None, "history": self._dry(8)}
-        lane, _ = sp.draw_lane(st, ALL_FULL)
-        self.assertEqual(lane, "EXPAND", "the guard steered the draw; it must only report")
+        seq, sess = [], 500
+        for _ in range(12):
+            sess += 1
+            lane, _ = sp.draw_lane(st, ALL_FULL)
+            seq.append(lane)
+            st = sp.record(st, lane, "miss", session=sess, today="2026-08-20")
+        c = collections.Counter(seq)
+        self.assertEqual(c["EXPAND"], c["IMPROVE"],
+                         f"alternation drifted: {dict(c)} — a coin flip would, this must not")
+
+    def test_a_lane_never_drawn_in_the_window_is_reached_by_a_FLOOR_not_the_guard(self):
+        # A lane absent from the window has waited longest by definition — but it never
+        # reaches the alternation branch, because a floor claims it first. Which floor
+        # depends on the lane's sitting count (0 sittings -> bootstrap, not staleness);
+        # what this pins is that the guard does NOT get to answer, and the starved lane
+        # is drawn either way.
+        st = {"arms": {"EXPAND": {"wins": 3, "iterations": 56},
+                       "IMPROVE": {"wins": 1, "iterations": 53}},
+              "pending": None, "history": self._dry(12, lanes=("EXPAND",))}
+        lane, reason = sp.draw_lane(st, ALL_FULL)
+        self.assertEqual(lane, "IMPROVE")
+        self.assertTrue("bootstrap" in reason or "staleness" in reason,
+                        f"a floor must outrank the no-signal guard: {reason}")
+        self.assertNotIn("NO SIGNAL", reason)
 
     def test_a_single_hit_ends_the_warning(self):
         # NEGATIVE CONTROL. The reward moved, so the rate means something again.
