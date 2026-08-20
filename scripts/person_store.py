@@ -40,6 +40,19 @@ DATE_KEYS = ("born", "born_phrase", "died", "died_phrase")
 _GRAMMAR_KEYS = ("born", "died")
 
 
+class WrongAccessor(TypeError):
+    """A PersonRecord attribute that LOOKS like a field but is not one.
+
+    Deliberately NOT an AttributeError. `getattr(rec, "fs", None)` swallows
+    AttributeError and hands back the default, so a caller who reaches for a
+    plausible-but-wrong name gets `None` — a WRONG ANSWER SHAPED LIKE DATA, with
+    no error anywhere. That is exactly how a session read "no FS PID" for fifteen
+    consecutive rows while the session plan, reading the same vault correctly,
+    reported all fifteen as walkable (session #175, 20 AUG 2026). Raising a
+    non-AttributeError makes the mistake loud even through a defaulted getattr.
+    """
+
+
 class InvalidDateValue(ValueError):
     """A write tried to store a value that is not a GEDCOM 7 DateValue.
 
@@ -124,6 +137,30 @@ class PersonRecord:
     sources: list = field(default_factory=list)
     source_file: str | None = None   # backend artifact (which file holds the record)
     raw: object = None               # backend handle for in-place write
+
+    # Names that LOOK like fields and are not. `fs`/`wt`/`anc` live inside
+    # `external_ids`; `pid` is not vault vocabulary at all (the vault key is `id`,
+    # and an FS PID is an external id). Reaching for one is a silent-wrong-answer
+    # path unless it raises — see WrongAccessor for why it must not be an
+    # AttributeError.
+    _MISLEADING = {
+        "fs":  "external_ids['fs'] — or person_store.fs(record) for the live PID",
+        "wt":  "external_ids['wt']",
+        "anc": "external_ids['anc']",
+        "pid": "external_ids['fs'] (the vault's own key is `id`)",
+        "fs_pid": "external_ids['fs'] — or person_store.fs(record)",
+        "external_id": "external_ids (plural)",
+    }
+
+    def __getattr__(self, name):
+        # Only reached when normal lookup fails, so real fields are unaffected.
+        hint = type(self)._MISLEADING.get(name)
+        if hint:
+            raise WrongAccessor(
+                f"PersonRecord has no field {name!r}; read {hint}. "
+                "This is not an AttributeError on purpose: getattr(rec, %r, default) "
+                "would otherwise return the default and hide the bug." % name)
+        raise AttributeError(name)
 
     # Equality over the field VOCABULARY only (see class docstring). Multi-valued
     # fields compare as SETS (order-independent) while PRESERVING the '?'
@@ -915,6 +952,22 @@ def _parse_meta_block(line):
     return out
 
 
+def fs(record, host="fs"):
+    """The LIVE external id on a record, or None. The short, correct accessor.
+
+    `live_external_id` takes the raw VALUE, not the record, which is a signature
+    every fresh caller gets wrong at least once; and the fully-correct spelling,
+    `live_external_id((rec.external_ids or {}).get("fs"))`, is longer than the
+    WRONG one, `getattr(rec, "fs", None)`. Ergonomics decide which gets typed, so
+    the right thing is now the short thing.
+
+    Returns None for a missing id, for `TBD`/`none`, and for a `~PID` REJECTION —
+    a rejected profile is not a live pointer. Use `external_id_state` when the
+    difference between "never searched" and "searched and refused" matters.
+    """
+    return live_external_id((getattr(record, "external_ids", None) or {}).get(host))
+
+
 def set_meta_key(line, key, value):
     """Set `key` on a `- meta:` line, REPLACING it in place if already present.
 
@@ -1538,6 +1591,70 @@ _BACKENDS = {"file": FileBackend, "narrative": NarrativeBackend}
 
 def _backend(vault):
     return _BACKENDS[vault_config.get_person_model(vault)]
+
+
+def add_entry_bullet(vault, person_id, text, allow_duplicate=False):
+    """Insert a body bullet into ONE person's entry, located by VAULT ID.
+
+    The structured writer for entry BODY prose, and the last hand-spliced surface
+    in the vault. `question_store.py`, `log_session.py` and `set_meta_key` all
+    exist because splicing text into a large Markdown file by hand kept landing it
+    in the wrong place; entry bodies were the one write that never got a writer,
+    and on 20 AUG 2026 (session #175) a loop that enumerated a snapshot while
+    mutating the live list put **6 of 14** bullets onto neighbouring entries.
+
+    ** WHY THIS CANNOT MISFILE. ** The caller names the PERSON, not a line number.
+    The entry is located through the same meta-anchored scan every other consumer
+    uses (`_iter_entries`), so the write goes where the id is — there is no index
+    for a stale offset to corrupt. ⚠ Note what it does NOT check: whether the
+    bullet's CONTENT is about that person. Naming the wrong id writes correct text
+    to the wrong entry, and no gate can see that.
+
+    Placement follows the method file: directly under `- meta:`, but AFTER the
+    generated `- **Prior work**` pointer when one is present, since that bullet is
+    specified to sit "directly under `- meta:` (never above)".
+
+    Returns (path, line_index). Raises on an unknown id, on text that is not a
+    bullet block, and — unless `allow_duplicate` — on text already present in the
+    entry, which is what a re-run of a half-finished write looks like.
+    """
+    lines_in = text.rstrip("\n").split("\n")
+    if not lines_in or not lines_in[0].startswith("- "):
+        raise ValueError(
+            "add_entry_bullet text must be a Markdown bullet block starting '- '; "
+            f"got {lines_in[0][:60]!r}. A bare bold span at line start would mint a "
+            "phantom entry (CLAUDE.method.md, entry boundary).")
+    for extra in lines_in[1:]:
+        if extra.strip() and not extra.startswith(" "):
+            raise ValueError(
+                "continuation lines must be indented sub-bullets or blank; got "
+                f"{extra[:60]!r} at line start, which would end the entry's bullet.")
+
+    rec = get_person(vault, person_id)
+    if rec is None:
+        raise KeyError(f"no person with id {person_id!r} in {vault}")
+    raw = rec.raw or {}
+    path, meta_i = raw.get("path"), raw.get("meta_line")
+    if not path or meta_i is None:
+        raise NotImplementedError(
+            "add_entry_bullet needs an entry location (raw['path'] + "
+            "raw['meta_line']), which the narrative backend supplies. For the file "
+            "model the entry IS the file and the insertion point is below the "
+            "frontmatter; wire that when the file model needs body writes.")
+
+    text_now = _read(path)
+    if not allow_duplicate and lines_in[0] in text_now.splitlines():
+        raise ValueError(
+            f"that bullet is already present in {os.path.basename(path)}; pass "
+            "allow_duplicate=True only if a second copy is genuinely intended.")
+
+    lines = text_now.splitlines()
+    at = meta_i + 1
+    if at < len(lines) and lines[at].lstrip().startswith("- **Prior work**"):
+        at += 1
+    lines[at:at] = lines_in
+    _write(path, "\n".join(lines) + ("\n" if text_now.endswith("\n") else ""))
+    return path, at
 
 
 def backend_name(vault):
