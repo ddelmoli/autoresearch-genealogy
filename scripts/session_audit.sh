@@ -108,11 +108,20 @@ from pathlib import Path
 # The vault to audit (guaranteed set: the bash guard above exits if it is not).
 VAULT = Path(os.path.expanduser(os.environ["AUTORESEARCH_VAULT"]))
 
-def run(script, pattern, max_lines=4, args=None):
+def run(script, pattern, max_lines=4, args=None, stderr=False):
     # The child scripts inherit AUTORESEARCH_VAULT and resolve the same vault.
+    #
+    # ⚠ `stderr=True` reads BOTH streams. Needed because a gate may report its
+    # CLEAN line on stdout and its FINDINGS on stderr — check_narrative_privacy
+    # does exactly that, so a stdout-only grep saw "ok" and could never see a
+    # violation (measured 24 AUG 2026, the day it was first wired in here: the
+    # banner printed "no summary lines" while the check was reporting 1). That
+    # asymmetry is a false-clean generator, so read both rather than trusting a
+    # script to keep its summary on one stream.
     try:
-        out = subprocess.run(["python3", f"scripts/{script}"] + (args or []),
-                             capture_output=True, text=True, timeout=90).stdout
+        r = subprocess.run(["python3", f"scripts/{script}"] + (args or []),
+                           capture_output=True, text=True, timeout=90)
+        out = r.stdout + (r.stderr if stderr else "")
     except Exception as e:
         return f"FAILED ({e})"
     lines = [l.strip() for l in out.splitlines() if re.search(pattern, l)]
@@ -317,6 +326,15 @@ parts = [
     # flags the whole ancestry above every declared collapse (26 rows, all correct)
     # and acting on it would silently undo the declarations.
     "gen-drift -> " + run("generation_audit.py", r"GEN_DRIFT:", args=["--heartbeat"], max_lines=1),
+    # Cross-edge chronology (chronology_audit.py): a person against their PARENTS,
+    # reported only when the contradiction survives the MOST FAVOURABLE reading of
+    # both date ranges. ⚠ WIRED HERE 24 AUG 2026 — the audit baseline had asserted
+    # "CHRONOLOGY 0" since 04 AUG while NOTHING measured it: the script was in
+    # neither this banner nor the vault pre-commit hook, so the claim was a memory
+    # of a hand-run, not a reading. A baseline nothing computes is a baseline that
+    # cannot regress out loud. Baseline 0; the strained-but-possible edges are a
+    # separate, deliberately unreported population (--advisory lists them).
+    "chronology -> " + run("chronology_audit.py", r"CHRONOLOGY:", max_lines=1),
     "watchlist -> " + run("watchlist_age.py", r"Watchlist:"),
     # New-Records Watch (discovery) aging: reads .maintenance.json `new_records`
     # tiers (A/B/C = 90/180/365d) + prints per-tier DUE/OK. Sibling of the
@@ -380,6 +398,17 @@ parts = [
                           args=["--heartbeat"], max_lines=1),
     # Recipe-S FS source-harvest coverage + cadence (harvest_sources.py --heartbeat):
     # SOURCE_GAP/LOW/WELL counts + DUE/OK vs the .maintenance.json `harvest` cadence.
+    # Living-person exposure INSIDE the narratives (check_narrative_privacy.py):
+    # an exact birth date, address or contact detail on a `living`/`unknown` row.
+    # ⚠ WIRED HERE 24 AUG 2026 for the same reason as chronology above — the
+    # baseline recorded "1 = ACCEPTED (operator 03 AUG) … a SECOND one would be [a
+    # regression]" and nothing was counting, so the second one would have arrived
+    # silently. This is the check whose failure mode is a real living relative's
+    # data, which is precisely the one that must not run on remembering to run it.
+    # ⛔ Do NOT print the offending value here — the count and the file are enough.
+    "narrative-privacy -> " + run("check_narrative_privacy.py",
+                                  r"check_narrative_privacy:", max_lines=1,
+                                  stderr=True),
     "privacy-repo -> " + privacy_repo(),
     "recipe-s -> " + run("harvest_sources.py", r"RECIPE-S:", args=["--heartbeat"], max_lines=1),
     # Extension frontier (extension_frontier.py --heartbeat): SILENT = parentless AND
