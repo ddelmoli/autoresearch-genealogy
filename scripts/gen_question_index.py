@@ -71,7 +71,7 @@ TAGS = [
 ]
 
 # The actionable line: the first item under a "what would settle it" heading.
-SETTLE_HDR = re.compile(r"(what would settle it|what is left|what would name|⏭\s*\*\*)", re.I)
+SETTLE_HDR = QB.RESOLVER_RE   # ONE home for the grammar; see question_block
 
 # A row of the ROUTER's shard table in Open_Questions.md:
 #   | [[Open_Questions_Method]] | 17 | CROSS-CUTTING questions: … |

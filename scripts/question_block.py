@@ -51,6 +51,39 @@ HEAD_PARSE = re.compile(
 STATUS_KWS = ["FULLY RESOLVED", "RESOLVED NEGATIVE", "RULED OUT", "CONFIRMED FAIL",
               "RESOLVED", "CLOSED", "CONFIRMED", "DIGITALLY CLOSED"]
 
+# THE RESOLVER GRAMMAR — "does this question name what would settle it?"
+#
+# ⚠⚠ A MISS IS A CANDIDATE, NEVER AN ASSERTION. This is a keyword screen over
+# free prose, so a question can name a perfectly good resolver in a shape not
+# listed here. `gen_question_index._resolver` has always said so in its
+# docstring; `question_audit` reused the same regex under the name RESOLVERLESS
+# and thereby asserted exactly what the docstring disclaims. Hence one home.
+#
+# The dialects below were ENUMERATED from the register, not guessed (24 AUG
+# 2026): the four original shapes recognised 133 of 163 live questions, and of
+# the 30 they missed, 23 named a resolver in one of the shapes added here and
+# the remaining 7 were read by hand. Every one of the 23 was verified at its
+# matching line before the shape was added — no clear was taken on trust.
+#
+# ⛔ Do NOT widen this to drive the count to 0. The generic verbs the residual
+# uses ("requires the 1846 Nati register", "needs the full-res image") would
+# clear the count and clear half the register with it; the finding is worth
+# having only while a match means something. When a question really does name
+# its resolver in prose, LABEL THE LINE in the question instead of widening.
+RESOLVER_RE = re.compile(
+    r"what\s+(?:would\s+)?settles?\s+(?:it|this|them)"   # incl. "what settles it"
+    r"|what\s+is\s+left"
+    r"|what\s+would\s+name"
+    r"|\u23ed"                                             # the next-step marker
+    r"|next\s+steps?\b"                                   # incl. "Revised/Decisive next step"
+    r"|minimum\s+record\s+needed"
+    r"|what\s+would\s+unlock"
+    r"|resolution\s+path"
+    r"|resolvers?\b"                                       # "THE RESOLVER (specific):"
+    r"|decisive\s+confirmation"
+    r"|named\s+routes?\b", re.I)
+
+
 # A status slot holding a provenance clause — the authoring trap that silently
 # blocks archiving (28 of 144 headings, 11 AUG 2026). Advisory-linted.
 PROVENANCE_RE = re.compile(r"^\s*(raised|opened|split out of)\b", re.I)

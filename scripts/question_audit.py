@@ -63,8 +63,11 @@ import vault_config
 from header_audit import staged_header_lines, materialise_staged
 
 BIG_KB = 15
-# the same resolver shapes gen_question_index recognises
-SETTLE_RE = re.compile(r"(what would settle it|what is left|what would name|⏭)", re.I)
+# The resolver grammar lives in question_block — ONE home, shared with
+# gen_question_index. ⚠ RESOLVERLESS is a CANDIDATE list, never a verdict: see
+# the warning on QB.RESOLVER_RE before treating a row as a defect or widening
+# the regex to shrink the count.
+SETTLE_RE = QB.RESOLVER_RE
 AMBIG_RE = re.compile(r"^###\s+\d")
 
 
@@ -153,6 +156,14 @@ def report(f, hard_only=False):
             print(f"  AMBIGUOUS_HEAD {rel}:{ln}  {t}")
         for rel, ln, q, kb in sorted(f["BIG_BLOCK"], key=lambda r: -r[3]):
             print(f"  BIG_BLOCK      Q{q} {kb} KB  ({rel}:{ln})")
+        for rel, ln, q in f["RESOLVERLESS"]:
+            print(f"  RESOLVERLESS   Q{q}  ({rel}:{ln})")
+        if f["RESOLVERLESS"]:
+            print("                 ⚠ CANDIDATES: no line matched the resolver "
+                  "grammar. OPEN each one — the register names resolvers in "
+                  "free prose too. Fix by LABELLING the line in the question "
+                  "(`- **Next step**:`, `**What settles it:**`), never by "
+                  "widening question_block.RESOLVER_RE.")
     return n_hard
 
 
