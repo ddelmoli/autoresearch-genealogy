@@ -178,6 +178,40 @@ def main():
         check("show prefers the LIVE copy over (original)",
               "preserved text" not in shown)
 
+        # --resolve FOLDS an interim status into the title instead of stacking a
+        # second status segment behind it — and must NOT fold a subtitle.
+        # ⚠ The negative control is the point: 54 of 68 live headings in the
+        # reference register carry a SUBTITLE in the status slot, and folding one
+        # would mangle the heading.
+        fold = os.path.join(d, "Open_Questions_Folding.md")
+        with open(fold, "w", encoding="utf-8") as fh:
+            fh.write(
+                "# Folding\n\n"
+                "### 70. A question with an interim status \u2014 PARTIALLY_RESOLVED 25 MAR 2026\n\nbody\n\n"
+                "### 71. A question with an interim status and its own note \u2014 "
+                "PARTIALLY RESOLVED 13 AUG 2026 ((a) settled; (b) open)\n\nbody\n\n"
+                "### 72. A question \u2014 whose status slot is a SUBTITLE, not a status\n\nbody\n")
+        for num, want_in_title, why in (
+                ("70", "(PARTIALLY_RESOLVED 25 MAR 2026)", "underscore spelling folded"),
+                ("71", "(PARTIALLY RESOLVED 13 AUG 2026 ((a) settled; (b) open))",
+                 "spaced spelling folded VERBATIM, own parens and all")):
+            QS.op_resolve(d, Namespace(resolve=num, status="RESOLVED NEGATIVE",
+                                       note="closed", apply=True))
+            head = [l for l in open(fold, encoding="utf-8") if l.startswith(f"### {num}.")][0]
+            h = QB.parse_heading(head)
+            check(f"Q{num} {why}", want_in_title in h["title"])
+            check(f"Q{num} exactly one status segment", h["status"].startswith("RESOLVED NEGATIVE"))
+            check(f"Q{num} archivable", h["terminal"] and not QB.PROVENANCE_RE.match(h["status"]))
+            check(f"Q{num} no stacked interim left in the slot",
+                  "PARTIALLY" not in h["status"])
+        QS.op_resolve(d, Namespace(resolve="72", status="RESOLVED", note=None, apply=True))
+        head72 = [l for l in open(fold, encoding="utf-8") if l.startswith("### 72.")][0]
+        h72 = QB.parse_heading(head72)
+        check("a SUBTITLE is never folded into parens",
+              "(whose status slot is a SUBTITLE" not in h72["title"])
+        check("a SUBTITLE stays a title segment",
+              h72["title"].endswith("not a status") and h72["terminal"])
+
         # --resolve refuses a DUPLICATED live number instead of writing through it
         with open(shard, "a", encoding="utf-8") as fh:
             fh.write("\n### 10. A duplicate of Q10 (raised twice by mistake)\n\ndup body\n")

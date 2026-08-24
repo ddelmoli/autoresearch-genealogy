@@ -90,6 +90,20 @@ RESOLVER_RE = re.compile(
     r"|named\s+routes?\b", re.I)
 
 
+# An INTERIM status: a status-slot marker that is explicitly NOT terminal, so a
+# question wearing one is still live. `--resolve` folds it into the title rather
+# than stacking a second status segment behind it.
+#
+# ⚠⚠ DELIBERATELY LITERAL, AND IT MUST STAY THAT WAY. The status slot of a LIVE
+# heading usually holds a SUBTITLE, not a status — measured 24 AUG 2026 across
+# the register: of 68 live headings with a status segment, 54 are subtitles
+# ("which generation is wrong? (raised …)", "NAME STILL UNKNOWN, but 14 JUL …")
+# and only 14 are interim markers. Folding a subtitle into the title parens
+# would MANGLE the heading, so anything not matched here is left exactly as it
+# is. Widen this only against a fresh measurement, never to tidy a heading up.
+INTERIM_STATUS_RE = re.compile(r"^PARTIALLY[_ ]RESOLVED\b", re.I)
+
+
 # A status slot holding a provenance clause — the authoring trap that silently
 # blocks archiving (28 of 144 headings, 11 AUG 2026). Advisory-linted.
 PROVENANCE_RE = re.compile(r"^\s*(raised|opened|split out of)\b", re.I)

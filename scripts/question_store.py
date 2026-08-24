@@ -224,13 +224,29 @@ def op_resolve(vault, args):
                          f"repair the duplicate first; refusing to resolve through it.")
     path, s, _e, h, lines = hits[0]
     note = f" ({args.note.strip()})" if args.note else ""
-    new_head = f"{lines[s].rstrip()} {QB.EMDASH} {status} {today_str()}{note}"
+    head_line = lines[s].rstrip()
+    # An INTERIM status (PARTIALLY_RESOLVED) is provenance once the question is
+    # terminal, and provenance belongs in the TITLE PARENS — so fold it there
+    # rather than stacking a second status segment behind it. Blind appending
+    # would have made Q33 the register's first double-status heading: every
+    # existing multi-em-dash heading is a SUBTITLE plus one status, and 14 live
+    # questions carry an interim marker that would each have stacked the same way.
+    # ⚠ The segment is moved VERBATIM — no re-casing, no unwrapping of its own
+    # parens — because the point is to preserve a dated fact, not to tidy it.
+    folded = None
+    if h["status"] and QB.INTERIM_STATUS_RE.match(h["status"].strip()):
+        cut = head_line.rfind(QB.EMDASH)
+        folded = head_line[cut + len(QB.EMDASH):].strip()
+        head_line = f"{head_line[:cut].rstrip()} ({folded})"
+    new_head = f"{head_line} {QB.EMDASH} {status} {today_str()}{note}"
     check = QB.parse_heading(new_head)
     if not check or not check["terminal"] or QB.PROVENANCE_RE.match(check["status"]):
         raise SystemExit(f"internal: rewritten heading is not archivable: {new_head!r}")
     print(f"Q{num}{suffix} in {os.path.basename(path)}:{s+1}")
     print(f"  old: {lines[s][:110]}")
     print(f"  new: {new_head[:110]}")
+    if folded:
+        print(f"  folded the interim status into the title: ({folded})")
     lines[s] = new_head
     _write(path, lines, args.apply, f"resolve Q{num}{suffix} in")
     if args.apply:
