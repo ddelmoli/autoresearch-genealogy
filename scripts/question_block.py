@@ -71,7 +71,13 @@ STATUS_KWS = ["FULLY RESOLVED", "RESOLVED NEGATIVE", "RULED OUT", "CONFIRMED FAI
 # having only while a match means something. When a question really does name
 # its resolver in prose, LABEL THE LINE in the question instead of widening.
 RESOLVER_RE = re.compile(
-    r"what\s+(?:would\s+)?settles?\s+(?:it|this|them)"   # incl. "what settles it"
+    # ⚠ The object is deliberately UNCONSTRAINED. It was `(it|this|them)` until
+    # 24 AUG 2026, which missed "**What would settle the specific row:**" — the
+    # same label with a noun object. Measured before relaxing: across the whole
+    # register, live and resolved, "what would settle" and "what settles" are the
+    # ONLY two surface forms and every occurrence is a resolver label, so the
+    # relaxation clears exactly one further block and nothing else.
+    r"what\s+(?:would\s+)?settles?\b"
     r"|what\s+is\s+left"
     r"|what\s+would\s+name"
     r"|\u23ed"                                             # the next-step marker

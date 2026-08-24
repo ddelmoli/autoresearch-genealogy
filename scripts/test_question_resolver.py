@@ -54,6 +54,7 @@ MUST_MATCH = [
     "- **What would name her**: her son's marriage act",
     "- **What settles it:** cite the apparatus with page refs",     # settles, not would settle
     "**What would settle them:**",                                  # plural, no text after
+    "- **What would settle the specific row:** open the two ARKs",   # NOUN object, not a pronoun
     "- **Next step**: browse the Placeholt film image by image",
     "- **Highest-priority next step**: search the county baptisms",  # qualified lead
     "- **Decisive next step (operator/archive image):** read the act",
@@ -83,6 +84,8 @@ MUST_NOT_MATCH = [
     "- The route was CLOSED 17 JUL 2026 and is not reopened.",
     "- A step forward was made on the naming pattern.",             # 'step' without 'next'
     "- She was resolved to be a different woman entirely.",
+    "- The estate settles on the eldest son under the entail.",     # 'settles' with no 'what'
+    "- The family settles in Hingham by 1638.",
 ]
 
 
