@@ -632,6 +632,61 @@ PERSON**, since a record naming a child or a sibling is a genuine record documen
 ⚠ **Uniformity is the tell.** Real corpora are ragged; a sweep where every row fails the same way
 is describing the instrument. Probe with a known-good fetch before logging anything.
 
+⭐ **THE SHARPER FORM, AND THE ONE THAT GENERALISES: an absence is evidence only when the channel
+was alive to carry it.** The 503 case is the loud version, where the instrument answers wrongly.
+The quiet version is a channel that stops reporting and says nothing about having stopped: a log
+relay that dies with the process it reports on, a paged listing that ends early, a query whose
+connection dropped mid-read. Silence from a dead channel is indistinguishable from silence from an
+empty corpus, and only one of them is a finding. **Establish that the channel was live over the
+window the absence covers, or the absence is not an observation at all.** Where the question is
+precisely about what happens as something dies, that channel is structurally the wrong instrument:
+ask what reached durable storage afterwards instead. (This one is attested twice, in this project
+and independently in another of the operator's, which is what promotes it from an incident to a
+class.)
+
+### The guard asserted a property of itself that one of its own rules did not have (`5771ed1`)
+
+`guard_destructive.py` shipped with a module header stating plainly that Bash matching is done per
+shell segment against argv, "so a script name quoted inside a commit message or a grep pattern is
+not mistaken for an invocation of it". **The truncating-redirect rule matched the raw command
+string**, which is the one thing the header promised it did not do.
+
+⚠ **And measuring the rest of the module afterwards found the raw-matching family is larger than
+that one rule.** Only the four `git` rules and the Edit/Write path rules are argv-and-path clean.
+The `sed -i` and `rm` rules are HYBRID — argv-gated on the command, then raw-matched on the
+FILENAME — so `rm /tmp/scratch.txt 'note: Family_Tree.md'` is refused too. Narrower, because argv[0]
+must already be `rm`, and left as it is because it over-blocks in the safe direction; recorded here
+so the next reader does not take "one bad rule" for "the rest is clean".
+
+So text that merely NAMED a redirect onto vault Markdown was refused: a commit message describing
+the rule, a grep for it, a test case exercising it. It blocked a test harness written for the
+guard, and then blocked the commit of its own fix. That is how it was found — by the defect
+obstructing the work, not by the suite.
+
+**The suite is the interesting part.** It ran 33 cases in both directions and looked thorough: the
+argv rules were tested against quoted text (`grep -rn 'git reset --hard' guides/` must pass) and
+the redirect rule was tested against real redirects (`... > Family_Tree.md` must block). Each rule
+was covered and each input class was covered. **The product was not** — the one combination that
+mattered, quoted text against the redirect rule, was the one the suite never formed.
+
+⭐ **A suite organised rule-by-rule tests the rules that behave alike and hides the one that does
+not.** Where a module claims a uniform property, test the property across every rule, not each
+rule against the inputs it obviously handles. The fix judges redirects per segment on argv, and
+picked up `2>file` on the way, which the original had missed entirely.
+
+⚠ **The mechanism only half-separates them, and the entry says so rather than claiming a clean
+rule.** `shlex` splits a real spaced operator into its own token while quoting keeps
+`'> Family_Tree.md'` inside ONE token — so those two are distinguishable, and the fix takes the
+second half from that: an ATTACHED target never contains whitespace, because the shell would have
+split it. But a quoted attached form and a real one are **byte-identical after `shlex`** — both
+`grep '>Family_Tree.md'` and `echo x >Family_Tree.md` yield the single token `>Family_Tree.md` —
+so the guard cannot tell them apart and **refuses both**. A residual false positive, kept
+deliberately: over-blocking a grep costs a rephrase, and the other direction costs a file.
+
+⚠ And the header was not merely out of date: **it was written asserting the property, by the same
+hand that wrote the exception, in the same sitting.** A docstring is a claim like any other and
+carries the same provenance rule — it needed the test, not the sentence.
+
 ### What the guard enforces
 
 Only the irreversible half is mechanical, and `scripts/guard_destructive.py` (PreToolUse) is it:
