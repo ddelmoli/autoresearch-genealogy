@@ -690,8 +690,17 @@ carries the same provenance rule — it needed the test, not the sentence.
 ### What the guard enforces
 
 Only the irreversible half is mechanical, and `scripts/guard_destructive.py` (PreToolUse) is it:
-the `git` commands that discard uncommitted work, in-place stream edits and truncating redirects
-over vault Markdown, and hand edits of the registers that have stores of their own. The vault repo
+the `git` commands that discard uncommitted work **when they target a vault**, in-place stream
+edits and truncating redirects over vault Markdown, and hand edits of the registers that have
+stores of their own.
+
+⚠ **The git rules were VAULT-SCOPED on 25 AUG 2026, a day after they landed, because they were
+firing on ordinary framework work** -- `git checkout -- scripts/foo.py` on a throwaway edit, in a
+repo that has a remote and a public fork. The asymmetry is the whole justification for the rule, so
+the rule now follows it: a vault is recognised by its own `.autoresearch.json`, the hook's `cwd`
+supplies the starting point, and a `cd` or a `-C` retargets it. ⛔ **It fails safe** -- no `cwd`
+means no way to tell which repo is meant, and the answer is "vault". A narrowing must not become a
+hole, and that case is pinned. The vault repo
 has no copy but the working one, and a bulk rewrite that goes wrong goes wrong across every file
 before any gate measures it.
 

@@ -8,9 +8,9 @@ that investigating is not a licence to destroy the evidence. Both are mechanical
 claims about a command or a path, so both can be checked rather than requested.
 
 WHAT IT REFUSES.
-  Bash   git reset --hard / clean -f / checkout -- / restore, in either repo;
-         in-place stream edits (sed -i, perl -i) and truncating redirects onto
-         vault Markdown; rm of vault Markdown.
+  Bash   git reset --hard / clean -f / checkout -- / restore WHEN THEY TARGET A
+         VAULT; in-place stream edits (sed -i, perl -i) and truncating redirects
+         onto vault Markdown; rm of vault Markdown.
   Edit   Research_Log.md and Open_Questions*.md, which have stores of their own
   Write  (log_session.py, question_store.py) that mint numbers and place blocks.
 
@@ -25,6 +25,7 @@ Exit 2 blocks the call and shows stderr to Claude. Exit 0 allows.
 """
 import json
 import os
+import pathlib
 import re
 import shlex
 import sys
@@ -85,6 +86,48 @@ def segments(command):
             yield argv, raw
 
 
+def vault_root(path):
+    """The nearest ancestor of `path` that is a vault, or None.
+
+    A vault is marked by its own `.autoresearch.json` -- the same file
+    `vault_config` reads -- so this needs no hard-coded directory name.
+    """
+    if not path:
+        return None
+    try:
+        here = pathlib.Path(path).expanduser().resolve()
+    except (OSError, ValueError, RuntimeError):
+        return None
+    for d in (here, *here.parents):
+        if (d / ".autoresearch.json").is_file():
+            return d
+    return None
+
+
+def targets_vault(argv, here, raw):
+    """Would this git command touch a vault?
+
+    ⚠ The framework repo has a remote and a public fork; the vault has neither and
+    no copy but the working one. That asymmetry is the whole reason these commands
+    are refused, so the refusal follows the vault rather than the command name
+    (narrowed 25 AUG 2026 on the operator's instruction, after the rules were found
+    firing on ordinary framework work).
+
+    ⛔ FAILS SAFE. `here` is None only when the harness sent no `cwd`; with no way to
+    tell which repo is meant, the answer is "vault" and the command is refused. A
+    narrowing must not become a hole.
+    """
+    if VAULT_MD.search(raw):          # names a vault file outright, from anywhere
+        return True
+    if here is None:
+        return True
+    if "-C" in argv:                  # `-C <path>` retargets the command
+        i = argv.index("-C")
+        if i + 1 < len(argv):
+            here = os.path.join(here, argv[i + 1])
+    return vault_root(here) is not None
+
+
 def leads_with(argv, tokens):
     """True when tokens appear in order in argv, the first at the command position."""
     if not argv or argv[0] != tokens[0]:
@@ -110,8 +153,14 @@ DESTRUCTION_REMEDY = (
 )
 
 
-def check_bash(command):
+def check_bash(command, cwd=None):
+    here = cwd
     for argv, raw in segments(command):
+        # `cd` inside the same command moves the target for what follows.
+        if argv[0] == "cd":
+            if here is not None and len(argv) > 1:
+                here = os.path.join(here, argv[1])
+            continue
         for tokens, why in DESTRUCTIVE_ARGV:
             if not leads_with(argv, tokens):
                 continue
@@ -122,6 +171,9 @@ def check_bash(command):
                 continue
             # git restore --staged only unstages; the working tree is untouched.
             if tokens == ["git", "restore"] and "--staged" in argv and "--worktree" not in argv:
+                continue
+            # Vault-scoped: the framework repo is backed by its remote.
+            if not targets_vault(argv, here, raw):
                 continue
             return refuse(f"`{' '.join(tokens)}`", why, DESTRUCTION_REMEDY)
 
@@ -196,7 +248,7 @@ def main():
     tool = payload.get("tool_name")
     tool_input = payload.get("tool_input", {})
     if tool == "Bash":
-        return check_bash(tool_input.get("command", ""))
+        return check_bash(tool_input.get("command", ""), payload.get("cwd"))
     if tool in {"Edit", "Write", "NotebookEdit"}:
         return check_edit(tool_input.get("file_path", ""))
     return 0
