@@ -116,6 +116,55 @@ class TestPairingWithScholarly(unittest.TestCase):
         self.assertFalse(H.has_scholarly_citation("wikitree"))
 
 
+class TestIrishApparatus(unittest.TestCase):
+    """The Ban-shenchus, added 24 AUG 2026 (session #182).
+
+    ⚠⚠ FOUND BY WRITING, NOT BY AUDITING. Six entries were minted from Dobbs's
+    edition in one iteration and the census called every one UNCITED -- "nobody
+    has cited anything" -- about people cited to a named medieval tract at exact
+    page numbers, verified at the page image. Measured the same minute: 8 rows in
+    total moved UNCITED -> BOOK_SOURCED once the detector could see it, and TWO of
+    them (Donnchad mac Briain, Orlaith ingen Meic Braenáin) predated the sitting.
+    They had been sitting on "the real worklist, whose route is a library pass"
+    while the library pass was already done and cited.
+
+    ⛔ NOT the flattering-direction widening the baseline warns about. The test is
+    whether the citation is REAL, and the rule already admits "MGH and named
+    chronicles" -- this is a named 12th-c. tract in its scholarly edition. The
+    direction a widening moves a count is not what makes it right or wrong.
+    """
+
+    IRISH = (
+        "Ban-shenchus, ed. Dobbs, Revue Celtique XLVIII (1931), p. 189",
+        "Banshenchus",
+        "the metrical Ban-shenchus at Revue Celtique XLVII, p. 314",
+        "Revue Celtique XLIX (1932), the edition's index",
+    )
+
+    def test_irish_apparatus_is_recognised(self):
+        for cite in self.IRISH:
+            with self.subTest(cite=cite):
+                self.assertTrue(H.has_scholarly_citation(cite))
+
+    def test_it_is_apparatus_only_and_NOT_a_book_collection(self):
+        # ⚠ The pairing rule runs ONE WAY. BOOK_COLLECTION_MARKERS screens FS
+        # COLLECTION TITLES; the Ban-shenchus is never one, so adding it there
+        # would screen nothing and risks catching a real record title later.
+        # Apparatus-only is the correct asymmetry -- it can only move a row toward
+        # "somebody cited something", never destroy a record.
+        for cite in self.IRISH:
+            with self.subTest(cite=cite):
+                self.assertFalse(H.is_book_collection(cite))
+
+    def test_negative_controls(self):
+        # A Celtic-sounding sentence is not a citation.
+        for cite in ("an Irish genealogy website",
+                     "a celtic revival poem",
+                     "some notes on Irish kings"):
+            with self.subTest(cite=cite):
+                self.assertFalse(H.has_scholarly_citation(cite))
+
+
 class TestNegativeControls(unittest.TestCase):
     """The fail direction is DESTRUCTIVE, so real records must stay records."""
 

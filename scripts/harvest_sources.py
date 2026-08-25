@@ -2035,7 +2035,27 @@ SCHOLARLY_CITATION_RE = re.compile(
     r"|Dormant.{0,5}Abeyant|Anglia Sacra"
     r"|Early Sources of Scottish History|Scottish Annals from English"
     r"|John of Fordun|Dictionary of National Biography"
-    r"|Magna Charta Barons|Pedigrees of Charlemagne|Genealogical Memoir",
+    r"|Magna Charta Barons|Pedigrees of Charlemagne|Genealogical Memoir"
+    # ── IRISH APPARATUS, added 24 AUG 2026 (session #182, EXPAND lane) ──
+    # ⚠⚠ FOUND BY MINTING, NOT BY AUDITING. Six Ban-shenchus rows were written
+    # this sitting and the census called every one UNCITED -- "nobody has cited
+    # anything" -- about entries cited to a named medieval tract in a
+    # peer-reviewed edition, at exact page numbers, read at the page image.
+    # Measured the same minute: ALL 12 entries in the vault citing this apparatus
+    # read UNCITED, including six that predate this sitting by weeks.
+    #
+    # ⭐ IT QUALIFIES ON THE RULE AS ALREADY WRITTEN, which admits "MGH and named
+    # chronicles" -- the Ban-shenchus is a named 12th-c. tract and Dobbs's Revue
+    # Celtique text is its scholarly edition. This is a blind detector being
+    # opened, NOT the flattering-direction widening the baseline warns about: the
+    # test is whether the citation is real, and it was real before the regex could
+    # see it. UNCITED is "the real worklist, and its route is a library pass" --
+    # routing finished library work back onto that list is the actual defect.
+    # ⛔ Deliberately NOT added in the same pass: the Irish annals (AU / AFM /
+    # Inisfallen). They are named chronicles too and would very likely qualify,
+    # but nothing measured them, and a widening nobody has counted the rows for is
+    # how this list stops meaning anything. Measure, then add.
+    r"|Ban.?shenchus|Revue Celtique",
     re.I,
 )
 
