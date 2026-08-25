@@ -2097,7 +2097,21 @@ SCHOLARLY_CITATION_RE = re.compile(
     # `VCH Staffordshire READ … it's vol. 5, not vol. 6 … pp18-40` — a real citation
     # written as prose, which is also why `pp?\.?` tolerates the missing stop.
     # ⛔ Do NOT relax this to a bare name: routes cite volumes too.
-    r"|(?:\bVCH\b|Victoria County History)[^\n]{0,120}?(?:\bvol\.|\bpp?\.?\s*\d)",
+    r"|(?:\bVCH\b|Victoria County History)[^\n]{0,120}?(?:\bvol\.|\bpp?\.?\s*\d)"
+    # ── MACNAMARA, 25 AUG 2026 — the cleanest candidate of the three rounds ──
+    # Held OUT of the 25 AUG widening with an explicit negative control, on the
+    # ground that it had been verified on ONE row and "one row is not a sample".
+    # ** THAT RESERVATION IS NOW DISCHARGED BY SAMPLING, WHICH IS THE ONLY THING THAT
+    # DISCHARGES IT. ** All 17 newly-credited rows were read: every one cites
+    # *Memorials of the Danvers Family* (1895) WITH PAGE NUMBERS, and most quote a
+    # primary document THROUGH it — inquisitions post mortem (15 Hen VI No. 28; the
+    # 1478 Say IPM), an Oxon fine of 13 Edw II, and the Rawlinson MSS B. 283 deeds of
+    # 1399 and the de La Lee marriage settlement.
+    # ⭐ ZERO routes, ZERO checked-negatives-only, ZERO period descriptors — the three
+    # failure shapes that refused Muskett, Metcalfe and Blomefield and that forced VCH
+    # into a bibliographic-form pattern. A bare name is safe here because the vault
+    # has never used this work as a pointer.
+    r"|Macnamara|Memorials of the Danvers",
     re.I,
 )
 

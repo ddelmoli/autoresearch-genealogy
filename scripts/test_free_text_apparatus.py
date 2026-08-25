@@ -254,13 +254,20 @@ class TestQ329VerifiedWorks(unittest.TestCase):
         self.assertTrue(H.has_scholarly_citation("cited to TAG 77 (2003)"))
         self.assertTrue(H.has_scholarly_citation("cited to The American Genealogist 77"))
 
-    def test_NOT_added_on_a_single_verified_row(self):
-        # Macnamara appears in a real Sources bullet with page refs on ONE entry.
-        # One row is not a sample; the standing rule is in Q329.
-        self.assertFalse(
-            H.has_scholarly_citation("Macnamara, Memorials of the Danvers Family (1895), pp. 44-45"),
-            "Macnamara was verified on one row only and must not be in the pattern",
-        )
+    def test_the_one_row_reservation_was_DISCHARGED_BY_SAMPLING(self):
+        """Macnamara was held out here on 25 AUG with an explicit negative control,
+        because it had been verified on ONE row. It was then sampled — all 17
+        newly-credited rows read, every one citing it WITH PAGE NUMBERS and most
+        quoting a primary document through it (IPMs, an Oxon fine, the Rawlinson
+        B. 283 deeds). Zero routes, zero checked-negatives-only.
+
+        ⭐ The reservation is discharged by SAMPLING, which is the only thing that
+        discharges it — not by time passing and not by the count looking reasonable.
+        """
+        self.assertTrue(
+            H.has_scholarly_citation("Macnamara, Memorials of the Danvers Family (1895), pp. 44-45"))
+        # ⚠ and it must still not fire on a bare surname with no work attached
+        self.assertFalse(H.has_scholarly_citation("a family called Macnamar of Clare"))
 
     def test_negative_controls_still_fail(self):
         for cite in ("a parliament of fowls", "an Ancestry user tree",
