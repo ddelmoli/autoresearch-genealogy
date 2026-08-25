@@ -91,6 +91,31 @@ The generic style rules (no hyphens-as-punctuation, no emojis, source-first, log
   - **Gated by `archive_sections.py --lint-headings`** (advisory, baseline 0, in the SessionStart banner as `oq-headings`). A non-zero is a FUTURE silent backlog, not a present error.
   - ⛔ **Do NOT "fix" this by widening the detector to accept a terminal status in any em-dash segment.** That was measured and rejected: it archives **live** questions whose headings cite ANOTHER question's status (`split out of the RESOLVED Q195` — Q134 and Q254 both). The last-em-dash rule is correct; the authoring end is what needed the guard.
 
+### The worked example is where vault data crosses into the public repo (24 AUG 2026, session #181)
+
+Two new framework files were written the same sitting and **both carried real vault surnames into
+`scripts/`**, in the docstring paragraph explaining why the code exists.
+
+`persona_dup_audit.py` opened with the row that proved the defect — the person's name, her `P-` id
+and both real ARKs — because that is what made the rationale concrete. `privacy-audit-repo` returned
+**4 finding groups** (one 4-char denylist term across two files, two record identifiers) and the
+commit did not happen. Scrubbed to "an entry cited one 1911 marriage twice".
+
+Hours later `session_plan.py` and `test_question_labels.py` did it again, in the paragraph
+justifying the Q-number tags: two surnames used to show the measurement was real. The audit caught
+it again, on a 5-char term.
+
+**The pattern is not carelessness about the rule — it is that the rule's target moves.** Nobody
+puts a family into a public repo on purpose; they put in *the example that proves the code was
+needed*, and in this project every such example is a real person. The gate is the only thing that
+distinguishes the two, which is why it must run at docstring-writing time and not only at push.
+
+⭐ **The fix that costs nothing:** the measurement carries the argument, the name does not.
+*"The register named 359 people and 28 entries carried a flag"* is more persuasive than any
+surname, and it is publishable. The named version belongs in the vault's session log, and the
+cross-reference points framework -> vault only.
+
+
 ## The entry is a biography (entry shape; operator goals, 15 AUG 2026)
 
 **The target for a person entry is a Wikipedia-style biographical article**, and the
