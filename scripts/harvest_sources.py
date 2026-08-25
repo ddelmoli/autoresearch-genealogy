@@ -2055,7 +2055,34 @@ SCHOLARLY_CITATION_RE = re.compile(
     # Inisfallen). They are named chronicles too and would very likely qualify,
     # but nothing measured them, and a widening nobody has counted the rows for is
     # how this list stops meaning anything. Measure, then add.
-    r"|Ban.?shenchus|Revue Celtique",
+    r"|Ban.?shenchus|Revue Celtique"
+    # ── FOUR WORKS ALREADY IN CITATIONAL USE, added 25 AUG 2026 (Q329, operator-directed) ──
+    # ⭐⭐ THE REASON THIS WIDENING IS NOT THE FLATTERING-DIRECTION TRAP IS THAT THE
+    # ROWS WERE READ. Q329 found the detector wrong in BOTH directions at once: it
+    # credited entries from a stray work-name in a ROUTE sentence while missing the
+    # real citation sitting in their `- **Sources**` bullet. On three of four sampled
+    # rows the two errors CANCELLED — right category, wrong reason — which is exactly
+    # the shape that survives an audit because the number looks correct.
+    #
+    # ** THE OPERATOR DIRECTED A FULL SAMPLE BEFORE WIDENING, AND IT WAS RUN. ** All
+    # 35 candidate rows were classified by whether the work appears on a NON-route
+    # line, and the five that looked route-only were then read individually. Result:
+    # **35 newly credited, 0 credited only via a route.** Even the last hold-out,
+    # William Danvers, carries a "Sources — cited with pages" bullet naming Macnamara
+    # with page refs, the Register of Thame Abbey, Record Office charters by volume
+    # and number, and a College of Arms MS.
+    #
+    # ⚠ Each is a peer-reviewed or record-cited work already used WITH page/section
+    # refs, i.e. rule 8 limb (b) as written. `The American Genealogist` is the
+    # spelled-out form of the `\bTAG\b` alternative already present — the same work,
+    # not a new class.
+    # ⛔ Macnamara's *Memorials of the Danvers Family* was verified on ONE row only and
+    # is deliberately NOT added; see Q329 for the standing rule that a widening is
+    # earned by reading the rows, never by the count it would produce.
+    r"|History of Parliament"
+    r"|Copinger|Manors of Suffolk"
+    r"|The American Genealogist"
+    r"|House of Howard|Brenan (?:and|&) Statham",
     re.I,
 )
 

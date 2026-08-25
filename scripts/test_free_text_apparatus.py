@@ -217,6 +217,58 @@ class TestRouteSlugIsNotACitation(unittest.TestCase):
         self.assertFalse(H.has_scholarly_citation("an Ancestry user tree"))
 
 
+class TestQ329VerifiedWorks(unittest.TestCase):
+    """Four works added 25 AUG 2026 after the operator directed a full sample (Q329).
+
+    ** WHY THIS WIDENING IS NOT THE FLATTERING-DIRECTION TRAP. ** Q329 found the
+    detector wrong in BOTH directions at once: it credited entries from a stray
+    work-name in a ROUTE sentence while MISSING the real citation in their
+    `- **Sources**` bullet. On three of four first-sampled rows the two errors
+    CANCELLED — right category, wrong reason — which is the shape that survives an
+    audit because the number looks correct.
+
+    ** THE ROWS WERE READ, NOT COUNTED. ** All 35 candidates were classified by
+    whether the work appears on a non-route line; the five that looked route-only
+    were then read individually. **35 newly credited, 0 credited only via a route.**
+
+    ⛔ Macnamara's *Memorials of the Danvers Family* was verified on ONE row and is
+    deliberately NOT in the pattern. A widening is earned by reading the rows.
+    """
+
+    VERIFIED = (
+        "History of Parliament, *The House of Commons 1386-1421* (1993), s.v. DANVERS, John (d.1449)",
+        "Copinger, *The Manors of Suffolk*, vol. 3 (1905), pp. 5-7",
+        "Mahler (2003) The American Genealogist",
+        "Brenan and Statham, *The House of Howard* (1907), vol. i, pp. 677-693",
+        "Brenan & Statham, The House of Howard, vol. ii",
+    )
+
+    def test_each_verified_work_is_recognised(self):
+        for cite in self.VERIFIED:
+            with self.subTest(cite=cite):
+                self.assertTrue(H.has_scholarly_citation(cite))
+
+    def test_TAG_spelled_out_matches_the_same_work_as_the_abbreviation(self):
+        # `\bTAG\b` was already present; the spelled-out title is the SAME work,
+        # not a new class, and one row was credited by neither.
+        self.assertTrue(H.has_scholarly_citation("cited to TAG 77 (2003)"))
+        self.assertTrue(H.has_scholarly_citation("cited to The American Genealogist 77"))
+
+    def test_NOT_added_on_a_single_verified_row(self):
+        # Macnamara appears in a real Sources bullet with page refs on ONE entry.
+        # One row is not a sample; the standing rule is in Q329.
+        self.assertFalse(
+            H.has_scholarly_citation("Macnamara, Memorials of the Danvers Family (1895), pp. 44-45"),
+            "Macnamara was verified on one row only and must not be in the pattern",
+        )
+
+    def test_negative_controls_still_fail(self):
+        for cite in ("a parliament of fowls", "an Ancestry user tree",
+                     "the manors of this parish are described locally"):
+            with self.subTest(cite=cite):
+                self.assertFalse(H.has_scholarly_citation(cite))
+
+
 class TestNegativeControls(unittest.TestCase):
     """The fail direction is DESTRUCTIVE, so real records must stay records."""
 
