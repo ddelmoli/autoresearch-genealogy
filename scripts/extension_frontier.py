@@ -158,6 +158,57 @@ DECLARED_RE = re.compile(r"FRONTIER DECLARATION")
 # author MEANT to declare is now a silent no-op, and this is what makes that visible.
 MARKER_MENTION_RE = re.compile(r"frontier declaration", re.I)
 
+# ⭐⭐ Q326 (24 AUG 2026): a closure marker on the SAME LINE as deferral language.
+#
+# ** THE VAULT'S OWN RULE IS THAT A CLOSURE IS ABOUT ANCESTRY, NEVER ABOUT WORK NOT
+# YET DONE ** -- "TERMINUS = no cited authority carries the line further; a STOP is a
+# to-do, which is what SILENT is for." A row whose declaring line ALSO says "this
+# pass", names a route it did not walk, or says an edge "would dangle" is describing
+# a stop, and a false closure removes a real EXPAND row permanently and silently.
+#
+# ⚠ MEASURED, NOT SUPPOSED: session #180 retired two such rows by hand and never
+# asked how many more there were. #182 counted **25** -- 12% of everything the vault
+# then called a closed frontier -- and every one was detectable from its own text.
+# Two rows in the same population were NOT defects and are the control this pattern
+# is tuned against: an authority that names parents and declines to certify them, and
+# an entry that weighed the evidence and found it short, are VERDICTS, not deferrals.
+# Neither uses any phrase below.
+#
+# ⛔ ADVISORY, and a CANDIDATE LIST rather than a count to drive to zero -- the same
+# discipline as MARKER_MENTION above. Read the line before striking anything; and
+# note that the marker is a literal string that CANNOT be negated in place, so the
+# fix is always to remove it, never to annotate it.
+DEFERRAL_RE = re.compile(
+    r"this pass"                     # "not wired this pass" -- about the sitting
+    r"|to wire it"                   # names what is still owed
+    r"|would dangle"                 # blocked on minting, not on evidence
+    r"|route\s*=\s*"                # a route named and not walked
+    r"|find a record"
+    r"|not for want of evidence"     # two rows said this outright
+    r"|stop for scope"
+    r"|recorded stop"
+    r"|deliberately BANKED"
+    r"|BANKED here",
+    re.I,
+)
+
+
+def parked_closures(vault):
+    """Rows whose closure marker shares a LINE with deferral language. (Q326)
+
+    Returns [{id, name, gen, file, line}] -- a candidate list to READ. One computation,
+    so the gate line and any future worklist cannot disagree about which rows they mean.
+    """
+    out = []
+    for r in rows_with_bodies(vault):
+        for l in declaring_lines(r.get("_body") or ""):
+            if DEFERRAL_RE.search(l):
+                out.append({"id": r["id"], "name": r["name"], "gen": r["gen"],
+                            "file": r["file"], "line": l.strip()[:200]})
+                break
+    return out
+
+
 
 # A declaration is only worth the SILENT row it closes if it says WHY on some
 # authority. "Parentage unknown" written after looking at Cawley is a research
@@ -278,6 +329,9 @@ def rows_with_bodies(vault):
             # candidate list to READ, never a count to drive to zero.
             "marker_mention": bool(MARKER_MENTION_RE.search(body))
                               and not DECLARED_RE.search(body),
+            # Q326: parked_closures re-reads the declaring LINE, so it needs the body.
+            # Carried here rather than re-parsed, so both readers see one text.
+            "_body": body,
         })
     return out
 
@@ -298,6 +352,10 @@ def main(argv=None):
                     help="list entries where the closure marker appears in a NON-declaring "
                          "form (Q285). Advisory: discussing another row's declaration is "
                          "legitimate; the defect is a sentence-case marker meant to declare.")
+    ap.add_argument("--parked-closures", action="store_true",
+                    help="list rows whose closure marker shares a LINE with deferral "
+                         "language (Q326). Advisory CANDIDATE list: a verdict and a "
+                         "deferral can use similar words, so READ the line.")
     ap.add_argument("--heartbeat", action="store_true",
                     help="one-line SILENT/DECLARED status for the SessionStart audit suite")
     a = ap.parse_args(argv)
@@ -318,6 +376,19 @@ def main(argv=None):
               f"non-declaring form  [advisory — READ them, do not drive to 0]")
         for r in sorted(hits, key=lambda r: (r["gen"] is None, r["gen"] or 0)):
             print(f"  Gen {str(r['gen']):>3}  {r['id']}  {r['name'][:44]:<44} [{r['file']}]")
+        return 0
+
+    if a.parked_closures:
+        hits = parked_closures(vault)
+        print(f"PARKED_CLOSURE: {len(hits)} row(s) whose closure marker sits on the same "
+              f"line as deferral language  [advisory — READ them, do not drive to 0]")
+        print("  A closure is about ANCESTRY; 'this pass', a named-but-unwalked route or "
+              "'an edge would dangle' describe WORK NOT YET DONE.")
+        print("  ⚠ A verdict can share the wording — 'not established from the sources "
+              "consulted' is a result, not a deferral. Read the line before striking.")
+        for r in sorted(hits, key=lambda r: (r["gen"] is None, r["gen"] or 0)):
+            print(f"  Gen {str(r['gen']):>3}  {r['id']}  {r['name'][:40]:<40} [{r['file']}]")
+            print(f"        {r['line'][:150]}")
         return 0
 
     if a.heartbeat:
