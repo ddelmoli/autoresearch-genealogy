@@ -925,16 +925,76 @@ def open_question_ids(vault):
     lane on 15 AUG. The file set now comes from `question_block.question_files` (the ONE
     home), so the next register re-layout cannot silently detach this reader again.
     """
-    import re
+    return _scan_register(vault)[0]
+
+
+def open_question_labels(vault):
+    """{vault id -> [Q labels]} for every id named in a LIVE question block.
+
+    ** THE SAME READ AS `open_question_ids`, KEEPING THE QUESTION NUMBER instead of
+    throwing it away** — that set is built from this dict, so the suppression the
+    IMPROVE gate tier applies and the pointer the lanes print can never disagree
+    about who is tracked.
+
+    ** WHY IT EXISTS (24 AUG 2026). ** The register named **359** people and only
+    **28** entries carried a `flags: [Q##]`, so for **338** of them a lane draw
+    surfaced nothing and the drawer re-derived from scratch what a live question had
+    already established. Measured on the day: one woman sat in FOUR live
+    questions with her entry flagging none of them, and a man flagged for one question
+    was also the subject of a second. The register held the link; nothing printed it.
+
+    ⛔ **A `flags:` back-fill was the alternative and is NOT the fix**: it duplicates a
+    fact the register owns, and it would need its own staleness gate, which is exactly
+    why a `gate_tracked:` meta key was refused (operator, 03 AUG 2026). Reading the
+    register cannot go stale.
+
+    ⚠ **Deliberately COARSE, inheriting `open_question_ids`' accepted false positives**:
+    any `P-` id anywhere in a live block counts, including one named incidentally by a
+    question about something else. The consequence is a printed HINT, never a removal
+    or a ranking change — so a wrong label costs a glance, and the caveat travels with
+    the output. Resolved questions are not read, so a resolved question stops pointing.
+    """
+    return _scan_register(vault)[1]
+
+
+PID_RE = re.compile(r"P-[0-9A-Za-z]{5,7}")
+
+
+def _scan_register(vault):
+    """ONE pass over the live question files -> (ids, {id: [Q labels]}).
+
+    ⚠⚠ **THE TWO PRODUCTS HAVE DELIBERATELY DIFFERENT SCOPES, AND THAT IS THE WHOLE
+    REASON THIS HELPER EXISTS.**
+
+      * `ids` is every `P-` id anywhere in a live question FILE, blocks or not. That is
+        `open_question_ids`' original contract and it must not narrow: the router file
+        holds no question blocks at all, so a block-scoped read drops every id named in
+        its brick-wall tables. Narrowing it once already collapsed the suppression set
+        **238 -> 3** and put Q126's characterised rows back at IMPROVE rank 1-2
+        (15 AUG 2026); `test_open_question_ids` pins it and CAUGHT this exact mistake
+        again when the labels were first built on top of the set (24 AUG 2026).
+      * `labels` is BLOCK-scoped, because a Q number is only meaningful if it came from
+        a heading. Ids outside any live block are in `ids` and carry no label — correct
+        in both directions: they still suppress, they just cannot point.
+
+    One read, so the two can never disagree about which FILES are live.
+    """
     import question_block as QB
-    out = set()
-    for p in QB.question_files(vault):
+    ids, labels = set(), {}
+    for path in QB.question_files(vault):
         try:
-            with open(p, encoding="utf-8") as fh:
-                out |= set(re.findall(r"P-[0-9A-Za-z]{5,7}", fh.read()))
+            lines = open(path, encoding="utf-8").read().split("\n")
         except OSError:
             continue          # no register -> nothing is tracked; never a hard failure
-    return out
+        ids |= set(PID_RE.findall("\n".join(lines)))
+        for s_i, e_i in QB.split_blocks(lines):
+            h = QB.parse_heading(lines[s_i])
+            if h is None or not QB.is_live(h):
+                continue      # resolved / tombstoned blocks must stop pointing
+            label = "Q" + h["qlabel"]
+            for pid in set(PID_RE.findall("\n".join(lines[s_i:e_i]))):
+                labels.setdefault(pid, set()).add(label)
+    return ids, {k: sorted(v, key=lambda q: (len(q), q)) for k, v in labels.items()}
 
 
 def _edge_audit_qualifies(meta, cat, tier):
@@ -1881,6 +1941,14 @@ def main(argv=None):
     print("  At the END OF THIS ITERATION (not at close, which records nothing by default):")
     print("    python3 scripts/session_plan.py --record --lane <L> --outcome hit|miss")
     print("  hit = the lane target was met, or the lane ran dry; short of target is a MISS.")
+    # One read of the register for the whole print pass; a row that a LIVE question
+    # already names gets its Q number printed beside it (24 AUG 2026).
+    try:
+        qlabels = open_question_labels(vault)
+    except Exception as e:            # a pointer must never break the plan
+        print(f"session_plan: WARNING - question labels unavailable ({e}); "
+              f"rows will print without them.")
+        qlabels = {}
     ordered = ([pick] if pick else []) + [ln for ln in LANES if ln != pick]
     for ln in ordered:
         rows = lanes[ln]
@@ -1892,7 +1960,13 @@ def main(argv=None):
         print(f"\n  [{ln}] {sizes[ln]} candidates{mark}{floor}{cool}")
         for r in rows[:per_lane]:
             gen = f"Gen {r['gen']:>2}" if r.get("gen") not in (None, "") else "Gen  ?"
-            print(f"    {gen}  {str(r.get('name'))[:42]:44} {r.get('why')}")
+            # ⭐ The register already knows which questions name this person; print it.
+            # ⚠ A HINT, not a verdict: the match is coarse (any `P-` id anywhere in a
+            # live block), so a row can be labelled by a question that merely mentions
+            # it. Read the question before treating it as this row's work.
+            qs = qlabels.get(r.get("id")) or []
+            tag = f"  [{','.join(qs)}]" if qs else ""
+            print(f"    {gen}  {str(r.get('name'))[:42]:44} {r.get('why')}{tag}")
         if sizes[ln] > per_lane:
             print(f"    ... and {sizes[ln] - per_lane} more (--limit N, or the owning "
                   f"tool for the full list)")
