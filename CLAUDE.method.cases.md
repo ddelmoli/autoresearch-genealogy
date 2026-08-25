@@ -562,3 +562,84 @@ ROLE, not just size. The reusable routing pattern:
 **The file an ancestor's narrative entry lives in** is the one where their full sourced write-up sits (not where they merely appear inline as a sibling-link). The generated roster groups people by that file (`gen_person_index --write` emits one `## <Family_Tree_FileName>` section per file), so placing the entry in the right file is what keeps the roster correct. When migrating an entry between files, move it **with its `- meta:` block intact** (never reuse or re-mint its `id`) to the correct file in the same commit, gen-sorted within its section, and confirm it landed under the right heading.
 
 **A given vault's specific lineages, its companion-file layout, and its generation-anchor table are per-client facts: keep them in a gitignored `CLAUDE.instance.md`, never in this file.**
+
+---
+
+## A zero is a claim about the instrument (25 AUG 2026)
+
+Four incidents, one shape. In each, a confident explanation was reasoned out while the
+thing that would have refuted it sat there to be read, and in each the reading was cheap.
+The rule they produced is in `CLAUDE.method.md` § Style; this is where they came from.
+
+### The scale was wrong, and it was the number in front of the operator (`db92d44`; retraction in the vault log)
+
+`has_scholarly_citation()` read the whole entry including the `- meta:` line, so declaring
+WHERE evidence would be found counted as having found it. **That mechanism was real and the
+fix was right.** What was wrong was the size: **195 affected rows reported, 4 actual.**
+
+The 195 came from an ad-hoc chunker keyed on any line starting `- **`, which is exactly what
+sanctioned body bullets look like, so every entry was truncated at its own Sources bullet and
+its citation went unseen. Re-measured through the module's own `entry_blocks_with_ids` and
+`own_region`: 516 entries credited, 4 by the meta line alone.
+
+⭐ **The lesson is not "be careful with counts".** It is that a second, hand-rolled parser was
+written to measure a corpus that already had one, and the two disagreed by 191 rows. Re-derive
+through the owning module, or the number is about the chunker.
+
+### A detector asserting what its sibling disclaimed (`ab9ec18`)
+
+A gate reported **30 of 163 live questions as naming no resolver. All 30 named one** —
+"**Next step**: browse the film image by image", "**Minimum record needed**: the 1826 register,
+record #2", "This is the resolver." The regex knew four phrasings; the register writes at least
+eleven.
+
+Two defects, one cause: the regex lived twice, and the copies disagreed about what a miss MEANS.
+One documented plainly that a miss "is NOT a claim that the question names no resolver — open the
+question"; the other copied the four shapes and named the finding RESOLVERLESS, asserting exactly
+what its sibling disclaimed. **And the rows were uninspectable** — `--list` collected them and
+never printed them, so the finding could not be checked even by someone who wanted to.
+
+⚠ A finding you cannot open is not a finding. Printing the rows was half the fix, and it is the
+half that generalises.
+
+### A blind detector reading a confident zero (`4657cb1`)
+
+Six entries were minted from a scholarly edition of a 12th-century tract — named work,
+peer-reviewed edition, exact pages, one page verified at the scan image — and the census called
+every one UNCITED, putting them on the worklist whose route is a library pass. Two of the eight
+rows that moved when the detector was opened **had been sitting on that worklist while the library
+pass was already done and cited.**
+
+It was found **by writing, not by auditing**: the defect surfaced because someone did the work and
+saw the category was wrong. An earlier diff had read a confident 0 because the `--csv` `category`
+column carries the ARK-count class, not the UNCITED/BOOK_SOURCED split — the diff was measuring a
+different question than the one being asked of it.
+
+⛔ **A detector's zero is the weakest reading it produces.** It states what the detector can see.
+
+### "No records" has three explanations before it has one
+
+The research-side twin, and the one that costs unattended sittings rather than commits. A sweep
+returning uniform failures — identical 503s, identical empties — was read as a fact about the
+records at least twice, when the session had silently signed out and every request after that point
+was answering about authentication rather than about a person. Iterations were spent, and negative
+results were nearly logged, against an instrument that was not reporting.
+
+The register's own ruling on absence points the same way: **"no records" means no records OF THIS
+PERSON**, since a record naming a child or a sibling is a genuine record documenting someone else
+(`9a4b537`). Absence is a conclusion with preconditions, not an observation.
+
+⚠ **Uniformity is the tell.** Real corpora are ragged; a sweep where every row fails the same way
+is describing the instrument. Probe with a known-good fetch before logging anything.
+
+### What the guard enforces
+
+Only the irreversible half is mechanical, and `scripts/guard_destructive.py` (PreToolUse) is it:
+the `git` commands that discard uncommitted work, in-place stream edits and truncating redirects
+over vault Markdown, and hand edits of the registers that have stores of their own. The vault repo
+has no copy but the working one, and a bulk rewrite that goes wrong goes wrong across every file
+before any gate measures it.
+
+**The hypothesis discipline itself cannot be enforced, only followed** — nothing can verify from
+outside that an observation was actually made. That is why these narratives are kept: they change
+the prior a fresh session starts with, which is the only thing that survives iteration nine.

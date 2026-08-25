@@ -1,5 +1,6 @@
 #!/bin/bash
-# install-hooks — point this clone's git at the tracked .githooks/ directory.
+# install-hooks — activate this clone's gates: the tracked .githooks/ directory,
+# and the agent-side PreToolUse guard in .claude/settings.json.
 #
 # WHY THIS EXISTS AT ALL. Git will not let a repository activate its own hooks on
 # clone, and that is a deliberate security property, not an oversight: if cloning
@@ -7,6 +8,13 @@
 # would be arbitrary code execution. So the hook FILE travels with the repo (it
 # is tracked in .githooks/, mode 755) but the SWITCH does not — `core.hooksPath`
 # lives in .git/config, which is per-clone and never transferred.
+#
+# THE AGENT HOOK HAS THE SAME SPLIT FOR A DIFFERENT REASON. scripts/
+# guard_destructive.py is tracked, but the switch lives in .claude/settings.json,
+# which .gitignore excludes ON PURPOSE: that file mixes framework hooks with the
+# operator's local AUTORESEARCH_VAULT path, and the local half must not travel.
+# So the entry is MERGED in here rather than checked out — everything already in
+# the file is preserved, and only the guard's own entry is added or refreshed.
 #
 # That leaves exactly one unavoidable manual step per clone. This script is it.
 #
@@ -43,5 +51,75 @@ for h in .githooks/*; do
 done
 
 echo "install-hooks: active hooks -> $(ls .githooks | tr '\n' ' ')"
+
+# --- the agent-side guard ----------------------------------------------------
+# Merge the PreToolUse entry into .claude/settings.json, creating the file if it
+# is absent. Anything already there — SessionStart hooks, permissions, env — is
+# left exactly as it was; a malformed file is reported and NOT overwritten,
+# because clobbering an operator's local config to install a gate would be the
+# same class of mistake the gate exists to prevent.
+if [ ! -f scripts/guard_destructive.py ]; then
+    echo "install-hooks: scripts/guard_destructive.py missing — agent guard NOT installed." >&2
+    exit 1
+fi
+
+python3 - <<'PY'
+import json
+import pathlib
+import sys
+
+GUARD = "guard_destructive.py"
+ENTRY = {
+    "matcher": "Bash|Edit|Write|NotebookEdit",
+    "hooks": [
+        {
+            "type": "command",
+            "command": 'python3 "${CLAUDE_PROJECT_DIR:-.}/scripts/guard_destructive.py"',
+            "timeout": 10,
+        }
+    ],
+}
+
+path = pathlib.Path(".claude/settings.json")
+if path.exists():
+    try:
+        settings = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"install-hooks: {path} is not valid JSON ({exc}); leaving it alone.",
+              file=sys.stderr)
+        print("install-hooks: fix the file, then re-run.", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(settings, dict):
+        print(f"install-hooks: {path} is not a JSON object; leaving it alone.",
+              file=sys.stderr)
+        sys.exit(1)
+else:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    settings = {}
+
+pre = settings.setdefault("hooks", {}).setdefault("PreToolUse", [])
+mine = [
+    i for i, e in enumerate(pre)
+    if any(GUARD in h.get("command", "") for h in e.get("hooks", []))
+]
+
+if not mine:
+    pre.append(ENTRY)
+    verb = "added"
+elif len(mine) == 1 and pre[mine[0]] == ENTRY:
+    print("install-hooks: agent guard already active (PreToolUse -> guard_destructive.py).")
+    sys.exit(0)
+else:
+    # One entry wins; duplicates from an interrupted earlier run are collapsed.
+    for i in reversed(mine[1:]):
+        del pre[i]
+    pre[mine[0]] = ENTRY
+    verb = "refreshed"
+
+path.write_text(json.dumps(settings, indent=2) + "\n")
+print(f"install-hooks: {verb} the agent guard (PreToolUse -> guard_destructive.py).")
+PY
+
 echo "install-hooks: verify with a deliberate failure, e.g. commit a file containing a real"
-echo "               record identifier — the pre-commit PII gate should block it."
+echo "               record identifier — the pre-commit PII gate should block it; and ask"
+echo "               Claude to edit Research_Log.md — the agent guard should refuse."
