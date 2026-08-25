@@ -68,6 +68,43 @@ def scan_files(vault):
     return files
 
 
+# A legacy id counts as ALREADY CITED when it appears inside a host-prefixed
+# locator as a whole delimited segment -- between `:` or `/` or a string end.
+_LOC_DELIMS = ":/"
+
+
+def _cited_by(tok: str, locators) -> bool:
+    """Is `tok` a delimited segment of any host-prefixed locator on the line?
+
+    ⛔⛔ THIS USED TO BE `t.split(":")[-1] == tok`, AND THAT IS ONLY RIGHT FOR THE
+    `host:ns:id` SHAPE. An ARK-STYLE locator carries its own colons and slashes --
+    `antenati:ark:/12657/an_ua37834763/wj6aDjm` -- so its last colon-segment is the
+    whole path `/12657/an_ua37834763/wj6aDjm`, which never equals the legacy id
+    `an_ua37834763` the other counter extracts from the same token. The result was a
+    FALSE POSITIVE on a correctly-migrated locator: the gate demanded a host prefix
+    for an id that already had one, and there was no way to satisfy it without
+    corrupting the real locator (found 25 AUG 2026, session #183, blocking a shard
+    split on a line that had carried this shape unchanged for weeks).
+
+    ⚠ Containment is DELIMITED, not a bare substring: a plain `in` test would let a
+    short id be swallowed by an unrelated locator on the same line and hide a real
+    bare token, which is the failure this gate exists to catch.
+    """
+    for loc in locators:
+        start = 0
+        while True:
+            i = loc.find(tok, start)
+            if i < 0:
+                break
+            before_ok = i == 0 or loc[i - 1] in _LOC_DELIMS
+            j = i + len(tok)
+            after_ok = j == len(loc) or loc[j] in _LOC_DELIMS
+            if before_ok and after_ok:
+                return True
+            start = i + 1
+    return False
+
+
 def bare_tokens(line: str):
     """Ids the legacy counter credits on this line that the Spec 03 counter does not.
 
@@ -77,8 +114,8 @@ def bare_tokens(line: str):
     legacy = H.extract_arks(line)
     if not legacy:
         return []
-    spec = {t.split(":")[-1] for t in H.record_locators(line)}
-    return sorted(legacy - spec)
+    spec = H.record_locators(line)
+    return sorted(t for t in legacy if not _cited_by(t, spec))
 
 
 def audit(vault, only=None):
