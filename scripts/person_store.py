@@ -503,8 +503,10 @@ BANKED_HOSTS = ("fs", "wt", "anc")
 #                      is in the sources, not in the ancestry.
 #
 # ⚠ Q322 was raised because the vault ruled BOTH WAYS EIGHT DAYS APART on two
-# identical cases in one parish (a wife's parentage declined 19 AUG; a brother pair
-# declared 24 AUG), and neither ruling cited the other. Collapsing them back into one
+# identical cases in one parish -- a wife's parentage declined on the 19th, a
+# brother pair declared on the 24th -- and neither ruling cited the other. (The
+# named version belongs in the vault's own log, not here: this file is public.)
+# Collapsing them back into one
 # value re-creates exactly that ambiguity: a later session cannot tell which was
 # meant, and the terminus/stop distinction the frontier rules are built on is what
 # gets lost. Use `declares_parent_absence()` when you mean "retired from the
