@@ -2060,9 +2060,38 @@ SCHOLARLY_CITATION_RE = re.compile(
 )
 
 
+#: The `- meta:` line is a MACHINE FIELD, not prose, and is stripped before the
+#: apparatus test — see has_scholarly_citation.
+_META_LINE_RE = re.compile(r"^\s*-\s*meta:.*$", re.M)
+
+
 def has_scholarly_citation(body: str) -> bool:
-    """True if the entry cites scholarly apparatus rather than only a record ARK."""
-    return bool(SCHOLARLY_CITATION_RE.search(body or ""))
+    """True if the entry cites scholarly apparatus rather than only a record ARK.
+
+    ** THE `- meta:` LINE IS EXCLUDED, AND THAT IS THE WHOLE POINT (Q328, operator
+    ruling 25 AUG 2026). ** A `route:` slug is a lowercase word — `medlands`,
+    `richardson`, `odnb`, `nehgs`, `weis`, `flodoard`, `regino`, `mgh`,
+    `chamberlain` — and every one of those matches `SCHOLARLY_CITATION_RE`. So
+    before this, **declaring WHERE the evidence would be found counted as HAVING
+    FOUND IT**, and an entry could be BOOK_SOURCED — *"finished work that can never
+    earn a record ARK, not a gap"* — while citing nothing at all.
+
+    ⭐ `route` and BOOK_SOURCED are opposites by the method file's own definitions:
+    `route` says where the evidence IS, BOOK_SOURCED says the entry CITES apparatus.
+    The UNCITED / BOOK_SOURCED split exists to separate "nobody has documented this
+    person" from "documented as well as it ever will be", and a pointer is not a
+    citation.
+
+    ⚠⚠ **MEASURED AT 4 ROWS, AFTER A FIRST MEASUREMENT SAID 195.** The 195 came from
+    an ad-hoc chunker that treated any line starting `- **` as a new entry — so every
+    entry was truncated at its own `- **Sources**` bullet and its citation went
+    unseen. **Re-measured through this module's own `entry_blocks_with_ids` +
+    `own_region`, the true population is four**, all `profile_status: stub` rows
+    minted in one session with a `route: medlands` and no citation. The mechanism was
+    real; the scale was an artefact of not using the seam. Same scoping discipline as
+    `own_region` (deferred 49): a machine field is not prose.
+    """
+    return bool(SCHOLARLY_CITATION_RE.search(_META_LINE_RE.sub("", body or "")))
 
 
 def classify(ark_count: int) -> str:

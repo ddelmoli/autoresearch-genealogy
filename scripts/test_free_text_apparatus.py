@@ -165,6 +165,58 @@ class TestIrishApparatus(unittest.TestCase):
                 self.assertFalse(H.has_scholarly_citation(cite))
 
 
+class TestRouteSlugIsNotACitation(unittest.TestCase):
+    """Q328 (operator ruling 25 AUG 2026): the `- meta:` line is excluded.
+
+    ** A `route:` slug is a lowercase word that collides with the apparatus regex **
+    — `medlands`, `richardson`, `odnb`, `nehgs`, `weis`, `flodoard`, `regino`, `mgh`,
+    `chamberlain`. Before this, declaring WHERE the evidence would be found counted
+    as HAVING FOUND IT, and four `profile_status: stub` rows citing nothing at all
+    were classed BOOK_SOURCED: *"finished work that can never earn a record ARK, not
+    a gap"*.
+
+    ⚠⚠ AND THE FIRST MEASUREMENT OF THIS SAID 195, NOT 4. It came from an ad-hoc
+    chunker that treated any line starting `- **` as a new entry, so every entry was
+    truncated at its own `- **Sources**` bullet and its citation went unseen. The
+    number was wrong by ~49x and was put in front of the operator before being
+    re-measured through `entry_blocks_with_ids` + `own_region`. **The mechanism was
+    real; the scale was an artefact of not using the seam.** That is why the positive
+    case below is a body citation living BELOW a bold body bullet — the exact shape
+    the bad chunker could not see.
+    """
+
+    META = ("**Someone** (d. 1000)\n"
+            "- meta: {id: P-AAAAAA, generation: 5, route: medlands}\n"
+            "- prose that cites nothing")
+
+    def test_route_slug_alone_is_NOT_apparatus(self):
+        self.assertFalse(H.has_scholarly_citation(self.META))
+
+    def test_every_colliding_route_slug_is_excluded(self):
+        for slug in ("medlands", "richardson", "odnb", "nehgs", "weis",
+                     "flodoard", "regino", "mgh", "chamberlain"):
+            with self.subTest(slug=slug):
+                body = "**X** (d. 1000)\n- meta: {id: P-AAAAAA, route: %s}\n- no citation" % slug
+                self.assertFalse(H.has_scholarly_citation(body),
+                                 f"route: {slug} must not credit the entry")
+
+    def test_a_REAL_citation_below_a_bold_body_bullet_still_counts(self):
+        # ⭐ The positive control the bad measurement lacked.
+        body = (self.META + "\n- **Sources** (scholarly apparatus, limb (b))\n"
+                "  - FMG Medlands, ANJOU MAINE (Cawley) — read directly 24 AUG 2026")
+        self.assertTrue(H.has_scholarly_citation(body))
+
+    def test_the_meta_line_does_not_mask_a_citation_on_the_same_entry(self):
+        # Stripping the meta line must remove ONLY that line.
+        body = "- meta: {id: P-AAAAAA, route: medlands}\ncited to the Complete Peerage, vol. 6"
+        self.assertTrue(H.has_scholarly_citation(body))
+
+    def test_bare_strings_are_unaffected(self):
+        # Every other caller passes prose with no meta line at all.
+        self.assertTrue(H.has_scholarly_citation("cited to Richardson, Royal Ancestry"))
+        self.assertFalse(H.has_scholarly_citation("an Ancestry user tree"))
+
+
 class TestNegativeControls(unittest.TestCase):
     """The fail direction is DESTRUCTIVE, so real records must stay records."""
 
