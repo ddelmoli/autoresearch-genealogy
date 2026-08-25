@@ -306,7 +306,8 @@ def lane_expand(vault):
     carried his father alone.
 
       tier 1  SILENT      -- no parents edge, no declared reason
-      tier 2  HALF_WIRED  -- exactly one parent, no `no-second-parent` declaration
+      tier 2  HALF_WIRED  -- exactly one parent, no parent-ABSENCE declaration
+                            (`no-second-parent` or `unnamed-in-record`; Q322)
 
     ⚠ SILENT RANKS FIRST, and not because it is more important: a 0-parent row is
     unambiguously open, while a 1-parent row may be perfectly correct (an unnamed
@@ -343,8 +344,10 @@ def lane_expand(vault):
         hint = ("second parent is usually NAMED in an authority this entry already "
                 "cites -- wire it, do not declare"
                 if h["deep"] else
-                "mixed set: read the entry -- wire the second parent, or declare "
-                "`no-second-parent` from a RECORD or named authority")
+                "mixed set: read the entry -- wire the second parent; or declare "
+                "`no-second-parent` (ancestry: one named parent is the whole truth) "
+                "or `unnamed-in-record` (sources: the parent existed and is unnamed "
+                "in every record read), EITHER from a RECORD or named authority")
         out.append({"id": h["id"], "name": h["name"], "gen": h["gen"],
                     "file": h["file"], "tier": "half_wired",
                     "why": f"HALF-WIRED: one parent only, no declared reason -- {hint}"})
@@ -872,7 +875,7 @@ def lane_banked(vault):
         host = ps.banked_parents_host(rec)
         if not host:
             continue
-        # Q238 option 1: settled = TWO parents, or a `no-second-parent` declaration.
+        # Q238 option 1: settled = TWO parents, or a parent-ABSENCE declaration.
         # Was "any parents edge", which excluded the HALF-WIRED rows this lane most
         # needs to offer. Shared predicate so the gate and the lane cannot disagree.
         if ps.banked_parents_settled(rec):

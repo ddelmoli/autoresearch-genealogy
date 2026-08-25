@@ -113,7 +113,7 @@ def edge_ids(val):
 # structurally at about Gen 25. Above it the second parent is normally NAMED in an
 # authority the entry already cites (Cawley, Complete Peerage, Richardson) and was
 # simply never wired -- EXPAND-shaped work that grows the tree. Below it the set is
-# genuinely mixed, and that is where `no-second-parent` actually belongs.
+# genuinely mixed, and that is where a parent-absence declaration actually belongs.
 # ⚠ A RANKING HINT, NOT A RULE. It says which QUESTION to ask first, never what the
 # answer is; a deep row can still be correctly one-parent, and a shallow one can
 # still have a mother named in print.
@@ -130,7 +130,8 @@ def half_wired_rows(vault=None):
     could then disagree with the banner about its own worklist.
 
     Returns [{id, name, gen, file, declared, deep}] for every one-parent row.
-      declared -- carries `adjudicated_why: no-second-parent`, i.e. SETTLED
+      declared -- carries a parent-ABSENCE `adjudicated_why` (`no-second-parent`,
+                  or `unnamed-in-record` since Q322), i.e. SETTLED
       deep     -- gen >= DEEP_HALF_WIRED_GEN, where the second parent is usually
                   NAMED in an authority the entry already cites and simply never
                   wired. Measured 07 AUG 2026: of 97 undeclared rows, 51 were
@@ -155,11 +156,13 @@ def half_wired_rows(vault=None):
         metaline = (block.split("\n")[0] if block.lstrip().startswith("- meta:")
                     else next((l for l in block.split("\n")
                                if l.lstrip().startswith("- meta:")), ""))
-        why = person_store.adjudicated_why_values(metaline)
         gen = r.get("gen")
         out.append({"id": r["id"], "name": r.get("name") or "?", "gen": gen,
                     "file": r.get("file") or "",
-                    "declared": "no-second-parent" in why,
+                    # Q322: EITHER parent-absence value retires the row. Asked
+                    # through the shared predicate so this gate and the lane cannot
+                    # disagree about which rows are done.
+                    "declared": person_store.declares_parent_absence(metaline),
                     "deep": bool(gen is not None and gen >= DEEP_HALF_WIRED_GEN)})
     return out
 
@@ -350,7 +353,7 @@ def validate_edges(limit=20):
     # which rows are half-wired. Same discipline as gen_mismatches().
     half_wired = [(h["id"], h["declared"]) for h in half_wired_rows(VAULT)]
     hw_declared = [i for i, d in half_wired if d]
-    print(f"  HALF_WIRED_PARENT (entry names exactly ONE parent): {len(half_wired)}   [advisory; baseline is NOT 0 — one parent is often CORRECT. {len(hw_declared)} DECLARED via `adjudicated_why: no-second-parent`, {len(half_wired)-len(hw_declared)} undeclared = the worklist. NOT counted by SILENT/DECLARED — deferred 50]")
+    print(f"  HALF_WIRED_PARENT (entry names exactly ONE parent): {len(half_wired)}   [advisory; baseline is NOT 0 — one parent is often CORRECT. {len(hw_declared)} DECLARED via `adjudicated_why: no-second-parent` / `unnamed-in-record`, {len(half_wired)-len(hw_declared)} undeclared = the worklist. NOT counted by SILENT/DECLARED — deferred 50]")
     for c in banked_stale[:limit]:
         print(f"    BANKED_STALE {nm(c)} ({c}) has a parents edge; drop `banked_parents`")
     for c in adj_unexplained[:limit]:

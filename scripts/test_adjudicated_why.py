@@ -57,6 +57,48 @@ def main():
     check(PS.adjudicated_why_values(meta(adjudicated_why="no-second-parent"))
           == ["no-second-parent"], "bare `no-second-parent` reads")
 
+    print("\nQ322 — THE SIXTH VALUE, and why it is NOT a synonym")
+    unnamed = meta(adjudicated_why="unnamed-in-record")
+    check(PS.adjudicated_why_values(unnamed) == ["unnamed-in-record"],
+          "bare `unnamed-in-record` reads")
+    check(PS.declares_parent_absence(unnamed),
+          "...and RETIRES the half-wired row (it is not a research to-do)")
+    check(PS.declares_parent_absence(meta(adjudicated_why="no-second-parent")),
+          "`no-second-parent` retires it too — both are parent-ABSENCE values")
+    # ⚠ THE POINT OF THE SPLIT: retirement is shared, the CLAIM is not. Q322 exists
+    # because one value carried both meanings and the vault ruled both ways eight
+    # days apart on two identical Hingham cases.
+    check(PS.adjudicated_why_values(unnamed) != ["no-second-parent"],
+          "...but the TOKEN still distinguishes them: sources-absence != ancestry claim")
+    check(not PS.declares_parent_absence(meta(adjudicated_why="fs-gap")),
+          "negative control — an EDGE reason retires NOTHING half-wired")
+    check(not PS.declares_parent_absence(meta(fs="AAAA-111")),
+          "negative control — no key at all retires nothing")
+    check(PS.adjudicated_why_values(meta(adjudicated_why="unnamed_in_record")) == [],
+          "underscore typo of the new value invents no reason")
+
+    print("\nQ322 — the two values COMPOSE with an edge reason, like the fifth did")
+    both = meta(adjudicated="'[P-BBBBBB]'",
+                adjudicated_why="'[fs-gap, unnamed-in-record]'")
+    check(PS.adjudicated_why_values(both) == ["fs-gap", "unnamed-in-record"],
+          "quoted list reads both")
+    check(PS.declares_parent_absence(both),
+          "...the row is retired from HALF_WIRED")
+    check("fs-gap" in PS.adjudicated_why_values(both),
+          "...and its fs-gap RE-CHECK still fires")
+
+    print("\nQ322 — `banked_parents_settled` follows the predicate, not the token")
+    class _Rec:
+        parents = ["P-CCCCCC"]
+        raw = {"line": meta(banked_parents="fs", adjudicated_why="unnamed-in-record")}
+    check(PS.banked_parents_settled(_Rec()),
+          "one parent + `unnamed-in-record` = SETTLED (was False before Q322)")
+    class _Open:
+        parents = ["P-CCCCCC"]
+        raw = {"line": meta(banked_parents="fs")}
+    check(not PS.banked_parents_settled(_Open()),
+          "negative control — one parent, no declaration = still work")
+
     print("\nTHE COLLISION CASE — 14 real rows need two reasons at once")
     two = meta(adjudicated="'[P-BBBBBB]'", adjudicated_why="'[fs-gap, no-second-parent]'")
     vals = PS.adjudicated_why_values(two)

@@ -487,10 +487,34 @@ EXTERNAL_ID_SENTINELS = {"TBD", "NONE", "-", ""}
 BANKED_HOSTS = ("fs", "wt", "anc")
 
 # The closed vocabulary of `adjudicated_why`. The first four say why a `?` EDGE
-# survives adjudication (deferred 38). `no-second-parent` says why an entry names
-# only ONE parent (deferred 50, operator-directed 04 AUG 2026) — a different kind
-# of statement, about an ABSENCE rather than about an edge.
-ADJUDICATED_WHY = ("fs-gap", "hedge", "contradicted", "privacy", "no-second-parent")
+# survives adjudication (deferred 38). The last two say why an entry names only ONE
+# parent (deferred 50, operator-directed 04 AUG 2026; Q322, operator 24 AUG 2026) —
+# a different kind of statement, about an ABSENCE rather than about an edge.
+#
+# ** `no-second-parent` vs `unnamed-in-record` — Q322, and the distinction is the
+# WHOLE point of adding a sixth value. ** Both retire a HALF_WIRED_PARENT row, and
+# they are NOT interchangeable:
+#
+#   no-second-parent   an ANCESTRY statement. One named parent is the whole truth
+#                      of the case: a record or named authority says so.
+#   unnamed-in-record  a SOURCE statement. The second parent demonstrably EXISTED
+#                      and is unnamed in every record consulted. Nothing further can
+#                      be read, so the row is not a research to-do — but the absence
+#                      is in the sources, not in the ancestry.
+#
+# ⚠ Q322 was raised because the vault ruled BOTH WAYS EIGHT DAYS APART on two
+# identical cases in one parish (a wife's parentage declined 19 AUG; a brother pair
+# declared 24 AUG), and neither ruling cited the other. Collapsing them back into one
+# value re-creates exactly that ambiguity: a later session cannot tell which was
+# meant, and the terminus/stop distinction the frontier rules are built on is what
+# gets lost. Use `declares_parent_absence()` when you mean "retired from the
+# worklist"; test the token itself only when you mean the ancestry claim.
+ADJUDICATED_WHY = ("fs-gap", "hedge", "contradicted", "privacy",
+                   "no-second-parent", "unnamed-in-record")
+
+#: The subset of `ADJUDICATED_WHY` that retires a HALF_WIRED_PARENT row. Kept as a
+#: named constant so a future seventh value joins the retirement set DELIBERATELY.
+PARENT_ABSENCE_WHY = ("no-second-parent", "unnamed-in-record")
 
 
 def adjudicated_why_values(record_or_line):
@@ -694,6 +718,35 @@ def fs_probed(record_or_line):
     return v if v and ROUTE_DATE_RE.match(v) else None
 
 
+def declares_parent_absence(record_or_line) -> bool:
+    """True when an entry has DECLARED why it names only one parent. (Q322)
+
+    ** ONE PREDICATE, THREE READERS ** -- `build_edges.half_wired_rows` (the
+    HALF_WIRED_PARENT gate), `session_plan.lane_expand` (tier 2 of the worklist) and
+    `banked_parents_settled` all ask the same question: is this one-parent row
+    RETIRED, or is it work? Before Q322 they each tested the literal string
+    `no-second-parent`, so adding a second retiring value would have had to be done
+    in three places and would have drifted the first time one was missed.
+
+    ** WHY IT IS NOT JUST `"no-second-parent" in values` ANY MORE (operator, 24 AUG
+    2026). ** Q322: the vault ruled both ways eight days apart on two identical
+    Hingham cases, because one value was carrying two meanings -- "one parent is the
+    whole truth" (ancestry) and "one parent is all that survives" (sources). The
+    operator's ruling was a THIRD VALUE rather than a yes/no on the second, so both
+    statements can be made plainly and a later session can tell which was meant.
+
+    ⚠ THE TWO VALUES ARE EQUAL HERE AND NOWHERE ELSE. This predicate answers
+    "retired from the worklist", which is true of both. Anything reasoning about the
+    ANCESTRY -- a pedigree export, a completeness claim, a hereditary-society line --
+    must read the token itself, because `unnamed-in-record` asserts that a second
+    parent EXISTED. Do not add a caller here as a shortcut for that question.
+
+    Accepts a PersonRecord or a raw `- meta:` line, like its delegate.
+    """
+    return any(v in PARENT_ABSENCE_WHY
+               for v in (adjudicated_why_values(record_or_line) or []))
+
+
 def banked_parents_settled(record) -> bool:
     """True when a `banked_parents` note has been OVERTAKEN and should be pruned.
 
@@ -705,9 +758,11 @@ def banked_parents_settled(record) -> bool:
     reads it. That is the failure `banked_parents` exists to prevent, reappearing one
     case to the left.
 
-    A row is settled when it has **TWO** parents, or when it declares
-    `no-second-parent` -- which is precisely the "one parent is CORRECT" terminal
-    state, so it belongs in this test rather than fighting it.
+    A row is settled when it has **TWO** parents, or when it declares a parent
+    ABSENCE -- `no-second-parent` or, since Q322, `unnamed-in-record` -- which is
+    precisely the terminal "nothing further is wireable" state, so it belongs in this
+    test rather than fighting it. Read through `declares_parent_absence`, never by
+    testing one token, or this predicate and the gate drift apart.
 
     ⚠ Measured before the change: **all 27 rows then carrying `banked_parents` had
     ZERO parents**, so this regressed nothing, and it unlocked **95 still-open
@@ -729,7 +784,7 @@ def banked_parents_settled(record) -> bool:
                 if str(x).strip()]
     if len(toks) >= 2:
         return True
-    return "no-second-parent" in (adjudicated_why_values(record) or [])
+    return declares_parent_absence(record)
 
 
 def fs_absent(record_or_line):
