@@ -2082,7 +2082,22 @@ SCHOLARLY_CITATION_RE = re.compile(
     r"|History of Parliament"
     r"|Copinger|Manors of Suffolk"
     r"|The American Genealogist"
-    r"|House of Howard|Brenan (?:and|&) Statham",
+    r"|House of Howard|Brenan (?:and|&) Statham"
+    # ── VCH, 25 AUG 2026 (Q330) — MATCHED ONLY IN BIBLIOGRAPHIC FORM ──
+    # ⚠⚠ THE BARE SIGLUM IS NOT ENOUGH, AND THIS IS THE FIRST MARKER HERE THAT NEEDS
+    # A SHAPE RATHER THAN A NAME. Of the four rows a bare `VCH` would newly credit,
+    # TWO are real citations (`VCH, A History of the County of Hertford, vol. 3
+    # (1912), "Parishes: Rushden", pp. 265-270`) and TWO are the work named inside a
+    # **"Named routes:"** bullet on a row whose parentage is explicitly unestablished.
+    # A 50% false-credit rate is the failure this whole exercise was correcting.
+    #
+    # ⭐ Requiring a volume or page reference within ~120 chars separates them
+    # cleanly: 2/2 genuine credited, 0/2 routes credited, verified against all four
+    # rows by reading them. The 120-char span (not 80) is what reaches
+    # `VCH Staffordshire READ … it's vol. 5, not vol. 6 … pp18-40` — a real citation
+    # written as prose, which is also why `pp?\.?` tolerates the missing stop.
+    # ⛔ Do NOT relax this to a bare name: routes cite volumes too.
+    r"|(?:\bVCH\b|Victoria County History)[^\n]{0,120}?(?:\bvol\.|\bpp?\.?\s*\d)",
     re.I,
 )
 

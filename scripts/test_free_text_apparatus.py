@@ -269,6 +269,48 @@ class TestQ329VerifiedWorks(unittest.TestCase):
                 self.assertFalse(H.has_scholarly_citation(cite))
 
 
+class TestQ330ShapeNotJustName(unittest.TestCase):
+    """VCH is matched only in BIBLIOGRAPHIC FORM; three works were REFUSED (Q330).
+
+    ** THE FIRST MARKER IN THIS PATTERN THAT NEEDS A SHAPE RATHER THAN A NAME. ** A
+    bare `VCH` would newly credit four rows: two are real citations, two are the work
+    named inside a *"Named routes:"* bullet on entries whose parentage is explicitly
+    unestablished. Requiring a volume or page reference within ~120 chars credits
+    2/2 genuine and 0/2 routes, verified by reading all four.
+
+    ⛔⛔ AND THREE OF THE FOUR WORKS THE OPERATOR NAMED WERE REFUSED ON THE EVIDENCE:
+      * **Muskett** and **Metcalfe** — their ONLY candidate row is John Thurston,
+        whose entry records searching BOTH and finding nothing: *"Metcalfe's
+        Visitations of Suffolk (1882) — 'Thurston' occurs ZERO times"*, and Muskett's
+        hits are the Suffolk PLACE-NAME, not the surname. Crediting a person from
+        books proven not to contain them is the exact inverse of BOOK_SOURCED, and it
+        would have re-credited the row struck the day before for that very reason.
+      * **Blomefield** — credits ZERO rows either way, and its one observed route use
+        (*"Blomefield, Norfolk i. 80-81 … unread here"*) carries a volume reference,
+        so the shape test cannot separate it from a citation.
+    """
+
+    def test_VCH_in_bibliographic_form_counts(self):
+        for cite in ("VCH, *A History of the County of Hertford*, vol. 3 (1912), pp. 265-270",
+                     "VCH Staffordshire READ 09 JUL 2026 — it's vol. 5, not vol. 6: pp18-40"):
+            with self.subTest(cite=cite):
+                self.assertTrue(H.has_scholarly_citation(cite))
+
+    def test_VCH_named_in_a_route_does_NOT_count(self):
+        for cite in ("**Named routes:** (1) Oxon fine 126 … (c) ***VCH Oxon.*** on Chiselhampton",
+                     "footnoting VCH Oxon. x rather than any pedigree"):
+            with self.subTest(cite=cite):
+                self.assertFalse(H.has_scholarly_citation(cite))
+
+    def test_the_REFUSED_works_stay_out(self):
+        # A work SEARCHED AND FOUND EMPTY must never credit the person searched for.
+        for cite in ("Checked Metcalfe's *Visitations of Suffolk* (1882) — \"Thurston\" occurs ZERO times",
+                     "Muskett's hits are overwhelmingly the place, not the surname",
+                     "Blomefield, *Norfolk* i. 80-81 and v. 235-44, unread here"):
+            with self.subTest(cite=cite):
+                self.assertFalse(H.has_scholarly_citation(cite))
+
+
 class TestNegativeControls(unittest.TestCase):
     """The fail direction is DESTRUCTIVE, so real records must stay records."""
 
