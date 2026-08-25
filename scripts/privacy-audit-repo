@@ -179,6 +179,82 @@ def placeholder_identifier?(token)
   left.chars.uniq.length == 1 && right.chars.uniq.length == 1
 end
 
+# --- Vault person ids -------------------------------------------------------
+#
+# ADDED 25 AUG 2026, AFTER THIS SCRIPT PASSED THE THING IT EXISTS TO CATCH. A real
+# person's forename, surname and vault id sat in a `person_store.py` docstring as
+# the worked example explaining a ruling, and every audit run over it said PASS.
+# Two blind spots met: the name was COLLATERAL, so it is not among the denylist's
+# core surnames, and a vault `P-` id is neither of the identifier shapes above. The
+# combination the method rule warns about -- a name beside its vault id -- was the
+# one combination nothing checked. Caught by a manual pre-push review, again.
+#
+# WHY THE OTHER TWO CHECKS' APPROACH DOES NOT WORK HERE. A vault id carries no
+# structure that separates a real one from a fixture: `P-DATE01`, `P-TST001` and
+# `P-BANKED` are as valid as any minted id, and the tracked tree holds 121 such
+# stand-ins against 8 real ones. Repeated-character and Crockford tests were both
+# measured and both fail -- a mnemonic fixture is Crockford-valid.
+#
+# SO THIS CHECK ASKS THE VAULT. When one is reachable it reads the ids that
+# actually name a person and flags only those, which on 25 AUG 2026 separated the
+# 8 real from the 121 fixtures with no false positives in either direction.
+#
+# ⚠ AND IT SAYS SO WHEN IT CANNOT. On a bare clone with no vault there is nothing
+# to resolve against, and the report records the check as SKIPPED rather than
+# printing None -- a silent pass and a real pass must not look alike, which is the
+# rule this whole file is an instance of.
+VAULT_ID_RE = /\bP-[0-9A-Z]{6}\b/.freeze
+
+# Real ids ALREADY PUBLIC in this repo's history, measured 25 AUG 2026. They are
+# bare pointers with no name attached, they shipped in earlier pushes, and
+# rewriting long-public history to remove them would be a larger harm than the
+# disclosure -- the same trade the HEAD-ONLY note above makes. Listing them keeps
+# the check at ZERO findings, which is the bar every check here is held to.
+# ⛔ Do not add to this list to silence a NEW finding. That is the whole gate.
+PUBLISHED_VAULT_IDS = %w[
+  P-BAH7B0 P-BEAZEM P-G4C4Z5 P-JFB426 P-MT0TCC P-PZ4YD2 P-QA1VKV P-SAMSYV
+].freeze
+
+# The vault is per-install and never inside this repo's tracked tree: honour
+# AUTORESEARCH_VAULT, else accept a single sibling directory carrying the
+# `.autoresearch.json` marker. Two candidates is not a guess worth making.
+def vault_dir
+  env = ENV["AUTORESEARCH_VAULT"].to_s
+  return env if !env.empty? && File.file?(File.join(env, ".autoresearch.json"))
+
+  candidates = Dir.glob(File.join(ROOT, "*")).select do |dir|
+    File.directory?(dir) && File.file?(File.join(dir, ".autoresearch.json"))
+  end
+  candidates.length == 1 ? candidates.first : nil
+end
+
+def vault_person_ids(dir)
+  ids = {}
+  Dir.glob(File.join(dir, "Family_Tree*.md")).each do |path|
+    read_text(path).scan(/\{id: (P-[0-9A-Z]{6})/) { |match| ids[match[0]] = true }
+  end
+  ids
+end
+
+def vault_id_findings(vault_ids)
+  return [] if vault_ids.nil?
+
+  findings = []
+  tracked_text_files.each do |path|
+    next if EXCLUDED_PATHS.include?(path)
+
+    read_text(File.join(ROOT, path)).lines.each_with_index do |line, index|
+      line.scan(VAULT_ID_RE).uniq.each do |token|
+        next unless vault_ids.key?(token)
+        next if PUBLISHED_VAULT_IDS.include?(token)
+
+        findings << { path: path, line: index + 1, token_label: term_label(token) }
+      end
+    end
+  end
+  findings
+end
+
 def identifier_findings
   findings = []
   tracked_text_files.each do |path|
@@ -202,7 +278,8 @@ def identifier_findings
   findings
 end
 
-def write_report(terms, head_findings, git_history_findings, id_findings)
+def write_report(terms, head_findings, git_history_findings, id_findings,
+                 vault_id_findings, vault_state)
   FileUtils.mkdir_p(REPORT_DIR)
   timestamp = Time.now.utc.strftime("%Y-%m-%d-%H%M%S")
   path = File.join(REPORT_DIR, "#{timestamp}.md")
@@ -216,7 +293,8 @@ def write_report(terms, head_findings, git_history_findings, id_findings)
   content << "- Reachable commits on current branch: #{log_count.strip}\n"
   content << "- Denylist terms checked: #{terms.length}\n"
   content << "- Excluded paths: #{EXCLUDED_PATHS.join(', ')}\n"
-  content << "- Identifier shapes checked: FamilySearch PID + WikiTree id (HEAD only)\n\n"
+  content << "- Identifier shapes checked: FamilySearch PID + WikiTree id (HEAD only)\n"
+  content << "- Vault person ids (`P-` + six): #{vault_state}\n\n"
 
   content << "## Current HEAD Findings\n\n"
   if head_findings.empty?
@@ -256,8 +334,24 @@ def write_report(terms, head_findings, git_history_findings, id_findings)
     content << "\n"
   end
 
+  content << "## Vault Person-Id Findings (HEAD only)\n\n"
+  content << "Ids that resolve to a real person in the reachable vault. A vault id is a\n"
+  content << "pointer to a NAME in the same way an external record id is, and the worked\n"
+  content << "example that explains a script is where one crosses into this repo.\n\n"
+  if vault_state.start_with?("skipped")
+    content << "SKIPPED -- #{vault_state}. Not a pass: nothing was resolved.\n\n"
+  elsif vault_id_findings.empty?
+    content << "None.\n\n"
+  else
+    vault_id_findings.each do |finding|
+      content << "- `#{finding[:token_label]}` in `#{finding[:path]}` line #{finding[:line]}\n"
+    end
+    content << "\n"
+  end
+
   content << "## Result\n\n"
-  content << if head_findings.empty? && git_history_findings.empty? && id_findings.empty?
+  content << if head_findings.empty? && git_history_findings.empty? && id_findings.empty? &&
+                vault_id_findings.empty?
                "PASS\n"
              else
                "FAIL\n"
@@ -271,13 +365,26 @@ terms = load_terms
 head_findings = current_head_findings(terms)
 git_history_findings = history_findings(terms)
 id_findings = identifier_findings
-report_path = write_report(terms, head_findings, git_history_findings, id_findings)
 
-if head_findings.empty? && git_history_findings.empty? && id_findings.empty?
+dir = vault_dir
+if dir
+  ids = vault_person_ids(dir)
+  vault_findings = vault_id_findings(ids)
+  vault_state = "resolved against #{ids.length} person ids in #{File.basename(dir)}"
+else
+  vault_findings = []
+  vault_state = "skipped, no reachable vault (set AUTORESEARCH_VAULT to enable)"
+end
+
+report_path = write_report(terms, head_findings, git_history_findings, id_findings,
+                           vault_findings, vault_state)
+
+if head_findings.empty? && git_history_findings.empty? && id_findings.empty? &&
+   vault_findings.empty?
   puts "privacy-audit-repo: ok"
   puts "report: #{report_path}"
 else
-  warn "privacy-audit-repo: #{head_findings.length + git_history_findings.length + id_findings.length} finding group(s)"
+  warn "privacy-audit-repo: #{head_findings.length + git_history_findings.length + id_findings.length + vault_findings.length} finding group(s)"
   warn "report: #{report_path}"
   exit 1
 end
