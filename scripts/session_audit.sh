@@ -463,6 +463,17 @@ parts = [
     # writeback() docstring). Operator-gated work that no lane draws and no gate
     # counts, so the banner is the only thing that keeps it visible.
     "writeback -> " + writeback(),
+    # Write-back ITEM grammar (writeback_audit.py). The line above counts marker
+    # TOKENS; this parses each item's BODY against rule 8. ⛔ IT EXISTS BECAUSE FOUR
+    # HAND-WRITTEN READERS GAVE FOUR ANSWERS to one question (how many QUEUED items
+    # lack an evidence clause: 7, 1, 24, 63 — the truth is 1, and that item is
+    # correctly formed and HELD). ⚠ Three traps, all pinned in the test: an item
+    # starts at the MARKER not the bullet (one live item sits mid-line); the evidence
+    # clause has THREE legitimate forms, and demanding a plain locator scores the
+    # `~`-negated DETACH shape as missing; and rule 8's "never commas" governs the
+    # SLOT SEPARATOR, not commas in the action prose. Baseline 1.
+    "writeback-grammar -> " + run("writeback_audit.py", r"WRITEBACK_GRAMMAR:",
+                                  args=["--heartbeat"], max_lines=1),
 ]
 # The project-specific "known baseline" (which advisory findings are expected and
 # at what counts) lives in an OPTIONAL vault-local file so this hook stays generic.
