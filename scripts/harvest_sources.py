@@ -174,8 +174,34 @@ ARK_PATTERNS = [
 #
 # ⚠ SORTED LONGEST-FIRST. These are joined into a regex alternation, and Python's `|`
 # is first-match-wins: with `agad` before `agadd2` the longer id could never match.
-_FALLBACK_HOST_IDS = ["fs", "anc", "wt", "antenati", "metryki", "szukajwarchiwach",
-                      "agad", "tna"]
+def _default_host_ids():
+    """The no-vault fallback, DERIVED from `vault_config.DEFAULTS["hosts"]`.
+
+    ⛔⛔ THIS WAS A HAND-MAINTAINED LITERAL AND IT HAD DRIFTED. The registry is the
+    single source of truth when a vault is present, but the fallback listed EIGHT
+    ids while `DEFAULTS["hosts"]` registered TWELVE -- `fold3`, `geshergalicia`,
+    `jri` and `nycdoris` were registered by default and undetectable without a
+    vault, so a locator citing one silently counted as no record at all.
+
+    That is precisely the drift `test_host_registry` was written for ("a hard-coded
+    EMITTED_HOST_IDS list while vault_config.DEFAULTS kept a different one"): the
+    defect was fixed on the vault path and left standing on the fallback path
+    beside it. One source of truth means BOTH paths read it.
+
+    Found 26 AUG 2026 by running the test suite with AUTORESEARCH_VAULT scrubbed and
+    asking which tests changed answer -- not by reading the code.
+    """
+    try:
+        import vault_config
+        hosts = vault_config.DEFAULTS.get("hosts") or {}
+        ids = {(spec or {}).get("short") or key for key, spec in hosts.items()}
+        ids.discard("familysearch")      # emitted as its `short`, "fs"
+        if ids:
+            return sorted(ids)
+    except BaseException:
+        pass
+    # Last resort only: DEFAULTS itself unreadable.
+    return ["fs", "anc", "wt", "antenati", "metryki", "szukajwarchiwach", "agad", "tna"]
 
 
 def _emitted_host_ids():
@@ -197,7 +223,7 @@ def _emitted_host_ids():
         # here let it escape and made importing this module fatal whenever
         # AUTORESEARCH_VAULT was unset -- caught by test_host_registry.
         pass
-    return sorted(_FALLBACK_HOST_IDS, key=lambda s: (-len(s), s))
+    return sorted(_default_host_ids(), key=lambda s: (-len(s), s))
 
 
 EMITTED_HOST_IDS = _emitted_host_ids()

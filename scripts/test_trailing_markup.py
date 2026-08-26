@@ -105,12 +105,20 @@ class TestNoRowGainsRecords(unittest.TestCase):
         self.assertEqual(len(set(H.record_locators(body))), 1)
 
     def test_a_book_with_a_full_stop_is_still_the_entrys_problem(self):
-        # After stripping, this IS a well-formed ia: locator. Whether it should count is
+        # After stripping, this IS a well-formed locator. Whether it should count is
         # a POLICY question (rule 8 limb (c)) answered by negating it in the entry, not
         # by leaving the token malformed.
-        body = "- Freeman, *Norman Conquest* — read 12 AUG 2026, ia:historyofnorman02free."
+        #
+        # ⚠ THE HOST HERE MUST BE ONE `vault_config.DEFAULTS` REGISTERS. This case was
+        # written with `ia:`, which THIS vault registers and the defaults do not, so
+        # the pin passed here and failed on any clone without this vault -- it was
+        # testing the code AND one client's `.autoresearch.json` while reading as a
+        # pure unit test. The subject is the trailing full stop, not the host, so a
+        # default-registered id tests exactly the same behaviour and tests only the
+        # code. Verified identical with and without a vault before the swap.
+        body = "- Freeman, *Norman Conquest* — read 12 AUG 2026, tna:historyofnorman02free."
         self.assertEqual(len(H.record_locators(body)), 1)
-        neg = "- Freeman, *Norman Conquest* — read 12 AUG 2026, ~ia:historyofnorman02free."
+        neg = "- Freeman, *Norman Conquest* — read 12 AUG 2026, ~tna:historyofnorman02free."
         self.assertEqual(H.record_locators(neg), [])
 
 

@@ -43,6 +43,19 @@ def check(cond, label):
 
 
 def main():
+    """⚠ THIS IS A LIVE-VAULT INTEGRATION CHECK, DECLARED HERE ON PURPOSE.
+
+    It asserts against whatever vault `resolve_vault` selects -- it has no fixture
+    and cannot run without one, and that is deliberate: the property under test is
+    that the audit tier is POPULATED and correctly ORDERED on real data, which a
+    synthetic vault cannot show.
+
+    It is named because the coupling used to be invisible. Audited 26 AUG 2026 by
+    running every test with and without AUTORESEARCH_VAULT and asking which changed
+    answer; four did, and only this one was coupled on purpose. It is READ-ONLY --
+    `lane_defects` computes, it does not write -- which is what makes running it
+    against the operator's live vault safe.
+    """
     print("=== deferred 39-residual: the unmarked-edge audit tier ===")
     vault = vault_config.resolve_vault()
 
