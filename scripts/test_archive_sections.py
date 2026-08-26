@@ -23,7 +23,18 @@ BOTH DIRECTIONS ARE REQUIRED. Case (b) alone passes on the pre-12-AUG code and c
 """
 import os, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.environ.setdefault("AUTORESEARCH_VAULT", tempfile.gettempdir())
+# ⛔ SCRUBBED, NOT `setdefault`. This line was
+# `os.environ.setdefault("AUTORESEARCH_VAULT", tempfile.gettempdir())`, which reads as
+# isolation and is a NO-OP whenever the variable is already exported -- which is how
+# the suite is normally run. `archive_sections` resolves its vault at IMPORT time, so
+# the module then bound the operator's LIVE vault while this file looked sandboxed.
+# Nothing here uses `A.VAULT` today, so nothing was harmed; the objection is that the
+# next case added to this file would inherit a live vault silently.
+# Popping it makes `A.VAULT` None, which is what these pure-function pins want, and
+# makes any future case that reaches for a vault fail loudly instead of finding one.
+# (Audited 26 AUG 2026: `resolve_vault` outranks `--vault`, so the env var is the
+# only thing that decides here.)
+os.environ.pop("AUTORESEARCH_VAULT", None)
 import archive_sections as A
 
 # One question whose resolution is written the way this vault writes one: an H2
