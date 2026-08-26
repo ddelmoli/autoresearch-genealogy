@@ -289,13 +289,22 @@ def _subsections(lines, s, e):
     same grammar `split_blocks` uses to find blocks in the first place, so a heading
     cannot be a boundary here and content there.
     """
-    heads = [i for i in range(s + 1, e)
-             if lines[i].startswith("### ") and not QB.QUESTION_HEAD.match(lines[i])]
+    def is_sub(ln):
+        # ⚠ BOTH `##` AND `###` ARE SUB-SECTION HEADINGS INSIDE A BLOCK, and the
+        # register uses them interchangeably — measured across the 16 BIG_BLOCK rows,
+        # 6 use `###`, 4 use `##`, and 6 use neither. A `###`-only reader covered
+        # barely a third of the population it was built for.
+        # ⛔ `split_blocks` stops at NO heading but a numbered `###`, so a `##` here
+        # is genuinely inside the block and safe to treat as a section.
+        return (ln.startswith("## ") or ln.startswith("### ")) \
+            and not QB.QUESTION_HEAD.match(ln)
+
+    heads = [i for i in range(s + 1, e) if is_sub(lines[i])]
     out = []
-    for k, i in enumerate(heads):
+    for i in heads:
         stop = e
         for j in range(i + 1, e):
-            if lines[j].startswith("### "):
+            if is_sub(lines[j]) or QB.QUESTION_HEAD.match(lines[j]):
                 stop = j
                 break
         out.append((i, stop, lines[i].strip()))
