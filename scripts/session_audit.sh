@@ -301,6 +301,16 @@ parts = [
     # headings were lying. Advisory; drive to 0, then promote.
     "gen-heading -> " + run("gen_heading_audit.py", r"GEN_HEADING_DRIFT:",
                             args=["--heartbeat"], max_lines=1),
+    # Empty generation headings (manifest_audit.py), Q340 check 1. A File Index row
+    # is written from a file's SECTION HEADINGS, and a split updates the row it
+    # creates, never the row it EMPTIES — so four correct splits left a row naming
+    # families that had gone. The empty heading is the upstream cause, which is why
+    # this catches the stale row before anybody writes it. A section is RESOLVED by
+    # a wikilink pointer naming where the people went; ⛔ do not test for the word
+    # "moved" instead, the vault writes that pointer at least four ways. Advisory,
+    # baseline 3 (all pre-existing) + 17 empty-but-pointered, which are not findings.
+    "manifest -> " + run("manifest_audit.py", r"MANIFEST_EMPTY_HEADING:",
+                         args=["--heartbeat"], max_lines=1),
     # File-level frontmatter (frontmatter_audit.py): the layer no other gate reads.
     # On the reference vault 3 files had frontmatter that did not PARSE (unquoted
     # `: ` in a prose value), 2 had duplicate keys silently dropping data, and 10
