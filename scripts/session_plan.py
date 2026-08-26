@@ -1191,6 +1191,54 @@ def pid_stale_ids(vault):
     return {r["id"] for r in verify_stale_pids(vault)}
 
 
+def dedupe_by_cool_key(rows, seen=None):
+    """One row per `cool_key`, first occurrence winning, reasons folded in.
+
+    ** WHY THIS EXISTS (session #184, 26 AUG 2026). ** A lane's populations OVERLAP:
+    a person with an unconfirmed `?` edge who is ALSO SOURCE_GAP is emitted by
+    `lane_defects` and by `lane_improve` at once, and the lane list was a plain
+    concatenation of the three. Measured on the reference vault: an IMPROVE draw
+    whose `pending.offered` held 24 entries and **23 distinct people**, so a lane
+    target of 24 -- which counts PEOPLE -- could not be met from its own draw even in
+    principle. The same duplicate inflates `sizes`, which is printed to the operator
+    AND fed to the bandit's draw.
+
+    ⚠⚠ **DEDUPE ON `cool_key`, NEVER ON `id`.** That key deliberately namespaces
+    sub-populations (`pid:<id>` against the bare id) so two DIFFERENT kinds of work on
+    one person cool independently -- see `cool_key`. Rows sharing a key are one unit
+    of work and one unit of cooling; rows with different keys are not duplicates and
+    must both survive. Deduping on `id` would silently delete the distinction the key
+    was introduced to make, which is a fix that reads correct and removes real work.
+
+    ⭐ **The survivor KEEPS THE LOSER'S REASON** (`[also: ...]`). The halves carry
+    different `why` text -- an edge to walk, records to harvest -- and dropping the
+    second would hide a real second reason the row was drawn.
+
+    `seen` may be passed in to dedupe several populations against each other; it is
+    mutated. Rows are COPIED before their `why` is extended, so callers' dicts are
+    never edited. Pinned by scripts/test_compose_share_dedupe.py.
+    """
+    if seen is None:
+        seen = {}
+    out = []
+    for r in rows:
+        k = cool_key(r)
+        if k is None:                          # unkeyed rows cannot be compared
+            out.append(r)
+            continue
+        if k in seen:
+            keep = seen[k]
+            extra = (r.get("why") or "").strip()
+            if extra and extra not in (keep.get("why") or ""):
+                keep["why"] = ((keep.get("why") or "").rstrip()
+                               + "  [also: " + extra + "]")
+            continue
+        r = dict(r)                            # copy: we may append to `why` later
+        seen[k] = r
+        out.append(r)
+    return out
+
+
 def compose_share(primary, secondary, target, share):
     """Interleave two populations of a lane, reserving a share for the PRIMARY one.
 
@@ -1202,8 +1250,35 @@ def compose_share(primary, secondary, target, share):
     swamp the old one. When the edges run out the quota simply goes unfilled and PIDs
     take the rest; when the PIDs run dry, edges do.
 
+    ** AND THE TWO POPULATIONS OVERLAP, SO THE COMPOSE MUST DEDUPE (26 AUG 2026,
+    session #184). ** One person can qualify under BOTH halves -- a row with an
+    unconfirmed `?` edge that is ALSO SOURCE_GAP is in `lane_defects` and in
+    `lane_improve` at once -- and concatenating the two emitted her twice. Measured:
+    a 24-row IMPROVE draw whose `pending.offered` held **23 distinct people**, so a
+    lane target of 24, which counts PEOPLE, could not be met from its own draw even
+    in principle. The duplicate also renders twice in the printed worklist.
+
+    ⚠ **DEDUPE ON `cool_key`, NEVER ON `id`.** The key deliberately namespaces
+    sub-populations (`pid:<id>` vs the bare id) precisely so that two DIFFERENT kinds
+    of work on one person cool separately -- see `cool_key`. Two rows sharing a key
+    are one unit of work and one unit of cooling; two rows with different keys are
+    not duplicates at all and must both survive.
+
+    ⭐ **The surviving row KEEPS THE OTHER REASON** rather than dropping it. The two
+    halves carry different `why` text (an edge to walk; records to harvest), and
+    silently discarding the second would hide a real second reason the row was drawn.
+
+    ⚠ **Dedupe happens BEFORE the quotas are computed**, so the returned
+    `p_quota`/`s_quota` still describe the list actually returned. Sizing against the
+    pre-dedupe lengths is how this function previously reported three numbers that
+    could not all be true at once (see the note at the call site).
+
     Returns (composed_rows, primary_quota, secondary_quota).
     """
+    seen = {}
+    primary = dedupe_by_cool_key(primary, seen)
+    secondary = dedupe_by_cool_key(secondary, seen)
+
     n = max(1, int(target or 1))
     p_quota = min(len(primary), max(1, int(n * share)))
     s_quota = max(0, n - p_quota)
@@ -1767,10 +1842,18 @@ def main(argv=None):
     i_defects = lane_defects(vault, include_adjudicated=a.include_adjudicated)
     i_gaps, i_corrob, i_breadth = lane_improve(vault)
     stale_pids = pid_stale_ids(vault)      # an ANNOTATION, never a population
+    # ⚠ DEDUPED AT CONSTRUCTION, because `sizes` is taken from this dict on the very
+    # next line and feeds BOTH the printed lane count and `draw_lane`. The three
+    # IMPROVE populations OVERLAP (a `?`-edge row that is also SOURCE_GAP is in two of
+    # them), so the bare concatenation counted such a person once per population and
+    # reported a lane larger than the number of people in it (session #184).
+    # ⛔ It must happen HERE and not only in `compose_share`: dedupe below the sizing
+    # would leave `sizes` inflated while the drawn list was correct -- the same
+    # "numbers that cannot all be true at once" this file already warns about.
     lanes = {
-        "EXPAND": lane_expand(vault),
-        "IMPROVE": i_defects + i_gaps + i_corrob,
-        "ROTATE": lane_rotate(vault, a.sample_percent),
+        "EXPAND": dedupe_by_cool_key(lane_expand(vault)),
+        "IMPROVE": dedupe_by_cool_key(i_defects + i_gaps + i_corrob),
+        "ROTATE": dedupe_by_cool_key(lane_rotate(vault, a.sample_percent)),
     }
     if a.sample_percent:
         print(f"** ROTATE sample rate overridden for this session: {a.sample_percent:g}% "
@@ -1833,8 +1916,25 @@ def main(argv=None):
     if pick:
         # The ids this draw actually OFFERS. record() stamps them only if the
         # recorded lane matches, so overriding the draw cools nothing.
-        offered = [cool_key(r) for r in lanes[pick][:max(lane_target or per_lane, per_lane)]
-                   if cool_key(r)]
+        # ⚠ DEDUPED, and deliberately a SECOND layer: `compose_share` dedupes the two
+        # IMPROVE populations at the point they merge, which is the root fix, but
+        # `offered` is PERSISTED STATE whose meaning is "the people this draw
+        # offered" — and it must be true whichever lane built it, including lanes
+        # that never go through compose_share. ⛔ It is not a silent backstop: a
+        # duplicate reaching here means an upstream builder emitted one key twice,
+        # so say so on stderr rather than swallowing it (session #184).
+        _seen, offered = set(), []
+        for _r in lanes[pick][:max(lane_target or per_lane, per_lane)]:
+            _k = cool_key(_r)
+            if not _k:
+                continue
+            if _k in _seen:
+                print(f"  ⚠ plan: {_k} offered twice by lane {pick}; kept once "
+                      f"(upstream builder emitted a duplicate cool_key)",
+                      file=sys.stderr)
+                continue
+            _seen.add(_k)
+            offered.append(_k)
         state["pending"] = {"date": date.today().isoformat(), "lane": pick,
                             "offered": offered}
         save_state(vault, state)
