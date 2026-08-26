@@ -281,6 +281,136 @@ def op_append(vault, args):
     return 0
 
 
+def _subsections(lines, s, e):
+    """The `###` sub-sections INSIDE one question block: [(idx, end, heading)].
+
+    ⛔ A boundary heading (`### N.`) is never a sub-section — dropping one would
+    merge two questions and silently destroy the second. `QB.QUESTION_HEAD` is the
+    same grammar `split_blocks` uses to find blocks in the first place, so a heading
+    cannot be a boundary here and content there.
+    """
+    heads = [i for i in range(s + 1, e)
+             if lines[i].startswith("### ") and not QB.QUESTION_HEAD.match(lines[i])]
+    out = []
+    for k, i in enumerate(heads):
+        stop = e
+        for j in range(i + 1, e):
+            if lines[j].startswith("### "):
+                stop = j
+                break
+        out.append((i, stop, lines[i].strip()))
+    return out
+
+
+def _one_live(vault, label):
+    num, suffix = parse_qlabel(label)
+    hits = QB.find_live_blocks(vault, num, suffix)
+    if len(hits) != 1:
+        where = "; ".join(f"{os.path.basename(p)}:{s+1}" for p, s, e, h, _l in hits)
+        raise SystemExit(f"need exactly one LIVE Q{num}{suffix} block, found "
+                         f"{len(hits)}{' (' + where + ')' if hits else ''}")
+    return (num, suffix) + hits[0]
+
+
+def op_sections(vault, args):
+    """List a block's trimmable sub-sections, largest first."""
+    num, suffix, path, s, e, h, lines = _one_live(vault, args.sections)
+    subs = _subsections(lines, s, e)
+    total = sum(len(ln) + 1 for ln in lines[s:e])
+    print(f"Q{num}{suffix}  {os.path.basename(path)}:{s+1}-{e}  "
+          f"{total/1024:.1f} KB, {len(subs)} sub-section(s)")
+    head_kb = (subs[0][0] - s if subs else e - s)
+    print(f"  (head: lines {s+1}-{s+head_kb}, "
+          f"{sum(len(ln)+1 for ln in lines[s:s+head_kb])/1024:.1f} KB — never trimmed)")
+    for i, stop, heading in sorted(subs, key=lambda r: -(r[1] - r[0])):
+        kb = sum(len(ln) + 1 for ln in lines[i:stop]) / 1024
+        res = " [HOLDS THE RESOLVER]" if any(
+            QB.RESOLVER_RE.search(ln) for ln in lines[i:stop]) else ""
+        print(f"  {kb:6.1f} KB  lines {i+1}-{stop}{res}")
+        print(f"            {heading[:96]}")
+    return 0
+
+
+def op_trim(vault, args):
+    """Remove whole `###` sub-sections from a live block, leaving a pointer.
+
+    ⭐⭐ WHY THIS EXISTS. `question_audit` reports BIG_BLOCK for a live block over
+    15 KB — session narration accreting in place of current state — and names the
+    remedy: current state and resolver stay, dated chronology moves to `logs/`. But
+    every writer this module had (`--new`, `--append`, `--resolve`, `--move`) either
+    CREATES or GROWS a block. Nothing shrank one, so the only way to do the remedy
+    was the hand splice into a 20-175 KB file that this module exists to forbid.
+    Sixteen blocks accreted past the cap while every hard gate stayed at 0. A
+    register with writers only for growth grows.
+
+    ⚠ NOTHING IS DELETED WITHOUT A POINTER. A snapshot of the whole file is written
+    first, and the block keeps a dated line naming every heading removed and where
+    the narrative now lives. A section that is simply gone is indistinguishable from
+    one nobody wrote.
+    """
+    num, suffix, path, s, e, h, lines = _one_live(vault, args.trim)
+    subs = _subsections(lines, s, e)
+    if not subs:
+        raise SystemExit(f"Q{num}{suffix} has no `###` sub-sections to trim")
+
+    chosen = []
+    for want in args.drop_section:
+        hit = [x for x in subs if want.lower() in x[2].lower()]
+        if len(hit) != 1:
+            raise SystemExit(
+                f"--drop-section {want!r} matched {len(hit)} sub-section(s) in "
+                f"Q{num}{suffix}; it must match exactly one. Run --sections Q{num}{suffix} "
+                "to see them.")
+        if hit[0] in chosen:
+            raise SystemExit(f"--drop-section {want!r} named the same section twice")
+        chosen.append(hit[0])
+
+    # ⛔ The resolver is what makes a question a research task rather than a
+    # complaint. Refuse to trim it away even when explicitly named.
+    kept = [x for x in subs if x not in chosen]
+    resolver_lines = [ln for ln in lines[s:e] if QB.RESOLVER_RE.search(ln)]
+    surviving = [ln for x in ([(s, subs[0][0] if subs else e, "")] + kept)
+                 for ln in lines[x[0]:x[1]] if QB.RESOLVER_RE.search(ln)]
+    if resolver_lines and not surviving:
+        raise SystemExit(
+            f"refusing: the trim would remove every resolver line from Q{num}{suffix}. "
+            "Current state and the resolver stay; move the chronology instead.")
+
+    drop = set()
+    for i, stop, _hd in chosen:
+        drop.update(range(i, stop))
+    freed = sum(len(lines[i]) + 1 for i in drop)
+
+    pointer = (f"> **Trimmed {today_str()}**: {len(chosen)} dated sub-section(s) "
+               f"removed from this block; the narrative is in {args.pointer}. "
+               f"Dropped: " + "; ".join(f'"{hd[4:][:70]}"' for _i, _s2, hd in chosen))
+    t = e
+    while t > s + 1 and lines[t - 1].strip() in ("", "---"):
+        t -= 1
+    out = [ln for i, ln in enumerate(lines) if i not in drop or i >= t]
+    # recompute the insert point in the TRIMMED list
+    shift = sum(1 for i in drop if i < t)
+    out = out[:t - shift] + ["", pointer] + out[t - shift:]
+
+    before = sum(len(ln) + 1 for ln in lines[s:e])
+    print(f"trim Q{num}{suffix} in {os.path.basename(path)}: "
+          f"{len(chosen)} section(s), {before/1024:.1f} KB -> "
+          f"{(before - freed)/1024:.1f} KB (-{freed/1024:.1f} KB)")
+    for _i, _s2, hd in chosen:
+        print(f"    drop: {hd[:92]}")
+    print(f"    keep: {len(kept)} sub-section(s) + the head")
+
+    if args.apply:
+        ts = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        snap_dir = Path(vault) / "Open_Questions_Archive"
+        snap_dir.mkdir(exist_ok=True)
+        snap = snap_dir / f"{Path(path).stem}_pretrim_{ts}.md"
+        snap.write_text("\n".join(lines), encoding="utf-8")
+        print(f"    snapshot: {snap.relative_to(Path(vault))}")
+    _write(path, out, args.apply, f"trim Q{num}{suffix} in")
+    return 0
+
+
 def op_show(vault, args):
     """Print one question block WHOLE, cut by the shared boundary.
 
@@ -351,6 +481,18 @@ def main():
     ap.add_argument("--show", metavar="QLABEL",
                     help="print one question block whole (shared boundary; "
                          "prefers the LIVE block when a number has several)")
+    ap.add_argument("--sections", metavar="QLABEL",
+                    help="list a live block's trimmable `###` sub-sections, largest "
+                         "first — what --trim can take")
+    ap.add_argument("--trim", metavar="QLABEL",
+                    help="remove whole `###` sub-sections from a live block (needs "
+                         "--drop-section and --pointer). The BIG_BLOCK remedy.")
+    ap.add_argument("--drop-section", action="append", default=[], metavar="TEXT",
+                    help="substring identifying one sub-section to drop; repeatable. "
+                         "Must match EXACTLY one.")
+    ap.add_argument("--pointer", metavar="TEXT",
+                    help="where the removed narrative lives (e.g. a logs/ path). "
+                         "Required by --trim: nothing is deleted without a pointer.")
     ap.add_argument("--next-number", action="store_true")
     args = ap.parse_args()
     vault = vault_config.resolve_vault(args.vault)
@@ -372,6 +514,17 @@ def main():
         if not args.shard:
             raise SystemExit("--move needs --shard (the destination lineage shard)")
         return op_move(vault, args)
+    if args.sections:
+        return op_sections(vault, args)
+    if args.trim:
+        if not args.drop_section:
+            raise SystemExit("--trim needs at least one --drop-section")
+        if not args.pointer:
+            raise SystemExit(
+                "--trim needs --pointer naming where the removed narrative lives. "
+                "A section that is simply gone is indistinguishable from one nobody "
+                "wrote.")
+        return op_trim(vault, args)
     if args.show:
         return op_show(vault, args)
     if args.where:
