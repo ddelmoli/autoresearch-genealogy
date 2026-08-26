@@ -20,6 +20,9 @@ WHAT COUNTS
   MANIFEST_GEN_RANGE       a File Index row whose every `Gen X-Y` claim disagrees
                            with the actual min/max `generation` of that file's
                            entries. Advisory, baseline 17.
+  MANIFEST_SURNAME_ABSENT  a File Index row naming a family that IS a surname in
+                           this vault but has no entry in the file the row
+                           describes. Advisory, baseline 14. READ THE ROWS.
 
 ⭐ THE POINTER IS THE DISCRIMINATOR, AND IT IS STRUCTURAL. An emptied heading kept
 deliberately as a signpost carries a pointer naming where the people went; a
@@ -70,6 +73,48 @@ file's span as a claim about this row — a file NAME is not a claim.
 is SKIPPED rather than flagged; the report prints how many, because a check that
 silently drops a third of its rows reads as coverage it does not have.
 
+⭐⭐ CHECK 3 (`MANIFEST_SURNAME_ABSENT`) IS A LADDER, AND THE LADDER IS THE REPORT.
+A bare "capitalised token absent from this file" rule yields **465** hits, almost all
+places and structural vocabulary — an advisory nobody would read. Four filters cut it
+to **14**, and `--ladder` prints every rung, because a single number here would hide
+which rule is doing the work:
+
+    465  absent from this file          (raw capitalised tokens)
+     95  and is a surname in this vault
+     44  and is not in a file this row LINKS to
+     23  and is not a place in this vault
+     14  and is not in the row's own file name
+
+⚠ Each rung answers a false-positive source this question's spec NAMED, and each is
+DATA-DRIVEN rather than a hand-tuned word list — that distinction is what keeps this
+from being the "widen until it reads 0" trap. ⛔ Do NOT add a fifth rung: the residue
+is known (below) and shrinking it further would mean encoding judgement as vocabulary.
+
+⚠⚠ THE SPEC'S "SINGLE HIGHEST-VALUE RULE" DOES NOT HOLD FOR THIS VAULT. It expected
+excluding tokens INSIDE `[[wikilinks]]` to remove most false positives on its own.
+Measured: the dominant pointer dialect writes the family OUTSIDE the link — `Ashgrove
+to [[Family_Tree_Region]]` — so that exclusion removes almost nothing. What
+works is the SEMANTIC version: **if the surname is present in a file this row links
+to, the row is correctly saying where the family went.** That is rung 2, and it is
+worth 51 of the 95.
+
+⚠ THE KNOWN RESIDUE, so nobody re-derives it: the medieval rows contribute a cluster
+of DYNASTY and HOUSE labels (a kingdom or a house used as a lineage name, where the
+entries themselves carry regnal names and no surname at all), and a bare-word
+provenance clause ("split from X", with no wikilink) reads as a family claim. Both are
+legitimate prose. ⛔ They are NOT to be filtered away — a house name in a row is
+exactly the kind of claim a reader may want to check.
+
+⭐ CHECKS 1 AND 3 CORROBORATE EACH OTHER, and did on their first run: the two empty
+headings check 1 flags in one deep file are for the very families check 3 finds that
+row naming. Two independent routes to one defect is the strongest signal here.
+
+TIER 2, OFF BY DEFAULT (`--absent-everywhere`): tokens that are not a surname
+ANYWHERE in the vault — the class covering "the row names a family the vault does not
+hold", which is half of the incident that raised this question. **370 tokens, 144
+distinct, overwhelmingly places and structural words.** It is a one-off review list,
+NOT a gate, and it is deliberately excluded from the baseline.
+
 SCOPE. Section extent follows the markdown nesting rule: a heading's section runs
 to the next heading at the SAME OR SHALLOWER level, so a Generation heading whose
 entries live under `####` subheadings is correctly seen as populated.
@@ -78,6 +123,8 @@ USAGE
   python3 scripts/manifest_audit.py               # full report
   python3 scripts/manifest_audit.py --pointered    # also list the resolved sections
   python3 scripts/manifest_audit.py --skipped      # rows check 2 could not judge
+  python3 scripts/manifest_audit.py --ladder       # check 3's filter rungs
+  python3 scripts/manifest_audit.py --absent-everywhere   # check 3 tier 2 (noisy)
   python3 scripts/manifest_audit.py --heartbeat    # one line for the banner
 """
 from __future__ import annotations
@@ -101,6 +148,13 @@ ANY_HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
 WIKILINK_RE = re.compile(r"\[\[[^\]]+\]\]")
 # A RANGE claim only. `Gen 13-14`, `Generations 0 through 3`, `Gen 20 to 25`.
 # ⛔ Deliberately does NOT match a bare `Gen 8` — see rule 2 in the module docstring.
+NAME_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\u2019-]+")
+# A surname-shaped token in row prose: capitalised, 3+ letters. Deliberately broad —
+# the narrowing is the LADDER in scan_surname_absent, not this pattern.
+ROW_TOKEN_RE = re.compile(r"\b[A-Z][a-z]{2,}\b")
+# The place half of a header vitals parenthetical: everything after a comma.
+HEADER_PLACE_RE = re.compile(r",\s*([A-Z][a-zA-Z'\u2019-]+(?:\s+[A-Z][a-zA-Z'\u2019-]+)*)")
+WIKILINK_TARGET_RE = re.compile(r"\[\[([^\]|]+)")
 GEN_RANGE_RE = re.compile(
     r"\bGen(?:eration)?s?\s*\.?\s*(\d{1,2})\s*(?:-|\u2013|\u2014|\bto\b|\bthrough\b)\s*(\d{1,2})\b",
     re.I)
@@ -205,6 +259,88 @@ def scan_gen_range(vault):
     return rows
 
 
+def _name_index(vault):
+    """Three vocabularies, all read from the person records themselves.
+
+    Returns (per_file, surnames, places):
+      per_file  {basename.md: {every name token, lowercased}}
+      surnames  {the LAST name token of every entry}  — "is this a family here?"
+      places    {tokens from the place half of header vitals} — the collision set,
+                because a toponymic surname and a place look identical in prose
+                (this vault's medieval lines are full of both).
+
+    ⛔ Never a text grep of the shard: a prose MENTION is not presence, the same
+    self-crediting trap as a bare ARK counting itself. Presence means an ENTRY.
+    """
+    per_file = defaultdict(set)
+    surnames, places = set(), set()
+    for rec in person_store.iter_people(vault):
+        if not rec.name or not rec.source_file:
+            continue
+        toks = NAME_TOKEN_RE.findall(rec.name)
+        if not toks:
+            continue
+        per_file[os.path.basename(rec.source_file)].update(w.lower() for w in toks)
+        surnames.add(toks[-1].lower())
+        for chunk in HEADER_PLACE_RE.findall((rec.raw or {}).get("header_paren") or ""):
+            places.update(w.lower() for w in NAME_TOKEN_RE.findall(chunk))
+    return per_file, surnames, places
+
+
+def scan_surname_absent(vault, tier2=False):
+    """Yield findings plus the ladder tally. Returns (rows, ladder).
+
+    Each rung is a false-positive source this question's spec named; see the module
+    docstring for why the ladder is printed rather than just its last rung.
+    """
+    per_file, surnames, places = _name_index(vault)
+    path = os.path.join(vault, "Family_Tree.md")
+    ladder = defaultdict(int)
+    out = []
+    if not os.path.exists(path):
+        return out, ladder
+    for line in open(path, encoding="utf-8"):
+        if not line.strip().startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        name = shard_manifest._normalize_file(cells[0])
+        if not name.startswith(shard_manifest.TREE_PREFIX):
+            continue
+        here = per_file.get(name + ".md")
+        if not here:
+            continue
+        content = "|".join(cells[2:])
+        linked = [shard_manifest._normalize_file(x) + ".md"
+                  for x in WIKILINK_TARGET_RE.findall(content)]
+        own = {w.lower() for w in re.findall(r"[A-Za-z]+", name)}
+        for tok in sorted(set(ROW_TOKEN_RE.findall(WIKILINK_RE.sub(" ", content)))):
+            low = tok.lower()
+            if low in here:
+                continue
+            ladder["1 absent from this file"] += 1
+            is_surname = low in surnames
+            if tier2 and not is_surname:
+                out.append({"file": name, "token": tok, "tier": 2})
+            if not is_surname:
+                continue
+            ladder["2 is a surname in this vault"] += 1
+            # The row LINKS to a file that holds them: it is correctly saying where
+            # the family went. This is the pointer rule that actually works here.
+            if any(low in per_file.get(dest, set()) for dest in linked):
+                continue
+            ladder["3 not in a file this row links to"] += 1
+            if low in places:
+                continue
+            ladder["4 not a place in this vault"] += 1
+            if low in own:
+                continue
+            ladder["5 not in the row's own file name"] += 1
+            out.append({"file": name, "token": tok, "tier": 1})
+    return out, ladder
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -213,6 +349,11 @@ def main(argv=None):
     ap.add_argument("--skipped", action="store_true",
                     help="list the File Index rows check 2 could NOT judge (no range "
                          "claim, or a file with no generation-bearing entries)")
+    ap.add_argument("--ladder", action="store_true",
+                    help="print check 3's filter rungs — which rule removed what")
+    ap.add_argument("--absent-everywhere", action="store_true",
+                    help="check 3 TIER 2: tokens that are not a surname anywhere in "
+                         "the vault. A review list, not a gate; mostly places.")
     ap.add_argument("--pointered", action="store_true",
                     help="also list the sections that ARE pointered — the resolved "
                          "population, shown so a reader can check the discrimination "
@@ -231,9 +372,11 @@ def main(argv=None):
         gr = scan_gen_range(vault)
         bad = sum(1 for r in gr if r["verdict"] == "mismatch")
         unjudged = sum(1 for r in gr if r["verdict"] in ("no_claim", "no_entries"))
+        sa, _ladder = scan_surname_absent(vault)
         print(f"MANIFEST_EMPTY_HEADING: {len(findings)}  [advisory]{extra}; "
               f"MANIFEST_GEN_RANGE: {bad}  [advisory; baseline 17] "
-              f"({unjudged} of {len(gr)} row(s) not judgeable)")
+              f"({unjudged} of {len(gr)} row(s) not judgeable); "
+              f"MANIFEST_SURNAME_ABSENT: {len(sa)}  [advisory; baseline 14; READ THE ROWS]")
         return 0
 
     print("=== MANIFEST_EMPTY_HEADING — a generation heading with no entries "
@@ -273,6 +416,32 @@ def main(argv=None):
     print(f"\nMANIFEST_GEN_RANGE: {len(bad)}  [advisory; baseline 17]"
           f"   ({len(unjudged)} of {len(gr)} row(s) not judgeable"
           + ("" if a.skipped else "; --skipped to list them") + ")")
+
+    sa, ladder = scan_surname_absent(vault, tier2=a.absent_everywhere)
+    t1 = [r for r in sa if r["tier"] == 1]
+    t2 = [r for r in sa if r["tier"] == 2]
+    print("\n=== MANIFEST_SURNAME_ABSENT — a row names a family with no entry in "
+          "that file (advisory) ===")
+    print("  CANDIDATES, NOT VERDICTS. A house or dynasty label and a bare-word")
+    print("  provenance clause both read as a family claim and are legitimate prose.\n")
+    for r in t1:
+        print(f"  {r['file']:52} {r['token']}")
+    if not t1:
+        print("  (none)")
+    if a.ladder:
+        print("\n  --- the ladder (each rung is a named false-positive source) ---")
+        for rung in sorted(ladder):
+            print(f"      {ladder[rung]:5}  {rung}")
+    if a.absent_everywhere:
+        print(f"\n  --- TIER 2 ({len(t2)}): not a surname anywhere in the vault. A")
+        print("      review list, NOT a gate, and not in the baseline. Mostly places ---")
+        seen = defaultdict(list)
+        for r in t2:
+            seen[r["token"]].append(r["file"])
+        for tok in sorted(seen):
+            print(f"      {tok:24} x{len(seen[tok])}")
+    print(f"\nMANIFEST_SURNAME_ABSENT: {len(t1)}  [advisory; baseline 14]"
+          + ("" if a.ladder else "   (--ladder for the filter rungs)"))
     return 0
 
 

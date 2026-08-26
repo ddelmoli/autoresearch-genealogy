@@ -314,6 +314,15 @@ parts = [
     # measured rules, worth 26 -> 17 -> and back up to 21 if either is dropped: ANY
     # claim may match (a row carries its own range plus what it split away), and
     # only a RANGE is a claim (a bare `Gen 8` is a remark, not an assertion).
+    # Check 3, MANIFEST_SURNAME_ABSENT (baseline 14): a row naming a family that IS
+    # a vault surname but has no entry in the file the row describes. A LADDER, and
+    # `--ladder` prints it: 465 raw -> 95 vault surnames -> 44 not in a linked file
+    # -> 23 not a place -> 14 not in the row's own filename. ⚠ The spec's expected
+    # "exclude tokens inside [[wikilinks]]" rule does almost NOTHING here: the
+    # pointer dialect writes the family OUTSIDE the link. What works is the semantic
+    # version -- present in a file the row LINKS to = correctly saying where they
+    # went. ⛔ CANDIDATES, NOT VERDICTS: house/dynasty labels and bare-word "split
+    # from X" clauses are legitimate prose and are NOT to be filtered away.
     "manifest -> " + run("manifest_audit.py", r"MANIFEST_EMPTY_HEADING:",
                          args=["--heartbeat"], max_lines=1),
     # File-level frontmatter (frontmatter_audit.py): the layer no other gate reads.

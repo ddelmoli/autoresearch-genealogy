@@ -173,8 +173,108 @@ check("heading says 1, entries say 4-6, row claiming 4-6 is ok",
       MA.scan_gen_range(_v)[0]["verdict"], "ok")
 check("actual_spans reads the entries", MA.actual_spans(_v)["Family_Tree_Shard.md"], (4, 6))
 
+
+# ---------------------------------------------------------------- check 3
+print("\n=== MANIFEST_SURNAME_ABSENT (check 3) ===")
+
+
+def sa_vault(row_content, shard_people, other_people=None, shard="Family_Tree_Shard"):
+    """A scratch vault: one File Index row, its shard, and an optional second shard.
+
+    `shard_people` / `other_people` are lists of (name, header_paren_place).
+    """
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8").write(
+        '{"person_model": "narrative"}')
+    open(os.path.join(d, "Family_Tree.md"), "w", encoding="utf-8").write(
+        "## File Index\n\n| File | Region | Content |\n|---|---|---|\n"
+        f"| [[{shard}]] | Test | {row_content} |\n")
+
+    def write(fname, people):
+        body = "### Generation 9: Placeholder\n\n"
+        for i, (nm, place) in enumerate(people):
+            paren = f"b. 1700{', ' + place if place else ''}; d. 1750"
+            body += (f"**{nm}** ({paren})\n"
+                     f"- meta: {{id: P-SA{i:04d}, generation: 9, life_status: deceased}}\n\n")
+        open(os.path.join(d, fname + ".md"), "w", encoding="utf-8").write(body)
+    write(shard, shard_people)
+    if other_people is not None:
+        write("Family_Tree_Other", other_people)
+    return d
+
+
+def flagged(row, shard_people, other_people=None, shard="Family_Tree_Shard"):
+    rows, _ = MA.scan_surname_absent(sa_vault(row, shard_people, other_people, shard))
+    return sorted(r["token"] for r in rows if r["tier"] == 1)
+
+
+ONE = [("John Marchwood", "")]
+
+print("\nA family with an entry in the file is never flagged:")
+check("present", flagged("Holds the Marchwood line.", ONE), [])
+
+print("\n⛔ A family that IS a vault surname but has no entry here IS flagged:")
+check("absent", flagged("Holds the Marchwood and Ashgrove lines.",
+                        ONE, [("Ann Ashgrove", "")]), ["Ashgrove"])
+
+print("\n⚠⚠ The spec's 'highest-value rule' does NOT catch this vault's pointer dialect:")
+check("the surname sits OUTSIDE the link, so the wikilink strip leaves it",
+      "Ashgrove" in MA.ROW_TOKEN_RE.findall(
+          MA.WIKILINK_RE.sub(" ", "Ashgrove to [[Family_Tree_Other]]")), True)
+check("⭐ but the SEMANTIC rule clears it: the linked file holds them",
+      flagged("Marchwood here; Ashgrove to [[Family_Tree_Other]].",
+              ONE, [("Ann Ashgrove", "")]), [])
+check("a link to a file that does NOT hold them still flags",
+      flagged("Marchwood here; Ashgrove to [[Family_Tree_Missing]].",
+              ONE, [("Ann Ashgrove", "")]), ["Ashgrove"])
+
+print("\nA place in this vault is not read as a family:")
+check("toponym collision suppressed",
+      flagged("The Marchwood line of Ashgrove, MA.",
+              ONE + [("Ann Marchwood", "Ashgrove, MA")], [("Bea Ashgrove", "")]), [])
+
+print("\nA token in the row's OWN file name is file-name vocabulary:")
+check("own-name token suppressed",
+      flagged("Ashgrove collateral, the Marchwood line.", ONE,
+              [("Ann Ashgrove", "")], shard="Family_Tree_Ashgrove"),
+      [])
+
+print("\nTier 1 requires it to be a surname SOMEWHERE in the vault:")
+check("an unknown capitalised word is not tier 1",
+      flagged("Holds the Marchwood line and the Zzzyzx cluster.", ONE), [])
+_rows, _ = MA.scan_surname_absent(
+    sa_vault("Holds the Marchwood line and the Zzzyzx cluster.", ONE), tier2=True)
+_t2 = sorted(r["token"] for r in _rows if r["tier"] == 2)
+check("but it IS tier 2", "Zzzyzx" in _t2, True)
+# ⚠ Pinned deliberately: tier 2 also catches the sentence-initial "Holds". That is
+# the noise the docstring calls 370 tokens, and it is WHY tier 2 is off by default
+# and out of the baseline. A tier 2 that looked clean here would be the misleading
+# result -- it would mean the fixture, not the filter, was doing the work.
+check("tier 2 is noisy BY CONSTRUCTION (a sentence-initial word lands in it)",
+      "Holds" in _t2, True)
+check("tier 2 is excluded from the default scan",
+      [r["token"] for r in MA.scan_surname_absent(
+          sa_vault("Holds the Marchwood line and the Zzzyzx cluster.", ONE))[0]
+       if r["tier"] == 2], [])
+
+print("\n⛔ Presence means an ENTRY, never a prose mention (the self-crediting trap):")
+_d = sa_vault("Holds Marchwood and Ashgrove.", ONE, [("Ann Ashgrove", "")])
+open(os.path.join(_d, "Family_Tree_Shard.md"), "a", encoding="utf-8").write(
+    "\nThe Ashgrove family is discussed at length here but has no entry.\n")
+check("a prose mention in the shard does not count as presence",
+      sorted(r["token"] for r in MA.scan_surname_absent(_d)[0] if r["tier"] == 1),
+      ["Ashgrove"])
+
+print("\nThe ladder is reported, not just its last rung:")
+_rows, _lad = MA.scan_surname_absent(
+    sa_vault("Marchwood and Ashgrove.", ONE, [("Ann Ashgrove", "")]))
+check("every rung present", sorted(_lad)[:2],
+      ["1 absent from this file", "2 is a surname in this vault"])
+check("rungs are monotonically non-increasing",
+      all(_lad[a] >= _lad[b] for a, b in zip(sorted(_lad), sorted(_lad)[1:])), True)
+
 print()
 if FAILED:
     print(f"FAILED ({len(FAILED)}): " + "; ".join(FAILED))
     sys.exit(1)
-print("All manifest_audit pins pass (checks 1 and 2).")
+print("All manifest_audit pins pass (checks 1, 2 and 3).")
