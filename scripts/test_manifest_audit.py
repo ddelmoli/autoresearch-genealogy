@@ -101,8 +101,80 @@ print("\nNon-Generation headings are out of scope entirely:")
 check("plain ## section with no entries",
       run("## Collateral stub entries\n\nSome prose, no people.\n"), [])
 
+
+# ---------------------------------------------------------------- check 2
+print("\n=== MANIFEST_GEN_RANGE (check 2) ===")
+
+
+def gen_vault(row_content, shard_entries):
+    """A scratch vault: a Family_Tree.md File Index with ONE row, plus its shard.
+
+    `shard_entries` is a list of generation ints; each becomes a person entry in
+    Family_Tree_Shard.md, so the file's real span is min/max of that list.
+    """
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8").write(
+        '{"person_model": "narrative"}')
+    body = "## File Index\n\n| File | Region | Content |\n|---|---|---|\n"
+    body += f"| [[Family_Tree_Shard]] | Test | {row_content} |\n"
+    open(os.path.join(d, "Family_Tree.md"), "w", encoding="utf-8").write(body)
+    shard = "### Generation 1: Placeholder\n\n"
+    for i, g in enumerate(shard_entries):
+        shard += (f"**Placeholder {i}** (b. 1700; d. 1750)\n"
+                  f"- meta: {{id: P-TST{i:03d}, generation: {g}, life_status: deceased}}\n\n")
+    open(os.path.join(d, "Family_Tree_Shard.md"), "w", encoding="utf-8").write(shard)
+    return d
+
+
+def verdict(row_content, shard_entries):
+    rows = MA.scan_gen_range(gen_vault(row_content, shard_entries))
+    return rows[0]["verdict"] if rows else "no_row"
+
+
+print("\nRule 1 — ANY claim may match, not just the first:")
+check("the row's own range stated FIRST",
+      verdict("Gen 8-11, the working shard.", [8, 9, 10, 11]), "ok")
+check("⭐ a HISTORICAL range first, the current one after",
+      verdict("Gen 12-16 originally; Gen 15-16 split away, so this file is Gen 12-14 now.",
+              [12, 13, 14]), "ok")
+check("first-claim-only would have flagged that row",
+      MA._range_claims("Gen 12-16 originally; Gen 15-16 split away, so this file is "
+                       "Gen 12-14 now.")[0] == (12, 14), False)
+check("no claim matches -> mismatch",
+      verdict("Gen 12-16, plus Gen 15-16 split away.", [12, 13, 14]), "mismatch")
+
+print("\nRule 2 — only a `Gen X-Y` RANGE is a claim (this is worth 4 rows):")
+check("a bare `Gen 8` is NOT the range 8-8", MA._range_claims("the Gen 8 cluster"), [])
+check("a row whose only mention is bare is SKIPPED, not flagged",
+      verdict("Holds the Gen 8 cluster and the Gen 9 in-laws.", [5, 6, 7, 8, 9]), "no_claim")
+check("two bare mentions are still no claim",
+      MA._range_claims("Gen 8 and Gen 9 people"), [])
+
+print("\nRange dialects that DO parse:")
+for text, want in [("Gen 13-14 only", [(13, 14)]),
+                   ("Generations 0 through 3", [(0, 3)]),
+                   ("Gen 20 to 25", [(20, 25)]),
+                   ("Gen 23–30 (en dash)", [(23, 30)]),
+                   ("Gen 23—30 (em dash)", [(23, 30)])]:
+    check(f"parses: {text!r}", MA._range_claims(text), want)
+
+print("\n⚠ A wikilink is a file NAME, never a claim about this row:")
+check("piped display form does not inject a span",
+      MA._range_claims("split to [[Family_Tree_X|Gen 15-16]]"), [])
+check("but the same span in PROSE does count",
+      MA._range_claims("Gen 15-16 split to [[Family_Tree_X]]"), [(15, 16)])
+
+print("\nNot-judgeable rows are counted, never flagged:")
+check("a file with no generation-bearing entries", verdict("Gen 8-11.", []), "no_entries")
+
+print("\nThe span comes from the meta `generation`, not the heading:")
+_v = gen_vault("Gen 4-6.", [4, 5, 6])   # every entry sits under a `Generation 1` heading
+check("heading says 1, entries say 4-6, row claiming 4-6 is ok",
+      MA.scan_gen_range(_v)[0]["verdict"], "ok")
+check("actual_spans reads the entries", MA.actual_spans(_v)["Family_Tree_Shard.md"], (4, 6))
+
 print()
 if FAILED:
     print(f"FAILED ({len(FAILED)}): " + "; ".join(FAILED))
     sys.exit(1)
-print("All manifest_audit pins pass.")
+print("All manifest_audit pins pass (checks 1 and 2).")

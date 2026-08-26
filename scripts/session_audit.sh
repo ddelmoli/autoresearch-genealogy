@@ -309,6 +309,11 @@ parts = [
     # a wikilink pointer naming where the people went; ⛔ do not test for the word
     # "moved" instead, the vault writes that pointer at least four ways. Advisory,
     # baseline 3 (all pre-existing) + 17 empty-but-pointered, which are not findings.
+    # Check 2, MANIFEST_GEN_RANGE (baseline 17): a File Index row whose every
+    # `Gen X-Y` claim disagrees with its file's real min/max `generation`. ⚠ TWO
+    # measured rules, worth 26 -> 17 -> and back up to 21 if either is dropped: ANY
+    # claim may match (a row carries its own range plus what it split away), and
+    # only a RANGE is a claim (a bare `Gen 8` is a remark, not an assertion).
     "manifest -> " + run("manifest_audit.py", r"MANIFEST_EMPTY_HEADING:",
                          args=["--heartbeat"], max_lines=1),
     # File-level frontmatter (frontmatter_audit.py): the layer no other gate reads.
