@@ -276,6 +276,17 @@ parts = [
     # disagree on the YEAR, which no other gate can see.
     "prose_audit -> " + run("prose_audit.py",
                             r"ERROR issues:|WARN issues:|DATE_DRIFT:", max_lines=3),
+    # Date-field GRAMMAR (date_grammar_audit.py), Q338. The three gates above reach
+    # a date through `gdate.resolve_year()`, which is forgiving BY DESIGN: it returns
+    # a year from '1969, Somewhereton, MA' and the comparison then matches. The
+    # validator existed and no gate asked it. ⚠ SCOPE IS THE STORED META KEY, never
+    # `PersonRecord.born` — that attribute FALLS BACK to the header parenthetical,
+    # where the literal `unknown` and a trailing place are both LEGAL. Q338 measured
+    # the attribute and reported 309 stored violations; re-measured 26 AUG 2026 with
+    # two independent readers, the stored population is 2,322 fields and 0 invalid.
+    # Baseline 0 — a non-zero here is a REGRESSION, not a backlog.
+    "date_grammar -> " + run("date_grammar_audit.py", r"DATE_GRAMMAR:",
+                             args=["--heartbeat"], max_lines=1),
     "header_xref -> " + run("header_xref_audit.py", r"HEADER_XREF violations:"),
     # Header grammar conformance (spec/header-grammar Spec 02). ADVISORY with a
     # large known baseline — the migration is Spec 04, so a non-zero number here
