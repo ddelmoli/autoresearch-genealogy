@@ -4,6 +4,7 @@
 require "fileutils"
 require "English"
 require "digest"
+require "json"
 require "time"
 
 ROOT = File.expand_path("..", __dir__)
@@ -218,22 +219,109 @@ PUBLISHED_VAULT_IDS = %w[
 # The vault is per-install and never inside this repo's tracked tree: honour
 # AUTORESEARCH_VAULT, else accept a single sibling directory carrying the
 # `.autoresearch.json` marker. Two candidates is not a guess worth making.
+# Returns [dir, source]; the source is printed, so a fallback is never silent.
 def vault_dir
   env = ENV["AUTORESEARCH_VAULT"].to_s
-  return env if !env.empty? && File.file?(File.join(env, ".autoresearch.json"))
+  return [env, "AUTORESEARCH_VAULT"] if !env.empty? && File.file?(File.join(env, ".autoresearch.json"))
 
   candidates = Dir.glob(File.join(ROOT, "*")).select do |dir|
     File.directory?(dir) && File.file?(File.join(dir, ".autoresearch.json"))
   end
-  candidates.length == 1 ? candidates.first : nil
+  return [nil, nil] unless candidates.length == 1
+
+  why = env.empty? ? "AUTORESEARCH_VAULT unset" : "AUTORESEARCH_VAULT is not a vault"
+  [candidates.first, "sibling fallback, #{why}"]
 end
 
-def vault_person_ids(dir)
-  ids = {}
-  Dir.glob(File.join(dir, "Family_Tree*.md")).each do |path|
-    read_text(path).scan(/\{id: (P-[0-9A-Z]{6})/) { |match| ids[match[0]] = true }
+# ⛔⛔ THE ID READER MUST NOT BE ABLE TO RETURN ZERO QUIETLY (13 SEP 2026). It was one
+# regex, `\{id: (P-...)` over `Family_Tree*.md`, and it resolved nothing -- while the
+# result still read PASS -- in two ordinary cases: a vault on the `file` person model
+# (the framework DEFAULT, whose ids live in per-person frontmatter), and a meta line
+# whose `id` key is not written first, which is valid YAML and which person_store
+# parses. An empty id set is not nil, so neither case fell into SKIPPED either: the
+# report said "resolved against 0 person ids" and passed. Correct on this vault only
+# because every meta line happens to lead with `{id: `.
+#
+# So the reader follows the vault's declared model and does not care about key
+# order, and `vault_id_state` refuses to pass on zero without an independent witness.
+META_LINE_RE = /^\s*-\s*meta:\s*\{/.freeze
+META_ID_RE = /(?:\{|,)\s*id:\s*['"]?(P-[0-9A-Z]{6})\b/.freeze
+FRONTMATTER_ID_RE = /^id:\s*['"]?(P-[0-9A-Z]{6})\b/.freeze
+FRONTMATTER_PERSON_RE = /^type:\s*['"]?person['"]?\s*$/.freeze
+
+# person_store's `_iter_person_files`: every `*.md` except `templates/` scaffolding.
+def vault_markdown(dir)
+  Dir.glob(File.join(dir, "**", "*.md")).reject do |path|
+    path.sub(dir, "").split(File::SEPARATOR).include?("templates")
   end
-  ids
+end
+
+# The vault's person model, as vault_config.get_person_model reads it: `file` when
+# the key is absent, nil (unreadable) for a bad config or an unknown value -- which
+# Python treats as a hard error, and so does this.
+def person_model(dir)
+  cfg = JSON.parse(read_text(File.join(dir, ".autoresearch.json")))
+  model = cfg.is_a?(Hash) ? (cfg["person_model"] || "file") : nil
+  %w[file narrative].include?(model) ? model : nil
+rescue JSON::ParserError
+  nil
+end
+
+# { ids: {id => true}, records: n } -- `records` counts person records seen, with or
+# without a readable id, so a partial miss is visible in the report.
+def vault_person_ids(dir, model)
+  ids = {}
+  records = 0
+  if model == "narrative"
+    Dir.glob(File.join(dir, "Family_Tree*.md")).each do |path|
+      read_text(path).each_line do |line|
+        next unless line.match?(META_LINE_RE)
+
+        records += 1
+        match = line.match(META_ID_RE)
+        ids[match[1]] = true if match
+      end
+    end
+  else
+    vault_markdown(dir).each do |path|
+      text = read_text(path)
+      next unless text.start_with?("---")
+
+      front = text.split(/^---[ \t]*$/, 3)[1]
+      next unless front&.match?(FRONTMATTER_PERSON_RE)
+
+      records += 1
+      match = front.match(FRONTMATTER_ID_RE)
+      ids[match[1]] = true if match
+    end
+  end
+  { ids: ids, records: records }
+end
+
+# The report line for a reachable vault. Starts with "BLIND" when the reader cannot
+# have seen the vault's ids, which FAILS the audit: a vault is present, so this is
+# not the bare-clone SKIPPED case -- it is the instrument reporting on nothing.
+def vault_id_state(dir, source, model, read)
+  where = "#{File.basename(dir)} (#{source})"
+  return "BLIND -- #{where}: .autoresearch.json has no readable person_model" if model.nil?
+
+  ids = read[:ids]
+  if ids.empty?
+    # ⭐ THE WITNESS IS DELIBERATELY NOT THE READER'S GRAMMAR. Any `P-` + six token in
+    # the vault's Markdown means people exist that the reader failed to see; only a
+    # vault with no such token at all is honestly empty.
+    witness = vault_markdown(dir).find { |path| read_text(path).match?(VAULT_ID_RE) }
+    if witness
+      return "BLIND -- #{where}: the #{model}-model reader resolved 0 person ids, but " \
+             "#{witness.sub("#{dir}/", "")} holds P- id tokens. Not a pass: nothing was resolved."
+    end
+    return "resolved against 0 person ids in #{where}; the vault holds no P- ids"
+  end
+
+  state = "resolved against #{ids.length} person ids in #{where}, #{model} model"
+  missing = read[:records] - ids.length
+  state += "; ⚠ #{missing} person record(s) had no readable id" if missing.positive?
+  state
 end
 
 def vault_id_findings(vault_ids)
@@ -340,6 +428,8 @@ def write_report(terms, head_findings, git_history_findings, id_findings,
   content << "example that explains a script is where one crosses into this repo.\n\n"
   if vault_state.start_with?("skipped")
     content << "SKIPPED -- #{vault_state}. Not a pass: nothing was resolved.\n\n"
+  elsif vault_state.start_with?("BLIND")
+    content << "#{vault_state}\n\n"
   elsif vault_id_findings.empty?
     content << "None.\n\n"
   else
@@ -351,7 +441,7 @@ def write_report(terms, head_findings, git_history_findings, id_findings,
 
   content << "## Result\n\n"
   content << if head_findings.empty? && git_history_findings.empty? && id_findings.empty? &&
-                vault_id_findings.empty?
+                vault_id_findings.empty? && !vault_state.start_with?("BLIND")
                "PASS\n"
              else
                "FAIL\n"
@@ -366,25 +456,30 @@ head_findings = current_head_findings(terms)
 git_history_findings = history_findings(terms)
 id_findings = identifier_findings
 
-dir = vault_dir
+dir, source = vault_dir
 if dir
-  ids = vault_person_ids(dir)
-  vault_findings = vault_id_findings(ids)
-  vault_state = "resolved against #{ids.length} person ids in #{File.basename(dir)}"
+  model = person_model(dir)
+  read = model ? vault_person_ids(dir, model) : { ids: {}, records: 0 }
+  vault_findings = vault_id_findings(read[:ids])
+  vault_state = vault_id_state(dir, source, model, read)
 else
   vault_findings = []
   vault_state = "skipped, no reachable vault (set AUTORESEARCH_VAULT to enable)"
 end
+vault_blind = vault_state.start_with?("BLIND")
 
 report_path = write_report(terms, head_findings, git_history_findings, id_findings,
                            vault_findings, vault_state)
 
 if head_findings.empty? && git_history_findings.empty? && id_findings.empty? &&
-   vault_findings.empty?
+   vault_findings.empty? && !vault_blind
   puts "privacy-audit-repo: ok"
   puts "report: #{report_path}"
 else
-  warn "privacy-audit-repo: #{head_findings.length + git_history_findings.length + id_findings.length + vault_findings.length} finding group(s)"
+  groups = head_findings.length + git_history_findings.length + id_findings.length +
+           vault_findings.length
+  warn "privacy-audit-repo: #{groups} finding group(s)"
+  warn "privacy-audit-repo: vault person-id check #{vault_state}" if vault_blind
   warn "report: #{report_path}"
   exit 1
 end
