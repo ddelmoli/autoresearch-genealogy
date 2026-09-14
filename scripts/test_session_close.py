@@ -96,6 +96,39 @@ class CloseOrderTests(unittest.TestCase):
         self.assertIn("DUE", line[0])
         self.assertIn("AFTER this command", line[0])
 
+    def plan(self, *args):
+        return subprocess.run([sys.executable, os.path.join(SCRIPTS, "session_plan.py"), *args],
+                              capture_output=True, text=True, timeout=600,
+                              env={**os.environ, "AUTORESEARCH_VAULT": self.vault})
+
+    def write_pending(self, pending):
+        path = os.path.join(self.vault, "session_plan_snapshots.json")
+        with open(path, encoding="utf-8") as f:
+            s = json.load(f)
+        s["pending"] = pending
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(s, f)
+
+    def test_a_plan_rerun_keeps_the_pending_draw(self):
+        """⛔ 14 SEP 2026: every plan run overwrote `pending`, `--limit` included, so the
+        offer `record()` stamps was whatever the LAST re-run computed."""
+        self.plan()
+        sentinel = {"date": "2026-01-01", "lane": "EXPAND", "offered": ["P-ZZZ999"]}
+        self.write_pending(sentinel)
+        r = self.plan("--limit", "50")
+        self.assertEqual(self.state()["pending"], sentinel,
+                         "a re-run (with --limit) must leave the pending draw untouched")
+        self.assertIn("kept", r.stdout)
+        self.assertIn("RECOMMENDED LANE: EXPAND", r.stdout,
+                      "the pending lane is this iteration's lane")
+
+    def test_redraw_replaces_the_pending_draw(self):
+        """NEGATIVE CONTROL: the guard must leave a deliberate replacement possible."""
+        self.plan()
+        self.write_pending({"date": "2026-01-01", "lane": "EXPAND", "offered": ["P-ZZZ999"]})
+        self.plan("--redraw")
+        self.assertNotEqual(self.state()["pending"]["offered"], ["P-ZZZ999"])
+
 
 class RecloseTests(unittest.TestCase):
     """** A RE-CLOSE IS DERIVED FROM STATE, NOT REMEMBERED (31 JUL 2026). **

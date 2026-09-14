@@ -343,6 +343,46 @@ class PendingGuardTests(unittest.TestCase):
         self.assertEqual(st["history"][-1]["session"], 124)
 
 
+class RegisterDrawTests(unittest.TestCase):
+    """** A PLAN RUN DOES NOT REPLACE A PENDING DRAW (14 SEP 2026). **
+
+    Prompt 22 said a re-run of the plan does not mint a fresh draw; the code overwrote
+    `pending` on every run, and `--limit` (display-only by its own help) widened the
+    persisted offer, so `record()` cooled rows the sitting was never offered."""
+
+    def test_a_pending_draw_is_kept(self):
+        pend = {"date": "2026-09-14", "lane": "IMPROVE", "offered": ["P-AAA111"]}
+        st = {"pending": dict(pend)}
+        self.assertFalse(sp.register_draw(st, "EXPAND", ["P-BBB222"], "2026-09-15"))
+        self.assertEqual(st["pending"], pend)
+
+    def test_redraw_replaces_it(self):
+        st = {"pending": {"date": "2026-09-14", "lane": "IMPROVE", "offered": ["P-AAA111"]}}
+        self.assertTrue(sp.register_draw(st, "EXPAND", ["P-BBB222"], "2026-09-15",
+                                         redraw=True))
+        self.assertEqual(st["pending"], {"date": "2026-09-15", "lane": "EXPAND",
+                                         "offered": ["P-BBB222"]})
+
+    def test_no_pending_registers(self):
+        """NEGATIVE CONTROL: the guard must not stop the ordinary first draw."""
+        st = {"pending": None}
+        self.assertTrue(sp.register_draw(st, "IMPROVE", ["P-AAA111"], "2026-09-14"))
+        self.assertEqual(st["pending"]["offered"], ["P-AAA111"])
+
+    def test_offer_is_sized_by_target_not_by_the_display_limit(self):
+        rows = [{"id": f"P-{i:06d}"} for i in range(40)]
+        self.assertEqual(len(sp.offered_keys(rows, 25, 5)), 25)
+        self.assertEqual(len(sp.offered_keys(rows, 3, 5)), 5,
+                         "never below the configured rows-shown")
+        self.assertEqual(len(sp.offered_keys(rows, None, 5)), 5)
+
+    def test_offer_carries_every_folded_key_once(self):
+        rows = [{"id": "P-AAA111", "_cool_keys": ["P-AAA111", "corrob:P-AAA111"]},
+                {"id": "P-BBB222"}]
+        self.assertEqual(sp.offered_keys(rows, 2, 1),
+                         ["P-AAA111", "corrob:P-AAA111", "P-BBB222"])
+
+
 class RecordTests(unittest.TestCase):
     def test_record_hit_and_miss(self):
         st = {"arms": {}, "history": [], "pending": {"date": "2026-07-29", "lane": "EXPAND"}}

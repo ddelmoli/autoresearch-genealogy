@@ -1541,6 +1541,65 @@ def cooling(state, lane, row_id, cooldown=OFFER_COOLDOWN):
     return since < cooldown, since
 
 
+def row_cooling(state, lane, row, cooldown=OFFER_COOLDOWN):
+    """True when EVERY cool key the row carries is cooling; False for an unkeyed row.
+
+    A row folded from two populations carries two kinds of work. It is deprioritised
+    only when both have had their turn: one still hot is work in front of the sitting.
+    """
+    keys = cool_keys(row)
+    return bool(keys) and all(cooling(state, lane, k, cooldown)[0] for k in keys)
+
+
+def count_cooling(rows, state, lane, cooldown=OFFER_COOLDOWN):
+    """How many PEOPLE in a composed lane are cooling -- the number printed beside it.
+
+    ⛔ Not the sum of per-population counts (14 SEP 2026). IMPROVE rotates its three
+    populations separately, and adding their cooled counts counted a person once per
+    population: 89 cooling for 80 people on the reference vault, the same miscount
+    `dedupe_by_person` removed from the lane size, left standing one line lower.
+    """
+    return sum(1 for r in rows if row_cooling(state, lane, r, cooldown))
+
+
+def offered_keys(rows, lane_target, base_per_lane):
+    """The cool keys a draw OFFERS: every key on the rows the sitting is asked to work.
+
+    Sized from the lane target (never below the configured rows-shown), and ⛔ never
+    from `--limit`, which is display-only: widening the printed list used to widen the
+    persisted offer, and `record()` then cooled rows nobody was asked to work.
+    A key reaching here twice means an upstream builder emitted it twice; that is
+    reported on stderr, not swallowed (session #184).
+    """
+    seen, out = set(), []
+    for r in rows[:max(lane_target or base_per_lane, base_per_lane)]:
+        for k in cool_keys(r):
+            if k in seen:
+                print(f"  ⚠ plan: {k} offered twice; kept once "
+                      f"(upstream builder emitted a duplicate cool_key)", file=sys.stderr)
+                continue
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def register_draw(state, lane, offered, today, redraw=False):
+    """Register a draw as `pending` unless one is already waiting. Returns True if written.
+
+    ⛔⛔ A PLAN RUN DOES NOT REPLACE A PENDING DRAW (14 SEP 2026). Prompt 22 has always
+    said so; the code overwrote `pending` on every run. A draw is registered, the
+    iteration works it, and `record()` stamps its `offered` keys -- so a re-run in the
+    middle (to re-read the worklist, or with `--limit`) replaced the offer with rows
+    recomputed after some had been disposed of, and the record then cooled rows the
+    sitting was never offered. Only `record()` consumes a draw; `redraw=True` (the
+    `--redraw` flag) is the one deliberate replacement.
+    """
+    if state.get("pending") and not redraw:
+        return False
+    state["pending"] = {"date": today, "lane": lane, "offered": list(offered)}
+    return True
+
+
 def stamp_offered(state, lane, ids, sitting_key):
     """Mark `ids` as offered in `lane` during `sitting_key`. Called from record()."""
     d = state.setdefault("offered", {}).setdefault(lane, {})
@@ -1578,8 +1637,7 @@ def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
         return list(rows), 0
     hot, cold = [], []
     for r in rows:
-        is_cool, _ = cooling(state, lane, cool_key(r), cooldown)
-        (cold if is_cool else hot).append(r)
+        (cold if row_cooling(state, lane, r, cooldown) else hot).append(r)
     if not hot:
         # Everything is cooling. Deprioritising all of it would be meaningless, and
         # silently emptying the lane would be a lie, so hand back the plain order.
@@ -1813,6 +1871,9 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--vault")
     ap.add_argument("--limit", type=int, help="rows per lane SHOWN (display only; default 5)")
+    ap.add_argument("--redraw", action="store_true",
+                    help="REPLACE a pending, unrecorded draw with this run's. Without it a "
+                         "plan run leaves the pending draw exactly as registered.")
     ap.add_argument("--lane-pct", type=float, dest="lane_pct", metavar="X",
                     help="Work X%% of the vault off the drawn lane per ITERATION "
                          "(the Lane target). Defaults to the profile-review "
@@ -1862,7 +1923,10 @@ def main(argv=None):
             cfg = json.load(f).get(CONFIG_KEY, {}) or {}
     except Exception:
         pass
-    per_lane = a.limit or int(cfg.get("per_lane", PER_LANE))
+    # `--limit` changes what is PRINTED and nothing else: the persisted offer is sized
+    # from the configured value (see `offered_keys`).
+    base_per_lane = int(cfg.get("per_lane", PER_LANE))
+    per_lane = a.limit or base_per_lane
     min_sample = int(cfg.get("min_sample", MIN_SAMPLE))
     stale_after = int(cfg.get("stale_after", STALE_AFTER))
     cooldown_sittings = int(cfg.get("offer_cooldown", OFFER_COOLDOWN))
@@ -1923,6 +1987,22 @@ def main(argv=None):
     # (deferred_decisions 21). Report the floor rather than hiding it in the total.
     blocked = {ln: sum(1 for r in rows if r.get("blocked")) for ln, rows in lanes.items()}
     pick, reason = draw_lane(state, sizes, min_sample, stale_after)
+    # A pending draw is THIS iteration's lane until `--record` consumes it; the fresh
+    # draw is shown beside it only when the two differ (see `register_draw`).
+    pend = state.get("pending") or None
+    pend_note = None
+    if pend and not a.redraw:
+        fresh = pick
+        if pend.get("lane") in LANES:
+            pick = pend["lane"]
+            reason = (f"PENDING draw registered {pend.get('date')}, not yet recorded; "
+                      f"{len(pend.get('offered') or [])} key(s) offered")
+        pend_note = (f"  ⚠ A pending {pend.get('lane')} draw ({pend.get('date')}) is kept "
+                     f"unchanged: --record consumes it, --redraw replaces it."
+                     + (f" A fresh draw now would pick {fresh}." if fresh != pick else "")
+                     + ("" if pend.get("lane") in LANES else
+                        f" Its lane is not one of {', '.join(LANES)}, so it cannot be "
+                        f"recorded as drawn; --redraw after deciding what it was."))
     lane_target, lt_pct, lt_src = resolve_lane_target(vault, cfg, a.lane_pct)
     try:
         import gen_person_index as _g
@@ -1959,7 +2039,8 @@ def main(argv=None):
             # prefix of `_src` it takes is not the prefix the inner split describes.
             # COUNT THE ROWS in the sourcing slot instead; nothing else can be wrong.
             i_gq, i_cq = sourcing_split(lanes[_ln], i_dq, _srcq)
-            cooled[_ln] = _dc + _gc + _cc
+            # ⛔ Counted on the COMPOSED lane, in people -- never `_dc + _gc + _cc`.
+            cooled[_ln] = count_cooling(lanes[_ln], state, _ln, cooldown_sittings)
         else:
             lanes[_ln], cooled[_ln] = rotate_candidates(
                 lanes[_ln], state, _ln, lane_target, cooldown=cooldown_sittings)
@@ -1986,23 +2067,15 @@ def main(argv=None):
         # ⭐ EVERY cool key a row carries is offered, not just its own: a row folded
         # from two populations (a defect and a corroboration on one person) put both
         # jobs in front of the sitting, so both have had their turn (13 SEP 2026).
-        _seen, offered = set(), []
-        for _r in lanes[pick][:max(lane_target or per_lane, per_lane)]:
-            for _k in cool_keys(_r):
-                if _k in _seen:
-                    print(f"  ⚠ plan: {_k} offered twice by lane {pick}; kept once "
-                          f"(upstream builder emitted a duplicate cool_key)",
-                          file=sys.stderr)
-                    continue
-                _seen.add(_k)
-                offered.append(_k)
-        state["pending"] = {"date": date.today().isoformat(), "lane": pick,
-                            "offered": offered}
-        save_state(vault, state)
+        # ⛔ And a pending draw is never replaced without --redraw (register_draw).
+        if register_draw(state, pick, offered_keys(lanes[pick], lane_target, base_per_lane),
+                         date.today().isoformat(), redraw=a.redraw):
+            save_state(vault, state)
 
     if a.json:
         print(json.dumps({"date": date.today().isoformat(), "lane": pick,
-                          "reason": reason, "sizes": sizes, "blocked": blocked,
+                          "reason": reason, "pending_kept": bool(pend_note),
+                          "sizes": sizes, "blocked": blocked,
                           "cooling": cooled, "offer_cooldown": cooldown_sittings,
                           "lane_target": lane_target, "lane_target_percent": lt_pct,
                           "lane_target_source": lt_src, "pool": pool_n,
@@ -2016,6 +2089,8 @@ def main(argv=None):
     print("=== SESSION PLAN — one ranked worklist, one drawn lane ===")
     print(f"  {counts}")
     print(f"  RECOMMENDED LANE: {pick}  ({reason})")
+    if pend_note:
+        print(pend_note)
     if lane_target:
         shown, is_dry = target_and_dryness(lane_target, sizes.get(pick, 0) if pick else lane_target)
         # "at least" is the operator's word (01 AUG 2026): the target is a FLOOR,

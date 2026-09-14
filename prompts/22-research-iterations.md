@@ -132,7 +132,8 @@ movement honestly.
    - ! First check the vault's session_plan_snapshots.json for a PENDING draw.
      If one is there, THAT is this iteration's lane. A re-run of the plan does
      not mint a fresh draw, and a pending lane is not an unrecorded outcome from
-     the previous session.
+     the previous session. (Enforced in `register_draw` since 14 SEP 2026; only
+     `--record` consumes it, and `--redraw` is the one deliberate replacement.)
    - Otherwise run: python3 scripts/session_plan.py [--lane-pct [LANE_PCT]]
    - SHOW ME the four lane counts, the drawn lane with its draw reason, the LANE
      TARGET line, and the top candidates BEFORE working. The draw is a

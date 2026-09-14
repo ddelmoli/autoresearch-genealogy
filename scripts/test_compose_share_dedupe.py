@@ -185,5 +185,37 @@ class ComposeShareDedupe(unittest.TestCase):
         self.assertEqual(sp.compose_share([], [], 3, 0.5)[0], [])
 
 
+class CoolingCountInPeople(unittest.TestCase):
+    """⛔ 14 SEP 2026: IMPROVE printed the SUM of its populations' cooled counts, so a
+    person cooling in two populations was counted twice (89 for 80 people, live)."""
+
+    def state(self, *keys):
+        return {"history": [{"session": 1, "date": "2026-09-13"}],
+                "offered": {"IMPROVE": {k: "S1" for k in keys}}}
+
+    def test_a_folded_person_cooling_in_both_counts_ONCE(self):
+        st = self.state("P-AAA", "corrob:P-AAA")
+        defects = [row("P-AAA", "edge")]
+        corrob = [row("P-AAA", "one host", cool="corrob:P-AAA"), row("P-BBB", "one host",
+                                                                      cool="corrob:P-BBB")]
+        _d, dc = sp.rotate_candidates(defects, st, "IMPROVE", 2)
+        _c, cc = sp.rotate_candidates(corrob, st, "IMPROVE", 2)
+        self.assertEqual(dc + cc, 2, "the old per-population sum")
+        out, _, _ = sp.compose_share(_d, _c, 2, 0.5)
+        self.assertEqual(sp.count_cooling(out, st, "IMPROVE"), 1)
+
+    def test_one_hot_key_means_the_person_is_NOT_cooling(self):
+        """A defect already offered but a corroboration never offered is still work."""
+        st = self.state("P-AAA")
+        out, _, _ = sp.compose_share([row("P-AAA", "edge")],
+                                     [row("P-AAA", "one host", cool="corrob:P-AAA")], 2, 0.5)
+        self.assertEqual(sp.count_cooling(out, st, "IMPROVE"), 0)
+        self.assertFalse(sp.row_cooling(st, "IMPROVE", out[0]))
+
+    def test_unkeyed_row_is_never_cooling(self):
+        """NEGATIVE CONTROL: `all([])` is True; an unkeyed row must not read as cooled."""
+        self.assertFalse(sp.row_cooling(self.state("P-AAA"), "IMPROVE", {"why": "x"}))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
