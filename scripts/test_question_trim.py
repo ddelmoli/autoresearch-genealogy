@@ -167,6 +167,92 @@ check("exactly one snapshot", len(snaps), 1)
 check("it holds the removed text", "Chronology that duplicates" in
       snaps[0].read_text(encoding="utf-8"), True)
 
+print("\n⛔⛔ `##` SUB-SECTIONS, and a `##` parent that NESTS `###` passes:")
+# The live register uses `##` and `###` interchangeably inside a block, and in 23
+# blocks a `##` parent holds `###` children, several with no body of their own. Two
+# defects shipped with the `##` reader and both are pinned here:
+#   (1) every section ended at the next heading of ANY level, so a bodiless `##`
+#       parent spanned its heading line alone: dropping it deleted the title and left
+#       its children standing under the preceding section, misfiled rather than removed;
+#   (2) the pointer label was `heading[4:]`, right for `### ` and one character too
+#       many for `## `, so the greppable record of the trim misnamed what it removed.
+NESTED = """# Open Questions — Scratch
+
+### 20. A nested scratch question (raised 01 JAN 2026, session #1)
+
+**Current state.** One sentence that must survive every trim.
+
+**⏭ WHAT WOULD SETTLE IT:** read the register and report.
+
+## SESSION HISTORY
+
+### PASS ONE, 02 JAN 2026 (session #2)
+
+Nested chronology alpha.
+
+### PASS TWO, 03 JAN 2026 (session #3)
+
+Nested chronology beta.
+
+## CURRENT READING
+
+A later `##` section that must survive a trim of the one above it.
+
+### 21. A following scratch question (raised 04 JAN 2026, session #4)
+
+**Current state.** This block must never be touched by a trim of Q20.
+
+**⏭ WHAT WOULD SETTLE IT:** stay intact.
+"""
+
+
+def read(dd):
+    return open(os.path.join(dd, "Open_Questions_Scratch.md"), encoding="utf-8").read()
+
+
+d3 = vault(NESTED)
+rc, out = run(d3, "--sections", "20")
+check("`##` parents and `###` children are all listed", rc == 0 and all(
+    t in out for t in ("SESSION HISTORY", "PASS ONE", "PASS TWO", "CURRENT READING")), True)
+check("the parent says it overlaps its children", "[contains 2 nested]" in out, True)
+
+rc, out = run(d3, "--trim", "20", "--drop-section", "SESSION HISTORY", "--pointer",
+              "logs/x", "--apply")
+text = read(d3)
+check("exit 0", rc, 0)
+check("the `##` heading line is gone", bool(re.search(r"^## SESSION HISTORY", text, re.M)), False)
+check("⛔ its NESTED children went with it, not left orphaned",
+      ("Nested chronology alpha" in text, "Nested chronology beta" in text), (False, False))
+check("⛔ the next `##` section at the same level survives", "must survive a trim" in text, True)
+check("the head and resolver survive", ("One sentence that must survive" in text,
+                                        "WHAT WOULD SETTLE IT" in text), (True, True))
+check("both questions still parse", live_numbers(d3), [20, 21])
+ptr = re.search(r"^> \*\*Trimmed.*$", text, re.M).group(0)
+check("⭐ the pointer names the `##` heading WHOLE, first letter included",
+      '"SESSION HISTORY"' in ptr, True)
+
+d4 = vault(NESTED)
+rc, out = run(d4, "--trim", "20", "--drop-section", "PASS ONE", "--pointer", "logs/x", "--apply")
+text = read(d4)
+check("a single `###` child can be dropped on its own",
+      (rc, "Nested chronology alpha" in text), (0, False))
+check("its parent heading and sibling stay",
+      ("## SESSION HISTORY" in text, "Nested chronology beta" in text), (True, True))
+
+d5 = vault(NESTED)
+rc, out = run(d5, "--trim", "20", "--drop-section", "SESSION HISTORY", "--drop-section",
+              "PASS ONE", "--pointer", "logs/x", "--apply")
+check("naming a child inside a named parent: the pointer lists the parent only",
+      (rc, re.search(r"^> \*\*Trimmed.*$", read(d5), re.M).group(0).count("PASS ONE")), (0, 0))
+
+d6 = vault(NESTED.replace("**⏭ WHAT WOULD SETTLE IT:** read the register and report.\n", "")
+           .replace("Nested chronology beta.",
+                    "**⏭ WHAT WOULD SETTLE IT:** the only resolver, inside a nested child."))
+rc, out = run(d6, "--trim", "20", "--drop-section", "SESSION HISTORY", "--pointer", "logs/x",
+              "--apply")
+check("⛔ a resolver in an UNNAMED child of a dropped parent still blocks the trim",
+      (rc != 0 and "resolver" in out.lower(), "the only resolver" in read(d6)), (True, True))
+
 print()
 if FAILED:
     print(f"FAILED ({len(FAILED)}): " + "; ".join(FAILED))

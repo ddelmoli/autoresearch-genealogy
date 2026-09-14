@@ -281,34 +281,60 @@ def op_append(vault, args):
     return 0
 
 
+def _sub_level(ln):
+    """2 for a `##` sub-section heading, 3 for `###`, else 0 (boundaries included)."""
+    # ⚠ BOTH `##` AND `###` ARE SUB-SECTION HEADINGS INSIDE A BLOCK, and the
+    # register uses them interchangeably — measured across the 16 BIG_BLOCK rows,
+    # 6 use `###`, 4 use `##`, and 6 use neither. A `###`-only reader covered
+    # barely a third of the population it was built for.
+    # ⛔ `split_blocks` stops at NO heading but a numbered `###`, so a `##` here
+    # is genuinely inside the block and safe to treat as a section.
+    if QB.QUESTION_HEAD.match(ln):
+        return 0
+    if ln.startswith("## "):
+        return 2
+    if ln.startswith("### "):
+        return 3
+    return 0
+
+
 def _subsections(lines, s, e):
-    """The `###` sub-sections INSIDE one question block: [(idx, end, heading)].
+    """The `##` / `###` sub-sections INSIDE one question block: [(idx, end, heading)].
 
     ⛔ A boundary heading (`### N.`) is never a sub-section — dropping one would
     merge two questions and silently destroy the second. `QB.QUESTION_HEAD` is the
     same grammar `split_blocks` uses to find blocks in the first place, so a heading
     cannot be a boundary here and content there.
-    """
-    def is_sub(ln):
-        # ⚠ BOTH `##` AND `###` ARE SUB-SECTION HEADINGS INSIDE A BLOCK, and the
-        # register uses them interchangeably — measured across the 16 BIG_BLOCK rows,
-        # 6 use `###`, 4 use `##`, and 6 use neither. A `###`-only reader covered
-        # barely a third of the population it was built for.
-        # ⛔ `split_blocks` stops at NO heading but a numbered `###`, so a `##` here
-        # is genuinely inside the block and safe to treat as a section.
-        return (ln.startswith("## ") or ln.startswith("### ")) \
-            and not QB.QUESTION_HEAD.match(ln)
 
-    heads = [i for i in range(s + 1, e) if is_sub(lines[i])]
+    ⛔⛔ A SECTION ENDS AT THE NEXT HEADING OF ITS OWN LEVEL OR HIGHER, NOT AT THE NEXT
+    HEADING. The live register nests `###` passes under a `##` parent (23 blocks
+    measured 13 SEP 2026, several parents with no body of their own). Ending every
+    section at the next heading of any level made a `##` parent span only its own
+    heading line, so dropping it deleted the title and left its `###` children
+    standing under whatever section preceded it: text misfiled, not removed. A
+    parent and its children are therefore BOTH listed, and they overlap.
+    """
+    heads = [i for i in range(s + 1, e) if _sub_level(lines[i])]
     out = []
     for i in heads:
+        lvl = _sub_level(lines[i])
         stop = e
         for j in range(i + 1, e):
-            if is_sub(lines[j]) or QB.QUESTION_HEAD.match(lines[j]):
+            if QB.QUESTION_HEAD.match(lines[j]) or 0 < _sub_level(lines[j]) <= lvl:
                 stop = j
                 break
         out.append((i, stop, lines[i].strip()))
     return out
+
+
+def _heading_label(heading):
+    """The heading text without its `#` marks, whatever the level.
+
+    ⚠ This was `heading[4:]`, which is right for `### ` only: on a `## ` heading it
+    ate the first letter, so the pointer — the one greppable record of what a trim
+    removed — named a section that never existed.
+    """
+    return re.sub(r"^#+\s*", "", heading)
 
 
 def _one_live(vault, label):
@@ -335,13 +361,16 @@ def op_sections(vault, args):
         kb = sum(len(ln) + 1 for ln in lines[i:stop]) / 1024
         res = " [HOLDS THE RESOLVER]" if any(
             QB.RESOLVER_RE.search(ln) for ln in lines[i:stop]) else ""
+        # Parents and children overlap; say so, or the sizes read as additive.
+        nested = sum(1 for j, _st, _h in subs if i < j < stop)
+        res += f" [contains {nested} nested]" if nested else ""
         print(f"  {kb:6.1f} KB  lines {i+1}-{stop}{res}")
         print(f"            {heading[:96]}")
     return 0
 
 
 def op_trim(vault, args):
-    """Remove whole `###` sub-sections from a live block, leaving a pointer.
+    """Remove whole `##` / `###` sub-sections from a live block, leaving a pointer.
 
     ⭐⭐ WHY THIS EXISTS. `question_audit` reports BIG_BLOCK for a live block over
     15 KB — session narration accreting in place of current state — and names the
@@ -360,7 +389,7 @@ def op_trim(vault, args):
     num, suffix, path, s, e, h, lines = _one_live(vault, args.trim)
     subs = _subsections(lines, s, e)
     if not subs:
-        raise SystemExit(f"Q{num}{suffix} has no `###` sub-sections to trim")
+        raise SystemExit(f"Q{num}{suffix} has no `##`/`###` sub-sections to trim")
 
     chosen = []
     for want in args.drop_section:
@@ -374,25 +403,33 @@ def op_trim(vault, args):
             raise SystemExit(f"--drop-section {want!r} named the same section twice")
         chosen.append(hit[0])
 
+    drop = set()
+    for i, stop, _hd in chosen:
+        drop.update(range(i, stop))
+    freed = sum(len(lines[i]) + 1 for i in drop)
+    # A `###` named alongside the `##` that contains it is already inside the drop;
+    # the pointer names the outermost heading only.
+    chosen = [x for x in chosen
+              if not any(o is not x and o[0] < x[0] and x[1] <= o[1] for o in chosen)]
+    # ⚠ Sections OVERLAP (a `##` parent spans its `###` children), so "kept" is
+    # judged by LINE, never by listing the sections not named.
+    kept = [x for x in subs if x[0] not in drop]
+
     # ⛔ The resolver is what makes a question a research task rather than a
-    # complaint. Refuse to trim it away even when explicitly named.
-    kept = [x for x in subs if x not in chosen]
-    resolver_lines = [ln for ln in lines[s:e] if QB.RESOLVER_RE.search(ln)]
-    surviving = [ln for x in ([(s, subs[0][0] if subs else e, "")] + kept)
-                 for ln in lines[x[0]:x[1]] if QB.RESOLVER_RE.search(ln)]
+    # complaint. Refuse to trim it away even when explicitly named. Judged on the
+    # lines that actually survive: a resolver inside a `###` child of a dropped `##`
+    # goes with its parent, even though the child itself was not named.
+    resolver_lines = [i for i in range(s, e) if QB.RESOLVER_RE.search(lines[i])]
+    surviving = [i for i in resolver_lines if i not in drop]
     if resolver_lines and not surviving:
         raise SystemExit(
             f"refusing: the trim would remove every resolver line from Q{num}{suffix}. "
             "Current state and the resolver stay; move the chronology instead.")
 
-    drop = set()
-    for i, stop, _hd in chosen:
-        drop.update(range(i, stop))
-    freed = sum(len(lines[i]) + 1 for i in drop)
-
     pointer = (f"> **Trimmed {today_str()}**: {len(chosen)} dated sub-section(s) "
                f"removed from this block; the narrative is in {args.pointer}. "
-               f"Dropped: " + "; ".join(f'"{hd[4:][:70]}"' for _i, _s2, hd in chosen))
+               f"Dropped: " + "; ".join(f'"{_heading_label(hd)[:70]}"'
+                                        for _i, _s2, hd in chosen))
     t = e
     while t > s + 1 and lines[t - 1].strip() in ("", "---"):
         t -= 1
