@@ -9,12 +9,15 @@ IMPROVE draw offered **24 rows containing 23 distinct people** -- so a lane targ
 24, which counts PEOPLE, could not be met from its own draw even in principle, and
 the duplicate rendered twice in the printed worklist.
 
-⚠ THE SUBTLE HALF, AND THE REASON THIS FILE EXISTS: the fix must dedupe on
-`cool_key`, NEVER on `id`. That key deliberately namespaces sub-populations
-(`pid:<id>` against the bare id) so that two DIFFERENT kinds of work on one person
-cool independently. Deduping on `id` would silently delete the very distinction the
-key was introduced to make -- a fix that reads correct and quietly removes real work
-from the lane.
+⛔ THE SUBTLE HALF, REVERSED 13 SEP 2026. The first fix deduped on `cool_key` and
+pinned deduping on `id` as an over-reach, because the key namespaces sub-populations
+(`corrob:<id>` against the bare id) so two kinds of work on one person cool
+independently. That let one person through twice whenever the keys differed: 57
+people on the reference vault, 1,210 rows for 1,153 people. The two concerns were
+never in conflict. A ROW is what the lane counts and offers, so rows collapse per
+PERSON; a COOL KEY is what cools, so the survivor carries every key and every one is
+stamped. Each kind of work still cools on its own key (pinned in
+test_candidate_rotation.TestCoolKeyNamespacing, unchanged).
 
 Most of these are NEGATIVE CONTROLS, because each failure here is silent: a dedupe
 that over-reaches drops work nobody notices is missing, and one that under-reaches
@@ -72,13 +75,82 @@ class ComposeShareDedupe(unittest.TestCase):
         self.assertIn("unconfirmed edges", out[0]["why"])
         self.assertIn("SOURCE_GAP: 0 records", out[0]["why"])
 
-    def test_DIFFERENT_cool_keys_on_one_person_BOTH_survive(self):
-        """⛔ THE OVER-REACH CONTROL. `pid:<id>` and the bare id are two kinds of
-        work on one person and cool separately -- deduping on `id` would delete one."""
+    def test_DIFFERENT_cool_keys_on_one_person_are_ONE_row_carrying_BOTH(self):
+        """⛔ The under-reach the first fix shipped: a defect row (bare id) and a
+        corroboration row (`corrob:<id>`) on one person came back as two rows."""
         primary = [row("P-AAA", "a ? edge to walk")]
-        secondary = [row("P-AAA", "stale FS PID", cool="pid:P-AAA")]
+        secondary = [row("P-AAA", "SINGLE_SOURCED: 1 record", cool="corrob:P-AAA")]
         out, _, _ = sp.compose_share(primary, secondary, 4, 0.5)
-        self.assertEqual(sorted(keys(out)), ["P-AAA", "pid:P-AAA"])
+        self.assertEqual([r["id"] for r in out], ["P-AAA"])
+        self.assertEqual(sp.cool_keys(out[0]), ["P-AAA", "corrob:P-AAA"])
+        self.assertIn("SINGLE_SOURCED", out[0]["why"])
+
+    def test_both_folded_keys_COOL_when_the_row_is_offered(self):
+        """⭐ Collapsing the row must not cool only half the work it put in front of the
+        sitting: stamping `cool_keys` cools both, and each still cools on its own key."""
+        out, _, _ = sp.compose_share([row("P-AAA", "edge")],
+                                     [row("P-AAA", "corrob", cool="corrob:P-AAA")], 2, 0.5)
+        st = {"history": [{"session": 1, "date": "2026-09-13"}], "offered": {}}
+        sitting = sp.sitting_of(st["history"][0])
+        sp.stamp_offered(st, "IMPROVE", sp.cool_keys(out[0]), sitting)
+        self.assertTrue(sp.cooling(st, "IMPROVE", "P-AAA")[0])
+        self.assertTrue(sp.cooling(st, "IMPROVE", "corrob:P-AAA")[0])
+        self.assertFalse(sp.cooling(st, "IMPROVE", "corrob:P-BBB")[0])
+
+    def test_the_lane_is_sized_in_PEOPLE(self):
+        """The construction-time dedupe feeds `sizes`, the printed count and the draw."""
+        defects = [row("P-AAA", "edge"), row("P-BBB", "edge")]
+        gaps = [row("P-BBB", "SOURCE_GAP"), row("P-CCC", "SOURCE_GAP")]
+        corrob = [row("P-AAA", "one host", cool="corrob:P-AAA"),
+                  row("P-DDD", "one host", cool="corrob:P-DDD")]
+        lane = sp.dedupe_by_person(defects + gaps + corrob)
+        self.assertEqual(sorted(r["id"] for r in lane), ["P-AAA", "P-BBB", "P-CCC", "P-DDD"])
+
+    def test_a_person_in_two_populations_takes_her_BEST_position(self):
+        """⛔ The first fix let the primary occurrence win even from beyond its quota,
+        so being in two populations made a person LESS likely to be offered."""
+        defects = [row("D1"), row("D2"), row("X", "edge")]
+        gaps = [row("X", "gap"), row("G1"), row("G2"), row("G3")]
+        out, pq, sq = sp.compose_share(defects, gaps, 4, 0.25)
+        head = [r["id"] for r in out[:pq + sq]]
+        self.assertIn("X", head)
+        self.assertEqual(head, ["D1", "X", "G1", "G2"])
+        # ...and her defect reason still rides along from the tail.
+        self.assertIn("edge", out[1]["why"])
+        # NEGATIVE CONTROL: without the overlap she sits exactly there anyway.
+        solo, _, _ = sp.compose_share([row("D1"), row("D2")], gaps, 4, 0.25)
+        self.assertEqual([r["id"] for r in solo[:4]], head)
+
+    def test_a_duplicate_skipped_inside_a_quota_does_not_use_it_up(self):
+        """The secondary quota counts rows PLACED: a person the primary already placed
+        is skipped and the next secondary row takes the slot."""
+        out, pq, sq = sp.compose_share([row("A"), row("B")],
+                                       [row("A"), row("C"), row("D"), row("E")], 4, 0.5)
+        self.assertEqual((pq, sq), (2, 2))
+        self.assertEqual([r["id"] for r in out[:4]], ["A", "B", "C", "D"])
+
+    def test_the_printed_split_is_COUNTED_from_the_slot(self):
+        """⚠ The outer compose skips sourcing rows a defect already placed, so the inner
+        quotas no longer describe what it took. Measured shape: defects [G1, G2, D9],
+        gaps [G1, G2, G3], four corroboration rows, target 6."""
+        gaps = [row("G1", "gap"), row("G2", "gap"), row("G3", "gap")]
+        for r in gaps:
+            r["_kind"] = "gap"
+        corrob = [dict(row(f"C{i}", cool=f"corrob:C{i}"), _kind="corrob") for i in range(1, 5)]
+        defects = [row("G1", "edge"), row("G2", "edge"), row("D9", "edge")]
+        src, gq, cq = sp.compose_share(gaps, corrob, 6, 0.5)
+        lane, dq, srcq = sp.compose_share(defects, src, 6, 0.25)
+        g, c = sp.sourcing_split(lane, dq, srcq)
+        self.assertEqual(dq + g + c, 6)
+        self.assertEqual((dq, g, c), (1, 2, 3))
+        # NEGATIVE CONTROL: the derivation it replaces reports a split that is not there.
+        self.assertNotEqual((min(gq, srcq), srcq - min(gq, srcq)), (g, c))
+
+    def test_caller_cool_key_lists_are_not_mutated(self):
+        """A survivor owns its own `_cool_keys`: folding must not grow the caller's list."""
+        p = dict(row("P-AAA"), _cool_keys=["P-AAA"])
+        sp.compose_share([p], [row("P-AAA", cool="corrob:P-AAA")], 2, 0.5)
+        self.assertEqual(p["_cool_keys"], ["P-AAA"])
 
     def test_duplicates_WITHIN_one_population_also_collapse(self):
         primary = [row("P-AAA"), row("P-AAA"), row("P-BBB")]

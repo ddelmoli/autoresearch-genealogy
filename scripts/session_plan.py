@@ -1191,8 +1191,37 @@ def pid_stale_ids(vault):
     return {r["id"] for r in verify_stale_pids(vault)}
 
 
-def dedupe_by_cool_key(rows, seen=None):
-    """One row per `cool_key`, first occurrence winning, reasons folded in.
+def cool_keys(row):
+    """Every cooldown key a row carries: its own, plus those of rows folded into it."""
+    keys = row.get("_cool_keys")
+    return list(keys) if keys else [k for k in (cool_key(row),) if k]
+
+
+def _person_key(row):
+    """What makes two rows the SAME candidate: the vault id, else the cool key."""
+    return row.get("id") or cool_key(row)
+
+
+def _fold(keep, other):
+    """Fold `other` into the surviving row `keep`: its reason and its cooldown keys."""
+    extra = (other.get("why") or "").strip()
+    if extra and extra not in (keep.get("why") or ""):
+        keep["why"] = (keep.get("why") or "").rstrip() + "  [also: " + extra + "]"
+    keys = keep.setdefault("_cool_keys", cool_keys(keep))
+    for k in cool_keys(other):
+        if k not in keys:
+            keys.append(k)
+
+
+def _survivor(row):
+    """A COPY of `row` that owns its own `_cool_keys` list, safe to fold into."""
+    r = dict(row)
+    r["_cool_keys"] = cool_keys(row)
+    return r
+
+
+def dedupe_by_person(rows, seen=None):
+    """One row per PERSON, first occurrence winning, reasons and cool keys folded in.
 
     ** WHY THIS EXISTS (session #184, 26 AUG 2026). ** A lane's populations OVERLAP:
     a person with an unconfirmed `?` edge who is ALSO SOURCE_GAP is emitted by
@@ -1203,37 +1232,38 @@ def dedupe_by_cool_key(rows, seen=None):
     principle. The same duplicate inflates `sizes`, which is printed to the operator
     AND fed to the bandit's draw.
 
-    ⚠⚠ **DEDUPE ON `cool_key`, NEVER ON `id`.** That key deliberately namespaces
-    sub-populations (`pid:<id>` against the bare id) so two DIFFERENT kinds of work on
-    one person cool independently -- see `cool_key`. Rows sharing a key are one unit
-    of work and one unit of cooling; rows with different keys are not duplicates and
-    must both survive. Deduping on `id` would silently delete the distinction the key
-    was introduced to make, which is a fix that reads correct and removes real work.
+    ⛔⛔ **COLLAPSE ON THE PERSON, AND KEEP EVERY COOL KEY (13 SEP 2026).** The first
+    version deduped on `cool_key` and called deduping on `id` an over-reach, because
+    the key namespaces sub-populations (`corrob:<id>` against the bare id) so two
+    kinds of work on one person cool independently. But that let the same person
+    through twice whenever the keys differed -- **57 people on the reference vault, a
+    defect row and a corroboration row each: 1,210 rows for 1,153 people**, the exact
+    miscount the fix was for. The two concerns were never in conflict. A row is what
+    the lane COUNTS and offers, so it is per person; a cool key is what COOLS, so the
+    survivor carries all of them in `_cool_keys`, every one is stamped when the row is
+    offered, and each kind of work still cools on its own key (`cooling` is
+    unchanged).
 
     ⭐ **The survivor KEEPS THE LOSER'S REASON** (`[also: ...]`). The halves carry
     different `why` text -- an edge to walk, records to harvest -- and dropping the
     second would hide a real second reason the row was drawn.
 
     `seen` may be passed in to dedupe several populations against each other; it is
-    mutated. Rows are COPIED before their `why` is extended, so callers' dicts are
-    never edited. Pinned by scripts/test_compose_share_dedupe.py.
+    mutated. Survivors are COPIES, so callers' dicts and lists are never edited.
+    Pinned by scripts/test_compose_share_dedupe.py.
     """
     if seen is None:
         seen = {}
     out = []
     for r in rows:
-        k = cool_key(r)
+        k = _person_key(r)
         if k is None:                          # unkeyed rows cannot be compared
             out.append(r)
             continue
         if k in seen:
-            keep = seen[k]
-            extra = (r.get("why") or "").strip()
-            if extra and extra not in (keep.get("why") or ""):
-                keep["why"] = ((keep.get("why") or "").rstrip()
-                               + "  [also: " + extra + "]")
+            _fold(seen[k], r)
             continue
-        r = dict(r)                            # copy: we may append to `why` later
+        r = _survivor(r)
         seen[k] = r
         out.append(r)
     return out
@@ -1251,39 +1281,66 @@ def compose_share(primary, secondary, target, share):
     take the rest; when the PIDs run dry, edges do.
 
     ** AND THE TWO POPULATIONS OVERLAP, SO THE COMPOSE MUST DEDUPE (26 AUG 2026,
-    session #184). ** One person can qualify under BOTH halves -- a row with an
-    unconfirmed `?` edge that is ALSO SOURCE_GAP is in `lane_defects` and in
-    `lane_improve` at once -- and concatenating the two emitted her twice. Measured:
-    a 24-row IMPROVE draw whose `pending.offered` held **23 distinct people**, so a
-    lane target of 24, which counts PEOPLE, could not be met from its own draw even
-    in principle. The duplicate also renders twice in the printed worklist.
+    session #184). ** One person can qualify under BOTH halves, and concatenating the
+    two emitted her twice. Rows collapse per PERSON with every reason and cool key
+    folded in -- see `dedupe_by_person`.
 
-    ⚠ **DEDUPE ON `cool_key`, NEVER ON `id`.** The key deliberately namespaces
-    sub-populations (`pid:<id>` vs the bare id) precisely so that two DIFFERENT kinds
-    of work on one person cool separately -- see `cool_key`. Two rows sharing a key
-    are one unit of work and one unit of cooling; two rows with different keys are
-    not duplicates at all and must both survive.
+    ⛔ **A PERSON TAKES THE BEST POSITION EITHER POPULATION GIVES HER (13 SEP 2026).**
+    The first version deduped primary-then-secondary before placing anything, so the
+    primary occurrence always won -- even from the primary TAIL, beyond its quota,
+    when she stood at the head of the secondary. Being in two populations then made a
+    person LESS likely to be offered: defects `[D1, D2, X]` and gaps `[X, G1, G2, G3]`
+    at target 4 put X sixth, and removing her from the defects put her second. Rows
+    are now PLACED in output order -- the primary quota, then the secondary quota,
+    then both tails -- and a person already placed absorbs any later occurrence.
 
-    ⭐ **The surviving row KEEPS THE OTHER REASON** rather than dropping it. The two
-    halves carry different `why` text (an edge to walk; records to harvest), and
-    silently discarding the second would hide a real second reason the row was drawn.
-
-    ⚠ **Dedupe happens BEFORE the quotas are computed**, so the returned
-    `p_quota`/`s_quota` still describe the list actually returned. Sizing against the
-    pre-dedupe lengths is how this function previously reported three numbers that
-    could not all be true at once (see the note at the call site).
+    ⚠ **The quotas returned are COUNTS OF ROWS PLACED in each slot**, so they describe
+    the list actually returned. A duplicate skipped inside a quota does not use it up.
 
     Returns (composed_rows, primary_quota, secondary_quota).
     """
-    seen = {}
-    primary = dedupe_by_cool_key(primary, seen)
-    secondary = dedupe_by_cool_key(secondary, seen)
-
+    primary = dedupe_by_person(primary)
+    secondary = dedupe_by_person(secondary)
     n = max(1, int(target or 1))
-    p_quota = min(len(primary), max(1, int(n * share)))
-    s_quota = max(0, n - p_quota)
-    return (primary[:p_quota] + secondary[:s_quota]
-            + primary[p_quota:] + secondary[s_quota:]), p_quota, s_quota
+    p_want = min(len(primary), max(1, int(n * share)))
+
+    out, placed = [], {}
+
+    def place(r):
+        k = _person_key(r)
+        if k is not None and k in placed:
+            _fold(placed[k], r)
+            return 0
+        r = _survivor(r)
+        if k is not None:
+            placed[k] = r
+        out.append(r)
+        return 1
+
+    pi = si = p_quota = s_quota = 0
+    while p_quota < p_want and pi < len(primary):
+        p_quota += place(primary[pi])
+        pi += 1
+    s_want = max(0, n - p_quota)
+    while s_quota < s_want and si < len(secondary):
+        s_quota += place(secondary[si])
+        si += 1
+    for r in primary[pi:] + secondary[si:]:
+        place(r)
+    return out, p_quota, s_quota
+
+
+def sourcing_split(rows, defect_quota, sourcing_quota):
+    """(unsourced, corroboration) rows actually placed in IMPROVE's sourcing slot.
+
+    Counted off the composed list, never derived from the inner compose's quotas:
+    the outer compose skips a sourcing row whose person a defect row already placed,
+    so the prefix it takes is not the prefix the inner split describes. A row folded
+    from two populations counts under the slot it was PLACED in.
+    """
+    slot = rows[defect_quota:defect_quota + sourcing_quota]
+    return (sum(1 for r in slot if r.get("_kind") == "gap"),
+            sum(1 for r in slot if r.get("_kind") == "corrob"))
 
 
 def lane_rotate(vault, sample_percent=None):
@@ -1851,9 +1908,9 @@ def main(argv=None):
     # would leave `sizes` inflated while the drawn list was correct -- the same
     # "numbers that cannot all be true at once" this file already warns about.
     lanes = {
-        "EXPAND": dedupe_by_cool_key(lane_expand(vault)),
-        "IMPROVE": dedupe_by_cool_key(i_defects + i_gaps + i_corrob),
-        "ROTATE": dedupe_by_cool_key(lane_rotate(vault, a.sample_percent)),
+        "EXPAND": dedupe_by_person(lane_expand(vault)),
+        "IMPROVE": dedupe_by_person(i_defects + i_gaps + i_corrob),
+        "ROTATE": dedupe_by_person(lane_rotate(vault, a.sample_percent)),
     }
     if a.sample_percent:
         print(f"** ROTATE sample rate overridden for this session: {a.sample_percent:g}% "
@@ -1897,8 +1954,11 @@ def main(argv=None):
             # takes only `_srcq` of that ordering. Printing the inner quotas made
             # 5 + 10 + 11 = 26 for a target of 21 -- three numbers that cannot all
             # be true at once, in the one line telling the session how deep to go.
-            i_gq = min(_gq, _srcq)
-            i_cq = max(0, _srcq - i_gq)
+            # ⛔ And not `min(_gq, _srcq)` either (13 SEP 2026): the outer compose
+            # skips sourcing rows whose person a defect row already placed, so the
+            # prefix of `_src` it takes is not the prefix the inner split describes.
+            # COUNT THE ROWS in the sourcing slot instead; nothing else can be wrong.
+            i_gq, i_cq = sourcing_split(lanes[_ln], i_dq, _srcq)
             cooled[_ln] = _dc + _gc + _cc
         else:
             lanes[_ln], cooled[_ln] = rotate_candidates(
@@ -1914,27 +1974,28 @@ def main(argv=None):
                     "  [PID liveness unconfirmed — confirm it resolves as step 0; scores NOTHING]"
 
     if pick:
-        # The ids this draw actually OFFERS. record() stamps them only if the
+        # The cool keys this draw actually OFFERS. record() stamps them only if the
         # recorded lane matches, so overriding the draw cools nothing.
         # ⚠ DEDUPED, and deliberately a SECOND layer: `compose_share` dedupes the two
         # IMPROVE populations at the point they merge, which is the root fix, but
-        # `offered` is PERSISTED STATE whose meaning is "the people this draw
+        # `offered` is PERSISTED STATE whose meaning is "the work this draw
         # offered" — and it must be true whichever lane built it, including lanes
         # that never go through compose_share. ⛔ It is not a silent backstop: a
         # duplicate reaching here means an upstream builder emitted one key twice,
         # so say so on stderr rather than swallowing it (session #184).
+        # ⭐ EVERY cool key a row carries is offered, not just its own: a row folded
+        # from two populations (a defect and a corroboration on one person) put both
+        # jobs in front of the sitting, so both have had their turn (13 SEP 2026).
         _seen, offered = set(), []
         for _r in lanes[pick][:max(lane_target or per_lane, per_lane)]:
-            _k = cool_key(_r)
-            if not _k:
-                continue
-            if _k in _seen:
-                print(f"  ⚠ plan: {_k} offered twice by lane {pick}; kept once "
-                      f"(upstream builder emitted a duplicate cool_key)",
-                      file=sys.stderr)
-                continue
-            _seen.add(_k)
-            offered.append(_k)
+            for _k in cool_keys(_r):
+                if _k in _seen:
+                    print(f"  ⚠ plan: {_k} offered twice by lane {pick}; kept once "
+                          f"(upstream builder emitted a duplicate cool_key)",
+                          file=sys.stderr)
+                    continue
+                _seen.add(_k)
+                offered.append(_k)
         state["pending"] = {"date": date.today().isoformat(), "lane": pick,
                             "offered": offered}
         save_state(vault, state)
