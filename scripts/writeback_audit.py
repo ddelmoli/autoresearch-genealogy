@@ -100,7 +100,14 @@ EVIDENCE_RE = re.compile(r"\bevidence\b", re.I)
 LOCATOR_RE = re.compile(r"(?<![~\w])([a-z][a-z0-9_]{1,20}:[^\s,;)]+)")
 NEG_LOCATOR_RE = re.compile(r"~([a-z][a-z0-9_]{1,20}:[^\s,;)]+)")
 LIFE_STATUS_RE = re.compile(r"life_status\s*:\s*(living|deceased|unknown)", re.I)
-HELD_RE = re.compile(r"\bHELD\b", re.I)
+# HELD is a MARKER, so match the marker: the bolded `**HELD` the grammar writes. A bare
+# case-insensitive `\bHELD\b` over the body read the ordinary WORD as the flag and
+# counted 31 held items where 25 were marked (15 SEP 2026): five items describing a
+# "FAMILY-HELD ORIGINAL" (a hyphen is a word boundary) and one saying a parish "held
+# more than one" man of the name. The false direction was the flattering one for a
+# drain, since a falsely held item is work nobody is shown. Every live marker opens
+# `**HELD` (`, do not act yet**`, `, identifier check first**`, `**:`, ` because`).
+HELD_RE = re.compile(r"\*\*HELD\b")
 # ⚠ Rule 8's "semicolons inside, never commas" governs the SLOT SEPARATOR — what
 # divides the PID from the action — not commas in the action's prose. A first version
 # flagged any comma anywhere in the parenthetical and reported 27 findings; reading

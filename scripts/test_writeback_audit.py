@@ -112,6 +112,17 @@ held = QUEUED.replace("): FS", "): ⚠ **HELD, do not act yet** — FS")
 check("held is detected", scan(held)[0]["held"], True)
 check("held is still QUEUED, not a fourth state", scan(held)[0]["state"], "QUEUED")
 check("held produces no finding", WB.findings(scan(held)), [])
+for label, marker in [("identifier-check wording", "**HELD, identifier check first**"),
+                      ("bare bold", "**HELD**:"),
+                      ("bold run-on reason", "**HELD because the father has no FS profile**")]:
+    check(f"held marker detected: {label}",
+          scan(QUEUED.replace("): FS", f"): {marker} FS"))[0]["held"], True)
+# The word is not the marker. Both phrasings are from live items that a bare
+# case-insensitive `\bHELD\b` counted as held: 31 reported, 25 marked.
+for label, prose in [("hyphenated FAMILY-HELD", "a FAMILY-HELD ORIGINAL photographed"),
+                     ("lowercase verb", "the parish held more than one man of the name")]:
+    check(f"not held: {label}",
+          scan(QUEUED.replace("): FS", f"): {prose}; FS"))[0]["held"], False)
 
 print("\nThe tolerant token match (five spellings once cost a 4-item undercount):")
 for label, variant in [
