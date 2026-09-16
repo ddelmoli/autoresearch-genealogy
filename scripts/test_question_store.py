@@ -212,6 +212,34 @@ def main():
         check("a SUBTITLE stays a title segment",
               h72["title"].endswith("not a status") and h72["terminal"])
 
+        # --replace corrects a token INSIDE one live block, and refuses the edits
+        # that would break another consumer (16 SEP 2026).
+        QS.op_replace(d, Namespace(replace="12a", old=["sub-question body"],
+                                   with_text=["sub-question body, corrected"], apply=True))
+        txt = open(shard, encoding="utf-8").read()
+        check("replace lands inside the block", "sub-question body, corrected" in txt)
+        for why, kw in (
+                ("replace refuses a zero-match --old",
+                 dict(replace="12a", old=["no such text"], with_text=["x"])),
+                ("replace refuses a text outside the block",
+                 dict(replace="12a", old=["preserved text"], with_text=["x"])),
+                ("replace refuses a number change",
+                 dict(replace="12a", old=["### 12a."], with_text=["### 12b."])),
+                ("replace refuses a new question boundary",
+                 dict(replace="12a", old=["sub-question body, corrected"],
+                      with_text=["body\n\n### 55. A smuggled question"])),
+                ("replace refuses removing the resolver",
+                 dict(replace="10", old=["**\u23ed WHAT WOULD SETTLE IT:** read the register"],
+                      with_text=["nothing"])),
+                ("replace refuses an added em-dash in the heading",
+                 dict(replace="10", old=["A plain open question"],
+                      with_text=["A plain \u2014 open question"]))):
+            try:
+                QS.op_replace(d, Namespace(apply=True, **kw))
+                check(why, False)
+            except SystemExit:
+                pass
+
         # --resolve refuses a DUPLICATED live number instead of writing through it
         with open(shard, "a", encoding="utf-8") as fh:
             fh.write("\n### 10. A duplicate of Q10 (raised twice by mistake)\n\ndup body\n")

@@ -25,6 +25,11 @@ Operations (all dry-run by default; --apply writes):
   --append QLABEL (--text TEXT | --body-file F) [--sub-heading H]
         Insert content at the END of the live block — the write physically
         cannot orphan itself under the wrong question.
+  --replace QLABEL --old TEXT --with TEXT [--old TEXT --with TEXT ...]
+        Exact-substring replacement INSIDE one live block. Each --old must occur
+        exactly once in that block. Refuses to change the question's number or
+        its terminal state, to add an em-dash to the heading, to drop a resolver
+        line, or to introduce a line that would open a new question block.
   --where QLABEL       locate a question (any state) across every file
   --show QLABEL        print ONE question block, whole, using the shared boundary
   --next-number        print the next free global Q integer
@@ -457,6 +462,54 @@ def op_trim(vault, args):
     return 0
 
 
+def op_replace(vault, args):
+    """Exact-substring replacement inside ONE live block.
+
+    ⭐ WHY THIS EXISTS (16 SEP 2026). The writers could create, grow, resolve,
+    move and trim a block, but not correct a token inside one. A question filed
+    with a bare FS ARK in a table was then blocked by the bare-ARK gate, and the
+    guard (rightly) refused a hand edit of the shard: the only remaining fix was
+    to find a way round the guard. A correction is a write like any other, so it
+    goes through the same locator as every other write.
+
+    ⚠ The scope is the block, never the file: an --old that occurs once in the
+    file but outside the target block is not found. Every refusal below protects
+    something another consumer reads: the number (minting and the index), the
+    terminal state (archiving), the em-dash (the status slot), the resolver line
+    (RESOLVERLESS), and the block boundary (a new `### N.` line would split it).
+    """
+    num, suffix, path, s, e, h, lines = _one_live(vault, args.replace)
+    if not args.old or len(args.old) != len(args.with_text):
+        raise SystemExit("--replace needs matching --old/--with pairs")
+    block = "\n".join(lines[s:e])
+    for old, new in zip(args.old, args.with_text):
+        n = block.count(old)
+        if n != 1:
+            raise SystemExit(f"--old {old[:60]!r} occurs {n} time(s) in Q{num}{suffix}; "
+                             "it must occur exactly once")
+        block = block.replace(old, new)
+    new_lines = block.split("\n")
+    h0, h1 = QB.parse_heading(lines[s]), QB.parse_heading(new_lines[0])
+    if not h1 or (h1["num"], h1.get("suffix")) != (h0["num"], h0.get("suffix")):
+        raise SystemExit("refusing: the replacement changes the question's number")
+    if h1["terminal"] != h0["terminal"]:
+        raise SystemExit("refusing: the terminal state is --resolve's to change")
+    if new_lines[0].count("\u2014") > lines[s].count("\u2014"):
+        raise SystemExit("refusing: an added em-dash in the heading moves the status slot")
+    if len(list(QB.split_blocks(new_lines))) != 1:
+        raise SystemExit("refusing: the replacement would open a new question block "
+                         "(judged by the shared boundary rule)")
+    had = sum(1 for ln in lines[s:e] if QB.RESOLVER_RE.search(ln))
+    has = sum(1 for ln in new_lines if QB.RESOLVER_RE.search(ln))
+    if has < had:
+        raise SystemExit("refusing: the replacement removes a resolver line")
+    out = lines[:s] + new_lines + lines[e:]
+    print(f"replace {len(args.old)} substring(s) in Q{num}{suffix} "
+          f"({os.path.basename(path)}:{s+1})")
+    _write(path, out, args.apply, f"replace in Q{num}{suffix} in")
+    return 0
+
+
 def op_show(vault, args):
     """Print one question block WHOLE, cut by the shared boundary.
 
@@ -539,6 +592,13 @@ def main():
     ap.add_argument("--pointer", metavar="TEXT",
                     help="where the removed narrative lives (e.g. a logs/ path). "
                          "Required by --trim: nothing is deleted without a pointer.")
+    ap.add_argument("--replace", metavar="QLABEL",
+                    help="exact-substring replacement inside one live block "
+                         "(needs --old/--with pairs)")
+    ap.add_argument("--old", action="append", default=[], metavar="TEXT",
+                    help="substring to replace; must occur exactly once in the block")
+    ap.add_argument("--with", dest="with_text", action="append", default=[],
+                    metavar="TEXT", help="replacement for the matching --old")
     ap.add_argument("--next-number", action="store_true")
     args = ap.parse_args()
     vault = vault_config.resolve_vault(args.vault)
@@ -571,6 +631,8 @@ def main():
                 "A section that is simply gone is indistinguishable from one nobody "
                 "wrote.")
         return op_trim(vault, args)
+    if args.replace:
+        return op_replace(vault, args)
     if args.show:
         return op_show(vault, args)
     if args.where:
