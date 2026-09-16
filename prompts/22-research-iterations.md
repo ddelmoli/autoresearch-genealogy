@@ -341,11 +341,12 @@ the vault's `session_plan_snapshots.json`.
     |---|---|---|
     | DECLARED | **-11** | a wired row is no longer parentless, so it leaves the frontier population entirely |
     | SILENT | **+22** | its two parents arrive, themselves parentless |
-    | SOURCE_GAP | **up to +22** | a record naming the parents documents the CHILD — limb (g) `Named-in`, off the census — so each parent arrives at 0 own records |
+    | SOURCE_GAP | **~0** | since the 16 SEP 2026 limb (g) reversal, the child's record that names the parents COUNTS for them, so each parent arrives with at least that one record (`Named-in`, un-negated) |
     | `?` edge tokens | **+22** | every new edge is wired unverified, as it must be |
 
-    ⭐ The minted parents land in the exact shape of the canonical limb-(g) case:
-    present only because a child's record names them, and correctly `SOURCE_GAP`.
+    ⭐ The minted parents land in the canonical limb-(g) shape: present because a
+    child's record names them, and credited with that record. (Before 16 SEP 2026
+    they arrived at SOURCE_GAP 0; see CLAUDE.method.md rule 8 (g).)
   - ⛔ **DO NOT pre-declare the minted parents to keep SILENT flat.** That is
     "never bulk-declare to reach 0" in its purest form — a declaration inherits the
     correctness of its REASON, and there is no reason yet.

@@ -282,7 +282,7 @@ def main():
         print("\n  NEXT (PERSONA_DUP): open each ARK, read its PRINCIPAL, group by EVENT.\n"
               "    one record  -> ONE sub-bullet carrying every locator\n"
               "    a CHILD as principal -> the row is limb (g): move it to a "
-              "`Named-in` bullet, `~`-negated\n"
+              "`Named-in` bullet (it still COUNTS since 16 SEP 2026; no `~`)\n"
               "  ⛔ Never negate on the count mismatch itself (Q316).\n"
               "  ⏭ deferred 42: audit a row when a lane DRAWS it, not as a campaign.")
     return 0
