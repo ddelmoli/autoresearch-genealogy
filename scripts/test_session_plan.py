@@ -419,6 +419,35 @@ class RecordTests(unittest.TestCase):
                              "a per-session override wins over both")
             with self.assertRaises(SystemExit):
                 sp.resolve_lane_target(tmp, {}, 0)
+
+            # ** PER-LANE FLOORS (operator, 17 SEP 2026). ** The key accepts a mapping
+            # as well as a number. Pinned because the scalar form is what every vault
+            # had for six weeks and a refactor that only understood the mapping would
+            # silently re-floor them all; and because the per-lane branch has to fall
+            # back to "default" rather than to the vault-wide rate, which is the part
+            # that decides whether an unlisted lane keeps its old floor.
+            cfg = {"lane_target_percent": {"EXPAND": 0.5, "IMPROVE": 1.0, "default": 1.25}}
+            _r, pct, src = sp.resolve_lane_target(tmp, cfg, None, "EXPAND")
+            self.assertEqual((pct, src), (0.5, "config:EXPAND"), "the lane's own rate")
+            _r, pct, src = sp.resolve_lane_target(tmp, cfg, None, "IMPROVE")
+            self.assertEqual((pct, src), (1.0, "config:IMPROVE"))
+            _r, pct, src = sp.resolve_lane_target(tmp, cfg, None, "ROTATE")
+            self.assertEqual((pct, src), (1.25, "config:default"),
+                             "a lane the mapping omits takes the mapping's default")
+            _r, pct, src = sp.resolve_lane_target(tmp, cfg, None, None)
+            self.assertEqual((pct, src), (1.25, "config:default"),
+                             "no lane asked for: the default, never a lane's own rate")
+            _r, pct, src = sp.resolve_lane_target(tmp, cfg, 9.0, "EXPAND")
+            self.assertEqual((pct, src), (9.0, "session-override"),
+                             "--lane-pct still wins over a per-lane mapping")
+            # a mapping with no usable key leaves the vault-wide fallback standing
+            _r, pct, src = sp.resolve_lane_target(tmp, {"lane_target_percent": {}}, None, "EXPAND")
+            self.assertEqual((pct, src), (2.0, "sample_percent"))
+            # the scalar form is unchanged for every lane
+            for _ln in ("EXPAND", "IMPROVE", "ROTATE", None):
+                _r, pct, src = sp.resolve_lane_target(tmp, {"lane_target_percent": 4.0}, None, _ln)
+                self.assertEqual((pct, src), (4.0, "config"),
+                                 "a scalar floors every lane, as before 17 SEP 2026")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

@@ -1390,13 +1390,33 @@ def save_state(vault, state):
         f.write("\n")
 
 
-def resolve_lane_target(vault, cfg, override=None):
-    """(people, percent, source) -- how many PEOPLE to work off the drawn lane
-    in ONE iteration (one draw -> work -> record cycle).
+def resolve_lane_target(vault, cfg, override=None, lane=None):
+    """(people, percent, source) -- how many PEOPLE to work off ONE lane in ONE
+    iteration (one draw -> work -> record cycle).
 
     A PERCENT of the person-record pool, mirroring profile_review's sample rate;
     see LANE_TARGET_PERCENT. Falls back to that loop's `sample_percent` so a vault
-    that sets one rate gets both."""
+    that sets one rate gets both.
+
+    ** THE FLOOR IS PER-LANE SINCE 17 SEP 2026 (operator), AND THAT IS A CHANGE OF
+    MEANING, NOT A TUNING. ** It was one number for every lane from 01 AUG 2026, on
+    the operator's ruling that cost-per-person is not an input. What that could not
+    express is that the lanes deliver at different RATES for reasons that are not
+    effort: measured over 43 recorded draws, IMPROVE lands 16-25 people while an
+    EXPAND draw lands single digits, because extending the tree is gated on how many
+    frontier rows can be carried to a sourced parent, not on how long the sitting is.
+    A single floor therefore scored EXPAND as failing whenever it worked normally
+    (3 wins in 103), which tells the bandit nothing it can act on.
+
+    `session_plan.lane_target_percent` accepts EITHER a number (every lane, the old
+    behaviour, still the default) OR a mapping of lane -> percent, with an optional
+    "default" key for lanes the mapping omits. The returned `source` says which form
+    answered, so the plan can print the rate it actually used and a reader can tell a
+    per-lane floor from a vault-wide one.
+
+    ⚠ A per-lane floor makes hit rates comparable WITHIN a lane and not ACROSS lanes,
+    and it resets what a win means: register a `lane_epochs` entry when changing one,
+    or the bandit compares wins earned under two different definitions."""
     src = "default"
     pct = LANE_TARGET_PERCENT
     try:
@@ -1404,8 +1424,15 @@ def resolve_lane_target(vault, cfg, override=None):
             m = json.load(f)
         if (m.get("profile_review") or {}).get("sample_percent") is not None:
             pct, src = float(m["profile_review"]["sample_percent"]), "sample_percent"
-        if cfg.get("lane_target_percent") is not None:
-            pct, src = float(cfg["lane_target_percent"]), "config"
+        raw = cfg.get("lane_target_percent")
+        if isinstance(raw, dict):
+            # per-lane mapping; keys are lane names, "default" covers the rest
+            if lane is not None and raw.get(lane) is not None:
+                pct, src = float(raw[lane]), f"config:{lane}"
+            elif raw.get("default") is not None:
+                pct, src = float(raw["default"]), "config:default"
+        elif raw is not None:
+            pct, src = float(raw), "config"
     except Exception:
         pass
     if override is not None:
@@ -2003,7 +2030,11 @@ def main(argv=None):
                      + ("" if pend.get("lane") in LANES else
                         f" Its lane is not one of {', '.join(LANES)}, so it cannot be "
                         f"recorded as drawn; --redraw after deciding what it was."))
-    lane_target, lt_pct, lt_src = resolve_lane_target(vault, cfg, a.lane_pct)
+    # Per-lane floors: each lane is sized on ITS OWN rate, and the picked lane's is
+    # what the plan prints and what `register_draw` records. `lane_target` stays the
+    # picked lane's number so every downstream consumer keeps its old meaning.
+    lane_targets = {_ln: resolve_lane_target(vault, cfg, a.lane_pct, _ln)[0] for _ln in LANES}
+    lane_target, lt_pct, lt_src = resolve_lane_target(vault, cfg, a.lane_pct, pick)
     try:
         import gen_person_index as _g
         pool_n = sum(1 for _ in _g.parse_narrative())
@@ -2015,19 +2046,20 @@ def main(argv=None):
     # `sizes` is taken (it reorders, never filters, so the counts are unchanged).
     cooled = {}
     for _ln in LANES:
+        _lt = lane_targets[_ln]        # THIS lane's floor, not the picked lane's
         if _ln == "IMPROVE":
             # THREE populations, each rotated on its OWN then composed by share.
             # Sampling a merged pool would let 761 corroboration rows swamp the 8
             # gate defects -- the same swamping the old VERIFY share existed to stop.
-            _d, _dc = rotate_candidates(i_defects, state, _ln, lane_target,
+            _d, _dc = rotate_candidates(i_defects, state, _ln, _lt,
                                         cooldown=cooldown_sittings, seed_extra="defect")
-            _g, _gc = rotate_candidates(i_gaps, state, _ln, lane_target,
+            _g, _gc = rotate_candidates(i_gaps, state, _ln, _lt,
                                         cooldown=cooldown_sittings)
-            _c, _cc = rotate_candidates(i_corrob, state, _ln, lane_target,
+            _c, _cc = rotate_candidates(i_corrob, state, _ln, _lt,
                                         cooldown=cooldown_sittings, seed_extra="corrob")
             # Defects reserve their share FIRST; sourcing rows split what is left.
-            _src, _gq, _cq = compose_share(_g, _c, lane_target, IMPROVE_GAP_SHARE)
-            lanes[_ln], i_dq, _srcq = compose_share(_d, _src, lane_target,
+            _src, _gq, _cq = compose_share(_g, _c, _lt, IMPROVE_GAP_SHARE)
+            lanes[_ln], i_dq, _srcq = compose_share(_d, _src, _lt,
                                                     IMPROVE_DEFECT_SHARE)
             # ⚠ REPORT WHAT IS ACTUALLY TAKEN, NOT THE INNER SPLIT. The inner
             # compose sizes gaps/corrob against the FULL target; the outer one then
@@ -2043,7 +2075,7 @@ def main(argv=None):
             cooled[_ln] = count_cooling(lanes[_ln], state, _ln, cooldown_sittings)
         else:
             lanes[_ln], cooled[_ln] = rotate_candidates(
-                lanes[_ln], state, _ln, lane_target, cooldown=cooldown_sittings)
+                lanes[_ln], state, _ln, _lt, cooldown=cooldown_sittings)
     # PID staleness is an ANNOTATION on whatever was drawn, not a population and not
     # a unit (deferred 40). Mark the rows so the sweep knows to confirm the profile
     # resolves BEFORE harvesting it -- a merged-away PID reads as a person with no
@@ -2094,10 +2126,15 @@ def main(argv=None):
     if lane_target:
         shown, is_dry = target_and_dryness(lane_target, sizes.get(pick, 0) if pick else lane_target)
         # "at least" is the operator's word (01 AUG 2026): the target is a FLOOR,
-        # identical in every lane, and cost-per-person is not an input to it.
+        # and cost-per-person is not an input to it. PER-LANE since 17 SEP 2026.
         print(f"  LANE TARGET: AT LEAST {shown} {'person' if shown == 1 else 'people'} "
               f"this ITERATION — {lt_pct:g}% of {pool_n:,} ({lt_src})")
-        print("    Same floor in every lane, counted in PEOPLE. A lane being slow or")
+        if lt_src.startswith("config:") and len(set(lane_targets.values())) > 1:
+            print("    PER-LANE FLOOR: " + ", ".join(
+                f"{_ln} {lane_targets[_ln]}" for _ln in LANES if lane_targets.get(_ln))
+                + ". A lane is judged against ITS OWN floor, so hit rates compare")
+            print("    WITHIN a lane and not across lanes.")
+        print("    Counted in PEOPLE. A lane being slow or")
         print("    thin is not a reason to work fewer; if the floor is not met, report")
         print("    what BLOCKED it.")
         if pick and is_dry:

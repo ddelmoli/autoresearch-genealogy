@@ -11,14 +11,25 @@ obligations from its own `Iterations` field in prose. Here, `Iterations` means
 exactly one thing and nothing has to be excluded: everything in this prompt is
 per-iteration except the one block that says otherwise.
 
-**The lane target is a percent of the vault, counted in PEOPLE.** One number
-describes a session's workload whatever lane is drawn, and it scales with the
-vault instead of being a row count that silently ages. `session_plan.py` prints
-the resolved figure; you never do the arithmetic:
+**The lane target is a percent of the vault, counted in PEOPLE**, and it scales
+with the vault instead of being a row count that silently ages. `session_plan.py`
+prints the resolved figure; you never do the arithmetic:
 
 ```
-LANE TARGET: 20 people this iteration — 1.5% of 1,352 (sample_percent)
+LANE TARGET: AT LEAST 16 people this ITERATION — 1% of 1,649 (config:IMPROVE)
+  PER-LANE FLOOR: EXPAND 8, IMPROVE 16, ROTATE 25.
 ```
+
+**Since 17 SEP 2026 the floor is PER-LANE** (`session_plan.lane_target_percent`
+takes a mapping; a bare number still floors every lane). One floor for all three
+was the rule from 01 AUG 2026, and it measured the lanes against a rate only one
+of them has: over 43 recorded draws IMPROVE landed 16-25 people while EXPAND
+landed single digits, because extension is gated on how many frontier rows reach
+a sourced parent — so EXPAND scored 3 wins in 103 and told the bandit nothing.
+⚠ **Cost per person is still not an input, and neither is the value of a row.**
+⚠ **A floor is the definition of a win**: hit rates compare WITHIN a lane, never
+across lanes, and a changed floor needs a `lane_epochs` entry or the bandit reads
+wins from two definitions as one series.
 
 What "20 people" means is the lane's own unit, and the units are deliberately
 comparable:

@@ -57,9 +57,16 @@ be perfectly correct.
 
 ## Two rules that are easy to get wrong
 
-**The lane target is a floor, the same in every lane** — a percentage of the vault
-counted in PEOPLE, on every draw. Cost per person and value of the person are not
-inputs. If the floor is missed, report what blocked it rather than arguing the floor.
+**The lane target is a floor, and since 17 SEP 2026 it is PER-LANE** — a percentage
+of the vault counted in PEOPLE, on every draw, set separately for each lane in
+`.maintenance.json` `session_plan.lane_target_percent` (a number there still floors
+every lane, which is the default). Cost per person and value of the person are not
+inputs; what differs per lane is the RATE at which the lane can deliver people at
+all. If the floor is missed, report what blocked it rather than arguing the floor.
+
+⚠ **A floor is the definition of a win, so hit rates compare WITHIN a lane, never
+across lanes**, and wins earned under an older floor are not comparable to newer
+ones — change a floor and register a `lane_epochs` entry in the same edit.
 
 **Order: record, THEN plan.** `--record` clears the pending draw, so running
 `session_plan.py` before the close is wiped by it. Use `session_close.py
