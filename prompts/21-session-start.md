@@ -133,7 +133,11 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
       so that line is the only thing that keeps it visible; when it is deep enough
       to be worth a sitting, say so and offer 17-familysearch-tree-contribution
       instead of research iterations.
-   d. Anything above baseline from step 1.
+   d. THE QUESTION REGISTER'S NET FLOW, from the banner's `question-drain ->`
+      line (raised vs closed over 14 and 30 days). Report it in one line; a
+      positive net means the register is growing. Phase 2 owes a question slice
+      every sitting (question_drain.py), so this is a number to watch, not an ask.
+   e. Anything above baseline from step 1.
    Then: if I am present, ask with AskUserQuestion (multiSelect) and act on the
    answers. If I am away or this is an autonomous run, Operating_Protocol wins
    ("keep working, do not stop to ask"): queue the item in deferred_decisions.md

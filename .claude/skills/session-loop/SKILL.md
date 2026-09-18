@@ -88,6 +88,25 @@ early. **Prefer a worked miss to an unrun iteration** — one is an observation,
 other is nothing. The only forbidden thing is recording a cycle that was *not worked*;
 that has never meant a cycle with a *small yield*.
 
+## The question slice (every sitting, since 18 SEP 2026)
+
+The Open_Questions register is worked **every sitting**, not only when a lane runs dry
+(that rule almost never fired: one measured month raised 36 and closed 3). Like the
+profile-review slice, it is drawn, worked and recorded:
+
+```bash
+python3 scripts/question_drain.py --session N --draw          # 3 questions, ranked for closability
+python3 scripts/question_drain.py --session N --record Q185 --outcome resolved --note "..."
+python3 scripts/question_drain.py --heartbeat                 # net flow: raised vs closed
+```
+
+- **resolved**: write the terminal heading first (`question_store.py --resolve`); the
+  script refuses `resolved` on a live question.
+- **advanced**: the next document is now named. Real work, but the register does not shrink.
+- **blocked**: an access limit; the question cools off for three sittings.
+- The close command FAILS if the slice was not drawn or not recorded, and warns when a
+  sitting raised questions and closed none. Three is a floor: work more when they close fast.
+
 ## Recording work
 
 - **Research_Log session index**: `python3 scripts/log_session.py`, never the Edit

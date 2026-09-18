@@ -27,6 +27,10 @@ STEPS, IN ORDER
                 cadence clock). Only pass it when the drawn slice was actually
                 polled and recorded — resetting the clock on unpolled work lies to
                 the next session.
+  2b. questions with --session N, question_drain.check(): FAIL if the sitting's
+                question slice was not drawn or a drawn question is unrecorded; CHECK
+                (a warning) if the sitting raised questions and closed none. Added
+                18 SEP 2026 when the register was measured growing +59 in 30 days.
   3. log        with --log SLUG --summary "...", append the Research_Log session
                 index row via log_session.py (NEVER the Edit tool on that file).
   4. lint       handoff_lint.py --quiet — the close-block template check.
@@ -161,6 +165,19 @@ def main(argv=None):
         report.append(("rotation", "SKIP",
                        "--rotation-done not given; profile-review clock untouched "
                        "(correct if the slice was not polled this session)"))
+
+    # 2b. The per-sitting QUESTION SLICE (added 18 SEP 2026). The register grew 36 raised
+    # to 3 closed in one month while the only drain rule waited for a lane to run dry.
+    # The slice is owed every sitting, like the profile-review slice: FAIL if it was not
+    # drawn or not recorded, WARN (CHECK) if the sitting raised questions and closed none.
+    if a.session is not None:
+        import question_drain as qd  # noqa: E402
+        code, msg = qd.check(vault, a.session)
+        report.append(("questions", {0: "PASS", 1: "FAIL", 2: "CHECK"}[code], msg))
+        failed |= code == 1
+    else:
+        report.append(("questions", "SKIP",
+                       "no --session; the question slice cannot be checked (pass --session N)"))
 
     # 3. Research_Log index row.
     if reclose and (a.log or a.summary):

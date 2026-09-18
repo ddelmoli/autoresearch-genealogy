@@ -382,6 +382,12 @@ parts = [
     # cheap. Absent config => a "not configured" line, so the check stays upstream-safe.
     "profile-review -> " + run("profile_review.py", r"Profile-Review:",
                                args=["--heartbeat"], max_lines=1),
+    # Question slice (question_drain.py --heartbeat): the register's NET FLOW (raised vs
+    # closed, from the headings, 14 and 30 days) and whether the last slice was fully
+    # recorded. Added 18 SEP 2026: the register grew +59 in 30 days while the only drain
+    # rule waited for a lane to run dry. DUE every sitting, like the profile-review slice.
+    "question-drain -> " + run("question_drain.py", r"Question-Drain:",
+                               args=["--heartbeat"], max_lines=1),
     "handoff -> " + next_session_size(),
     # Handoff close-block conformance (handoff_lint.py --quiet). ADVISORY; promote to
     # blocking once its baseline is 0. Checks the item-12 template: required fields

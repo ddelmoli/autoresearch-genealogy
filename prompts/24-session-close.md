@@ -59,6 +59,11 @@ AUTORESEARCH_VAULT="[VAULT_PATH]".
      entry recorded with --record. On a partial slice, omit it and name the
      unpolled entries; resetting the clock on unpolled work lies to the next
      session.
+   - With --session N the close also runs the QUESTION SLICE gate
+     (question_drain.check): FAIL if the sitting's slice was not drawn or a drawn
+     question is unrecorded; CHECK if the sitting raised questions and closed
+     none, in which case say why in the close block. Report the slice's outcomes
+     (resolved / advanced / blocked) in WHAT MOVED.
    - --next-plan runs scripts/session_plan.py AFTER the outcome is recorded, so
      the pending draw it registers is the NEXT session's and survives. ! Running
      the plan BEFORE the close command instead wipes that draw: --record clears

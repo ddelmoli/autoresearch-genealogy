@@ -128,6 +128,17 @@ in the `--note`. Ten consecutive sittings ran off-lane on question work before t
 because it was the most productive thing available; the rule makes that path legitimate and
 RECORDED instead of invisible to the bandit.
 
+⭐⭐ **AND THE REGISTER IS NOW WORKED EVERY SITTING, NOT ONLY WHEN A LANE RUNS DRY
+(operator-directed 18 SEP 2026).** The dry-lane rule above almost never fired, because lanes
+almost never run dry: measured on the reference vault, September raised 36 questions and closed
+3, and the register grew +59 in 30 days. So there is now a **question slice**, owed every
+sitting exactly like the profile-review slice: `scripts/question_drain.py` draws **3** questions
+ranked for closability (located-but-unread source, then free route, then small block, oldest
+first; op-gated, BIG and recently `blocked` questions excluded), you work each, and record one
+of four outcomes. The close command FAILS if the slice was not drawn or not recorded, and the
+banner's `question-drain ->` line reports the register's NET FLOW every session. The dry-lane
+rule still stands on top of it: a dry lane works MORE questions than the slice.
+
 Copy-paste prompt (fill the placeholders):
 
 ```text
@@ -272,6 +283,21 @@ whichever lanes were drawn:
      let the FS write-back queue go quiet. ! Draw only what you will actually poll: a slice drawn at 20 and
      polled at 5 leaves 15 entries looking considered when nobody looked, and
      the unpolled ones must be named at review.
+   - THE QUESTION SLICE (added 18 SEP 2026). Owed EVERY sitting, like the
+     profile-review slice:
+       python3 scripts/question_drain.py --session <N> --draw
+     then work each drawn question (read it first: the ranking is keyword-derived)
+     and record it:
+       python3 scripts/question_drain.py --session <N> --record Q<num> \
+         --outcome resolved|advanced|blocked|untouched --note "<one line>"
+     ! `resolved` means the block now carries a terminal heading, written FIRST with
+     question_store.py --resolve (the script refuses `resolved` on a live question).
+     ! `advanced` means the NEXT document is now named specifically, appended with
+     question_store.py --append; it is real work but it does not shrink the register.
+     ! `blocked` is an access limit (restricted image, site refusing, in-person only);
+     the question cools off for three sittings. A site refusing for days goes into
+     .maintenance.json `question_drain.blocked_routes` so the draw skips it.
+     ! Working more than three is encouraged; the slice is a floor.
    - NOT here: the Research_Log row and the Handoff close block. Those are one
      per sitting and belong to 24-session-close.
 
