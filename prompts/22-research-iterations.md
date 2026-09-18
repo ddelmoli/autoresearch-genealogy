@@ -298,6 +298,11 @@ whichever lanes were drawn:
      the question cools off for three sittings. A site refusing for days goes into
      .maintenance.json `question_drain.blocked_routes` so the draw skips it.
      ! Working more than three is encouraged; the slice is a floor.
+     ! A drawn question that is not closable at all (the ranking is keyword-derived)
+       is SWAPPED before it is worked, not recorded untouched:
+         python3 scripts/question_drain.py --session <N> --swap Q<num> --note "why"
+       The next-ranked eligible question takes its slot (--with Q<num> names one
+       instead), counts as drawn, and the swapped one sits out three sittings.
    - NOT here: the Research_Log row and the Handoff close block. Those are one
      per sitting and belong to 24-session-close.
 

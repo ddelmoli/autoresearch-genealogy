@@ -13,7 +13,11 @@
       script, is the record of a resolution);
   (d') an empty register owes nothing (the gate PASSES);
   (f) net flow is derived from the HEADINGS (raised clause, terminal status date),
-      live shards and the Resolved store, deduplicated by title.
+      live shards and the Resolved store, deduplicated by title;
+  (g) `--swap` replaces a drawn, UNWORKED question in the pending slice (next-ranked by
+      default, or a named live one), needs a reason, refuses a recorded or undrawn
+      question, counts the replacement as DRAWN, lets the close gate PASS, and cools the
+      swapped-out question for `swap_cooldown` sittings.
 """
 import json
 import os
@@ -143,6 +147,39 @@ def main():
         check("blocked route excluded", "23" not in drawn(d, 5))
 
     with tempfile.TemporaryDirectory() as d:
+        build(d, {"per_session": 3, "swap_cooldown": 2})
+        # (g) swap
+        offered = drawn(d, 9)                                   # [20, 23, 22]
+        check("swap needs a reason", QD.swap(d, 9, "Q23") == 1)
+        check("swap refuses a question not in the slice", QD.swap(d, 9, "Q21", note="x") == 1)
+        check("swap refuses a non-live replacement", QD.swap(d, 9, "Q23", "Q99", note="x") == 1)
+        check("swap to next-ranked eligible", QD.swap(d, 9, "Q23", note="policy question") == 0)
+        st = QD.load_state(d)
+        check("replacement takes the slot", st["pending"]["offered"] == ["20", "24", "22"])
+        check("swapped-out written to history",
+              any(h["q"] == "23" and h["outcome"] == QD.SWAPPED for h in st["history"]))
+        QD.record(d, 9, "Q20", "advanced", "")
+        check("swap refuses a recorded question", QD.swap(d, 9, "Q20", note="x") == 1)
+        QD.record(d, 9, "Q24", "advanced", "")
+        check("replacement recorded as drawn",
+              [h for h in QD.load_state(d)["history"] if h["q"] == "24"][-1]["drawn"] is True)
+        code, _ = QD.check(d, 9)
+        check("gate still FAILS while the rest is unrecorded", code == 1)
+        QD.record(d, 9, "Q22", "untouched", "")
+        code, msg = QD.check(d, 9)
+        check("gate PASSES with a swap in the slice", code == 0 and "1 swapped" in msg)
+        check("swapped question cools off", "23" not in drawn(d, 10))
+        QD.record(d, 10, "22", "advanced", "")
+        QD.record(d, 11, "22", "advanced", "")
+        check("swapped question returns after the cooldown", "23" in drawn(d, 12))
+
+    with tempfile.TemporaryDirectory() as d:
+        build(d)
+        drawn(d, 9)                                             # [20, 23, 22]
+        check("swap --with a named question", QD.swap(d, 9, "Q22", "Q24", note="x") == 0
+              and QD.load_state(d)["pending"]["offered"] == ["20", "23", "24"])
+
+    with tempfile.TemporaryDirectory() as d:
         # (d) an empty register owes nothing: the close gate must not FAIL a vault
         # with no drawable questions (the session_close fixtures are such a vault)
         with open(os.path.join(d, ".maintenance.json"), "w", encoding="utf-8") as fh:
@@ -153,7 +190,7 @@ def main():
     if bad:
         print("FAIL test_question_drain:", "; ".join(bad))
         return 1
-    print("PASS test_question_drain (14 checks)")
+    print("PASS test_question_drain (27 checks)")
     return 0
 
 

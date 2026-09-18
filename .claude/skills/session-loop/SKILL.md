@@ -104,6 +104,9 @@ python3 scripts/question_drain.py --heartbeat                 # net flow: raised
   script refuses `resolved` on a live question.
 - **advanced**: the next document is now named. Real work, but the register does not shrink.
 - **blocked**: an access limit; the question cools off for three sittings.
+- **swap** a drawn question that is not closable before working it:
+  `question_drain.py --session N --swap Q202 --note "why" [--with Q378]`. The next-ranked
+  question (or the named one) takes the slot and counts as drawn; the swapped one cools off.
 - The close command FAILS if the slice was not drawn or not recorded, and warns when a
   sitting raised questions and closed none. Three is a floor: work more when they close fast.
 

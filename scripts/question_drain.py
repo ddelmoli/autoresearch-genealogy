@@ -24,6 +24,17 @@ reports it and the close command checks it. This copies all three:
   blocked    an access limit stopped the read (restricted image, site refusing,
              in-person only); the question cools off for `blocked_cooldown` sittings
   untouched  drawn and not worked (recorded honestly rather than left silent)
+
+** SWAP: replacing a drawn question before it is worked (added 18 SEP 2026). ** The ranking
+is keyword-derived, so a draw can hand the sitting a question that is not closable at all
+(a collection-wide policy question, say). `--swap Q202 --note "why"` takes it out of the
+pending slice and puts the next-ranked eligible question in its place (`--with Q378` names
+the replacement instead). The swapped-out question is written to history with outcome
+`swapped` and its reason, so the close gate counts it as dealt with, the replacement counts
+as DRAWN (not off-slice) when recorded, and the swapped question sits out `swap_cooldown`
+sittings like a blocked one, so the same draw does not hand it straight back. A question
+already recorded this sitting cannot be swapped: swap is for what was NOT worked. `swapped`
+is not a `--record` outcome; only `--swap` writes it.
 "Advanced" is real work but it does not shrink the register; August's advanced notes are
 how the register grew while looking busy. The heartbeat therefore counts CLOSURES from
 the headings themselves, not from this script's own records.
@@ -47,12 +58,14 @@ Usage:
     python3 scripts/question_drain.py --session N              # show the draw (dry run)
     python3 scripts/question_drain.py --session N --draw       # register it for sitting N
     python3 scripts/question_drain.py --session N --record Q185 --outcome resolved --note "..."
+    python3 scripts/question_drain.py --session N --swap Q202 [--with Q378] --note "why"
     python3 scripts/question_drain.py --session N --check      # close-command gate
     python3 scripts/question_drain.py --heartbeat              # banner line
     python3 scripts/question_drain.py --net [--days 30]        # raised vs closed by week
 
 Config (optional) in .maintenance.json:
-    "question_drain": {"per_session": 3, "blocked_cooldown": 3, "blocked_routes": []}
+    "question_drain": {"per_session": 3, "blocked_cooldown": 3, "swap_cooldown": 3,
+                       "blocked_routes": []}
 
 Exit codes for --check: 0 PASS, 1 FAIL (slice missing or unrecorded), 2 WARN (the sitting
 raised questions and closed none).
@@ -74,7 +87,8 @@ SNAPSHOT_FILE = "question_drain_snapshots.json"
 MAINTENANCE_FILE = ".maintenance.json"
 CONFIG_KEY = "question_drain"
 OUTCOMES = ("resolved", "advanced", "blocked", "untouched")
-DEFAULTS = {"per_session": 3, "blocked_cooldown": 3, "blocked_routes": []}
+SWAPPED = "swapped"    # written only by --swap, never a --record outcome
+DEFAULTS = {"per_session": 3, "blocked_cooldown": 3, "swap_cooldown": 3, "blocked_routes": []}
 
 MONTHS = {m: i for i, m in enumerate(
     "JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split(), 1)}
@@ -153,6 +167,7 @@ def _body(vault, row):
 def candidates(vault, cfg, state):
     rows = GQI.parse(vault)
     cooldown = int(cfg.get("blocked_cooldown", 3))
+    swap_cool = int(cfg.get("swap_cooldown", 3))
     routes = [re.compile(p, re.I) for p in (cfg.get("blocked_routes") or [])]
     out = []
     for r in rows:
@@ -161,6 +176,9 @@ def candidates(vault, cfg, state):
         q = r["qlabel"]
         since = _sessions_since(state["history"], q, "blocked")
         if since is not None and since < cooldown:
+            continue
+        since = _sessions_since(state["history"], q, SWAPPED)
+        if since is not None and since < swap_cool:
             continue
         score = (3 if "UNREAD-SRC" in r["tags"] else 0) + (2 if "free" in r["tags"] else 0) \
             + (1 if r["resolver"] else 0) + (1 if r["kb"] < 5 else 0)
@@ -289,6 +307,58 @@ def record(vault, session, label, outcome, note):
     return 0
 
 
+def swap(vault, session, label, replacement=None, note=""):
+    """Replace one question of the sitting's PENDING slice before it is worked."""
+    out_q = _qkey(label)
+    state = load_state(vault)
+    pend = state.get("pending")
+    if not pend or pend.get("session") != session:
+        print(f"question_drain: no slice drawn for sitting #{session}; --draw first.",
+              file=sys.stderr)
+        return 1
+    if out_q not in pend["offered"]:
+        print(f"question_drain: Q{out_q} is not in sitting #{session}'s slice "
+              f"({', '.join('Q' + q for q in pend['offered'])}).", file=sys.stderr)
+        return 1
+    done = {h["q"] for h in state["history"] if h.get("session") == session}
+    if out_q in done:
+        print(f"question_drain: Q{out_q} is already recorded for sitting #{session}; "
+              "a swap is for a question that was NOT worked.", file=sys.stderr)
+        return 1
+    if not note.strip():
+        print("question_drain: --swap needs --note saying why the question is swapped out.",
+              file=sys.stderr)
+        return 1
+    if replacement:
+        in_q = _qkey(replacement)
+        if in_q not in {r["qlabel"] for r in GQI.parse(vault)}:
+            print(f"question_drain: Q{in_q} is not a live question.", file=sys.stderr)
+            return 1
+    else:
+        taken = set(pend["offered"]) | done
+        pool = [r["qlabel"] for _s, r in candidates(vault, load_config(vault), state)
+                if r["qlabel"] not in taken]
+        if not pool:
+            print("question_drain: no eligible replacement left in the register.",
+                  file=sys.stderr)
+            return 1
+        in_q = pool[0]
+    if in_q in pend["offered"] or in_q in done:
+        print(f"question_drain: Q{in_q} is already in or recorded for this sitting's slice.",
+              file=sys.stderr)
+        return 1
+    pend["offered"] = [in_q if q == out_q else q for q in pend["offered"]]
+    pend.setdefault("swaps", []).append({"out": out_q, "in": in_q, "note": note,
+                                         "date": date.today().isoformat()})
+    state["history"].append({"date": date.today().isoformat(), "session": session,
+                             "q": out_q, "outcome": SWAPPED, "note": note, "drawn": True,
+                             "replaced_by": in_q})
+    save_state(vault, state)
+    print(f"swapped Q{out_q} -> Q{in_q} in sitting #{session}'s slice "
+          f"(Q{out_q} sits out {load_config(vault).get('swap_cooldown', 3)} sittings)")
+    return 0
+
+
 def check(vault, session, today=None):
     """Close gate. Returns (code, message): 0 PASS, 1 FAIL, 2 WARN."""
     today = today or date.today()
@@ -304,11 +374,12 @@ def check(vault, session, today=None):
         return 1, (f"slice drawn but {', '.join('Q' + q for q in unrec)} unrecorded "
                    "(record each: resolved / advanced / blocked / untouched)")
     mine = [h for h in state["history"] if h.get("session") == session]
-    tally = {o: sum(h["outcome"] == o for h in mine) for o in OUTCOMES}
+    tally = {o: sum(h["outcome"] == o for h in mine) for o in OUTCOMES + (SWAPPED,)}
     raised = sum(1 for _r, _c, s in heading_dates(vault).values() if s == session)
     closed_today = sum(1 for _r, c, _s in heading_dates(vault).values() if c == today)
     summary = (f"slice worked: {tally['resolved']} resolved, {tally['advanced']} advanced, "
-               f"{tally['blocked']} blocked, {tally['untouched']} untouched; this sitting "
+               f"{tally['blocked']} blocked, {tally['untouched']} untouched, "
+               f"{tally[SWAPPED]} swapped; this sitting "
                f"raised {raised}, register closures dated today {closed_today}")
     if raised and not closed_today and not tally["resolved"]:
         return 2, summary + " — raised questions and closed none: say why in the close block"
@@ -354,6 +425,10 @@ def main(argv=None):
     ap.add_argument("--record", metavar="QLABEL")
     ap.add_argument("--outcome", choices=OUTCOMES)
     ap.add_argument("--note", default="")
+    ap.add_argument("--swap", metavar="QLABEL",
+                    help="replace this drawn, unworked question in the pending slice")
+    ap.add_argument("--with", dest="with_q", metavar="QLABEL",
+                    help="with --swap: the replacement (default: next-ranked eligible)")
     ap.add_argument("--check", action="store_true", help="close gate for --session")
     ap.add_argument("--heartbeat", action="store_true")
     ap.add_argument("--net", action="store_true")
@@ -372,6 +447,10 @@ def main(argv=None):
         if not a.outcome:
             ap.error("--record needs --outcome")
         return record(vault, a.session, a.record, a.outcome, a.note)
+    if a.swap:
+        return swap(vault, a.session, a.swap, a.with_q, a.note)
+    if a.with_q:
+        ap.error("--with only goes with --swap")
     if a.check:
         code, msg = check(vault, a.session)
         print(("PASS " if code == 0 else "FAIL " if code == 1 else "WARN ") + msg)
