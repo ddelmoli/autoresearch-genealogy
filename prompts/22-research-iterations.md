@@ -168,7 +168,10 @@ movement honestly.
 
      IMPROVE          -> 25-person-research-sweep   (the default unit of work)
      EXPAND           -> 01-tree-expansion + the frontier declaration pattern;
-                         use 25 when the parent is not findable on FS either
+                         use 25 when the parent is not findable on FS either.
+                         The draw reserves a share (default 0.75) for DIRECT
+                         ancestors of Gen 1; rows are tagged [direct ancestor] /
+                         [collateral]. Work top-down; do not skip the collaterals.
      IMPROVE, defect  -> 18-edge-verification for a `?` edge; for a GATE finding,
                          resolve the generation or declare it in known_gen_collapse
      any drawn row     -> if it is marked "PID liveness unconfirmed", confirm the

@@ -40,6 +40,15 @@ A lane being cheap is not evidence that it is the valuable one. See
 `python3 scripts/session_plan.py` prints one ranked worklist across the three, and a
 bandit picks the recommended one and prints the lane target.
 
+⭐ **EXPAND WEIGHTS DIRECT ANCESTORS OVER COLLATERALS (18 SEP 2026, operator).** The pool is
+split into DIRECT (reachable from a Gen 1 anchor by walking parent edges up, `?` edges
+included) and COLLATERAL; each is rotated on its own and `compose_share` reserves
+`expand_direct_share` (default 0.75: 6 of a floor of 8) for DIRECT. A weight, never an
+exclusion: an unfilled quota flows to the other side. Each row's `why` ends `[direct
+ancestor]` or `[collateral]`, and the plan prints the split. A new EXPAND epoch was started
+after sitting #204 (`session_plan.py --set-epoch LANE --session N --reason ...`, which zeroes
+the arm, keeps the prior in `lane_resets`, and dates the change within the day).
+
 ✅ **EXPAND's builder was WIDENED to the definition on 07 AUG 2026** (deferred 50).
 It now draws **two tiers**: the SILENT 0-parent frontier, then **`HALF_WIRED`** rows
 naming exactly one parent with no `no-second-parent` declaration (97 of them).

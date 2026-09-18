@@ -288,11 +288,48 @@ VERIFY_EDGE_SHARE = 0.5      # retained: referenced by tests pinning the share m
 # one host only -- 734 people when this was added). Without a reserved share the
 # corroboration backlog would bury the entries that have NO source at all.
 IMPROVE_GAP_SHARE = 0.5
+# ** EXPAND: DIRECT ANCESTORS BEFORE COLLATERALS, BY WEIGHT, NOT BY EXCLUSION (operator,
+# 18 SEP 2026). ** The lane is one pool sorted shallowest generation first, and
+# collaterals (siblings, their spouses, in-law parents) sit at shallow generations, so
+# the strict-priority head filled with them: 7 of the top 12 rows on the day this was
+# added, from a pool that is 69% direct ancestors (382 of 557). The pool is now split
+# into DIRECT (reachable from a Gen 1 anchor by walking PARENT edges upward, `?` edges
+# included, because every hand-authored edge carries one) and COLLATERAL (everyone
+# else); each is rotated on its own and the two are composed with this share reserved
+# for DIRECT. Neither is ever excluded: an unfilled quota flows to the other side.
+# Override per vault with `.maintenance.json session_plan.expand_direct_share`.
+EXPAND_DIRECT_SHARE = 0.75
 
 
 # ---------------------------------------------------------------------------
 # Lane candidate-builders. Each delegates to the owning tool's own logic.
 # ---------------------------------------------------------------------------
+def direct_ancestor_ids(vault):
+    """Vault ids reachable from the Gen 1 anchor set by walking PARENT edges upward.
+
+    `?` edges are INCLUDED (operator, 18 SEP 2026): a `?` means "not yet FS-confirmed",
+    not "doubted", and every hand-authored edge carries one, so a confirmed-only walk
+    would reclassify most book-derived deep lines as collateral. The anchors
+    themselves are in the set. An anchor-less vault returns an empty set, which makes
+    every row COLLATERAL and the share inert rather than wrong."""
+    try:
+        anchor = vault_config.get_anchor(vault) or {}
+    except Exception:
+        anchor = {}
+    people = anchor.get("people") if isinstance(anchor, dict) else None
+    start = [p.get("id") if isinstance(p, dict) else p for p in (people or [])]
+    parents = {r.id: [p.rstrip("?") for p in (r.parents or [])]
+               for r in person_store.iter_people(vault)}
+    seen = {s for s in start if s in parents}
+    stack = list(seen)
+    while stack:
+        for p in parents.get(stack.pop(), ()):
+            if p in parents and p not in seen:
+                seen.add(p)
+                stack.append(p)
+    return seen
+
+
 def lane_expand(vault):
     """EXPAND's candidates: leaf rows whose parentage is open.
 
@@ -351,6 +388,10 @@ def lane_expand(vault):
         out.append({"id": h["id"], "name": h["name"], "gen": h["gen"],
                     "file": h["file"], "tier": "half_wired",
                     "why": f"HALF-WIRED: one parent only, no declared reason -- {hint}"})
+    direct = direct_ancestor_ids(vault)
+    for r in out:
+        r["direct"] = r["id"] in direct
+        r["why"] += " [direct ancestor]" if r["direct"] else " [collateral]"
     return out
 
 
@@ -1531,10 +1572,41 @@ def since_epoch(state):
         if epoch and d < epoch:
             continue
         le = lane_epochs.get(h.get("lane"))
-        if le and d < le:
+        if isinstance(le, dict):
+            # {"date": D, "after_session": N}: a lane changed MID-DAY. Rows before D are
+            # retired, and rows ON D only when their sitting is N or earlier (a row with
+            # no session on D is retired: it cannot show it came after the change).
+            ld, after = le.get("date") or "", le.get("after_session")
+            if d < ld:
+                continue
+            if d == ld and after is not None and (h.get("session") is None
+                                                  or h.get("session") <= after):
+                continue
+        elif le and d < le:
             continue
         out.append(h)
     return out
+
+
+def set_lane_epoch(state, lane, session, reason, today=None):
+    """Start a new epoch for ONE lane after sitting `session` (18 SEP 2026).
+
+    Mirrors the 31 JUL IMPROVE reset, which until now was done by hand: the arm is
+    zeroed (the exploit rate reads the cumulative arm, so retiring history from the
+    floors alone would leave the old reward estimate steering the draw), the prior tally
+    is kept in `lane_resets` with the reason, and `lane_epochs[lane]` becomes
+    `{"date": today, "after_session": session}` so the change can be dated WITHIN a
+    day. `history` is never touched: it stays the record."""
+    if lane not in LANES:
+        raise SystemExit(f"unknown lane {lane!r}; one of {', '.join(LANES)}")
+    today = today or date.today().isoformat()
+    prior = arm_of(state, lane)
+    state.setdefault("arms", {})[lane] = {"wins": 0, "iterations": 0}
+    state.setdefault("lane_epochs", {})[lane] = {"date": today, "after_session": session}
+    state.setdefault("lane_resets", []).append(
+        {"lane": lane, "date": today, "epoch": today, "after_session": session,
+         "prior": prior, "reason": reason})
+    return state
 
 
 def sittings_in_order(history):
@@ -1936,6 +2008,11 @@ def main(argv=None):
                     help="IMPROVE only: of this draw's disposals, how many were a "
                          "SINGLE_SOURCED entry corroborated from a SECOND host "
                          "(1 host -> 2+). This is the one that moves MULTI_SOURCED.")
+    ap.add_argument("--set-epoch", dest="set_epoch", metavar="LANE",
+                    help="start a new per-lane epoch after sitting --session: zero the "
+                         "lane's arm (prior kept in lane_resets) and retire its earlier "
+                         "observations from the floors. Needs --reason.")
+    ap.add_argument("--reason", default="", help="with --set-epoch: why the lane changed")
     ap.add_argument("--session", type=int, metavar="N",
                     help="the SITTING this observation belongs to (the session number "
                          "21-session-start established). The bandit floors count "
@@ -1957,8 +2034,19 @@ def main(argv=None):
     min_sample = int(cfg.get("min_sample", MIN_SAMPLE))
     stale_after = int(cfg.get("stale_after", STALE_AFTER))
     cooldown_sittings = int(cfg.get("offer_cooldown", OFFER_COOLDOWN))
+    expand_share = float(cfg.get("expand_direct_share", EXPAND_DIRECT_SHARE))
+    e_dq = e_cq = e_nd = e_nc = 0
 
     state = load_state(vault)
+
+    if a.set_epoch:
+        if a.session is None or not a.reason.strip():
+            raise SystemExit("--set-epoch needs --session N (the sitting that made the "
+                             "change) and --reason")
+        save_state(vault, set_lane_epoch(state, a.set_epoch.upper(), a.session, a.reason))
+        print(f"PLAN: {a.set_epoch.upper()} epoch set after sitting #{a.session} "
+              f"({date.today().isoformat()}); arm zeroed, prior kept in lane_resets")
+        return 0
 
     if a.heartbeat:
         heartbeat(state)
@@ -2073,6 +2161,18 @@ def main(argv=None):
             i_gq, i_cq = sourcing_split(lanes[_ln], i_dq, _srcq)
             # ⛔ Counted on the COMPOSED lane, in people -- never `_dc + _gc + _cc`.
             cooled[_ln] = count_cooling(lanes[_ln], state, _ln, cooldown_sittings)
+        elif _ln == "EXPAND":
+            # Two populations, rotated apart and composed by share (see
+            # EXPAND_DIRECT_SHARE): direct ancestors reserve their quota first.
+            _dir = [r for r in lanes[_ln] if r.get("direct")]
+            _col = [r for r in lanes[_ln] if not r.get("direct")]
+            _dr, _ = rotate_candidates(_dir, state, _ln, _lt,
+                                       cooldown=cooldown_sittings, seed_extra="direct")
+            _cr, _ = rotate_candidates(_col, state, _ln, _lt,
+                                       cooldown=cooldown_sittings, seed_extra="collateral")
+            lanes[_ln], e_dq, e_cq = compose_share(_dr, _cr, _lt, expand_share)
+            e_nd, e_nc = len(_dir), len(_col)
+            cooled[_ln] = count_cooling(lanes[_ln], state, _ln, cooldown_sittings)
         else:
             lanes[_ln], cooled[_ln] = rotate_candidates(
                 lanes[_ln], state, _ln, _lt, cooldown=cooldown_sittings)
@@ -2141,6 +2241,10 @@ def main(argv=None):
             print(f"    ⚠ THE LANE HOLDS ONLY {sizes.get(pick, 0)} — it will RUN DRY before "
                   f"target, and a lane that runs dry is a HIT. Do not read {shown} as "
                   f"reachable here.")
+        if pick == "EXPAND":
+            print(f"    EXPAND holds {e_nd} DIRECT-ancestor rows + {e_nc} COLLATERAL rows. "
+                  f"This draw reserves {e_dq} for direct ancestors, then {e_cq} collateral "
+                  f"(share {expand_share:g}, `session_plan.expand_direct_share`).")
         if pick == "IMPROVE":
             _ngate = sum(1 for r in i_defects if r.get("_defect") == "gate")
             _nedge = sum(1 for r in i_defects if r.get("_defect") == "edge")

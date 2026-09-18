@@ -760,5 +760,69 @@ class LaneCollapseTests(unittest.TestCase):
         self.assertIn("DEFECT", unit.upper())
 
 
+class ExpandDirectShareTests(unittest.TestCase):
+    """EXPAND weights DIRECT ancestors over COLLATERALS by a reserved share, never by
+    exclusion (operator, 18 SEP 2026), and a lane change can be dated WITHIN a day."""
+
+    def _rows(self, prefix, n, direct):
+        return [{"id": f"P-{prefix}{i:04d}", "name": f"{prefix}{i}", "gen": 5,
+                 "direct": direct, "why": ""} for i in range(n)]
+
+    def test_share_reserves_direct_first(self):
+        d, c = self._rows("D", 20, True), self._rows("C", 20, False)
+        out, dq, cq = sp.compose_share(d, c, 8, sp.EXPAND_DIRECT_SHARE)
+        self.assertEqual((dq, cq), (6, 2))
+        self.assertEqual(sum(r["direct"] for r in out[:8]), 6)
+        self.assertEqual(len(out), 40, "composition reorders, never filters")
+
+    def test_collateral_fills_when_direct_runs_short(self):
+        d, c = self._rows("D", 2, True), self._rows("C", 20, False)
+        out, dq, cq = sp.compose_share(d, c, 8, sp.EXPAND_DIRECT_SHARE)
+        self.assertEqual(dq, 2)
+        self.assertEqual(sum(not r["direct"] for r in out[:8]), 6,
+                         "an unfilled direct quota must flow to collaterals")
+
+    def test_direct_ancestor_walk_includes_question_edges(self):
+        class R:
+            def __init__(s, i, parents): s.id, s.parents = i, parents
+        people = [R("P-A00001", ["P-B00001", "P-B00002?"]), R("P-B00001", ["P-C00001?"]),
+                  R("P-B00002", []), R("P-C00001", []), R("P-S00001", ["P-B00001"]),
+                  R("P-X00001", [])]
+        o_iter, o_anchor = sp.person_store.iter_people, sp.vault_config.get_anchor
+        sp.person_store.iter_people = lambda v: people
+        sp.vault_config.get_anchor = lambda v: {"people": [{"id": "P-A00001"}]}
+        try:
+            got = sp.direct_ancestor_ids("x")
+        finally:
+            sp.person_store.iter_people, sp.vault_config.get_anchor = o_iter, o_anchor
+        self.assertEqual(got, {"P-A00001", "P-B00001", "P-B00002", "P-C00001"})
+        # NEGATIVE CONTROLS: a sibling (shares a parent) and an unlinked row are collateral
+        self.assertNotIn("P-S00001", got)
+        self.assertNotIn("P-X00001", got)
+
+    def test_intraday_epoch_by_session(self):
+        st = {"history": [
+            {"date": "2026-09-18", "lane": "EXPAND", "outcome": "miss", "session": 203},
+            {"date": "2026-09-18", "lane": "EXPAND", "outcome": "hit", "session": 205},
+            {"date": "2026-09-18", "lane": "EXPAND", "outcome": "hit"},
+            {"date": "2026-09-19", "lane": "EXPAND", "outcome": "miss", "session": 206},
+            {"date": "2026-09-18", "lane": "IMPROVE", "outcome": "hit", "session": 203},
+        ], "lane_epochs": {"EXPAND": {"date": "2026-09-18", "after_session": 204}}}
+        seen = sp.since_epoch(st)
+        self.assertEqual(sorted(h.get("session") or 0 for h in seen if h["lane"] == "EXPAND"),
+                         [205, 206], "same-day rows count only after the sitting; a "
+                         "session-less same-day row cannot prove it came after")
+        self.assertEqual(len([h for h in seen if h["lane"] == "IMPROVE"]), 1,
+                         "another lane is untouched")
+
+    def test_set_lane_epoch_zeroes_arm_and_keeps_prior(self):
+        st = {"arms": {"EXPAND": {"wins": 3, "iterations": 105}}, "history": []}
+        sp.set_lane_epoch(st, "EXPAND", 204, "weighted draw", today="2026-09-18")
+        self.assertEqual(st["arms"]["EXPAND"], {"wins": 0, "iterations": 0})
+        self.assertEqual(st["lane_epochs"]["EXPAND"],
+                         {"date": "2026-09-18", "after_session": 204})
+        self.assertEqual(st["lane_resets"][-1]["prior"], {"wins": 3, "iterations": 105})
+
+
 if __name__ == "__main__":
     unittest.main()
