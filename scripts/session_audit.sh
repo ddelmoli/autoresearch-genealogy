@@ -352,6 +352,12 @@ parts = [
     # boundary — the silent defect that under-credited 92 people. SOURCE_MISATTRIBUTION
     # is the subset that lands on a `Sources` bullet, i.e. moves the census today.
     "entry-boundary -> " + run("entry_boundary_audit.py", r"ENTRY_BOUNDARY:", max_lines=1),
+    # Headless blocks (headless_block_audit.py): a person's body bullets left below a
+    # blank line with no header of their own, which the parser folds into the entry
+    # ABOVE -- Sources bullet and all. entry-boundary cannot see it (the Markdown
+    # really does put the block under that entry). Advisory, baseline 0; a candidate
+    # list calibrated on real rows, so READ each one before moving anything.
+    "headless -> " + run("headless_block_audit.py", r"HEADLESS_BLOCK:", max_lines=1),
     # Generation labels vs the GRAPH (generation_audit.py). build_edges --validate
     # compares ONE edge at a time and is blind to a label that is wrong consistently
     # — which is the failure that happened: an edge DISPROVED and detached 03 AUG

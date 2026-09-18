@@ -32,7 +32,8 @@ says which, and why. Read it before treating a count as damage.
 
 ## Advisory gates
 
-`header_xref_audit.py`, `meta_presence_audit.py`, `dup_name_audit.py`,
+`header_xref_audit.py`, `meta_presence_audit.py`, `headless_block_audit.py`
+(HEADLESS_BLOCK), `dup_name_audit.py`,
 `gen_heading_audit.py`, `frontmatter_audit.py`, `build_edges.py --validate`
 (PARENT-GEN MISMATCH, GEN_COLLAPSE, ADJUDICATED_STALE, ADJUDICATED_UNEXPLAINED,
 BANKED_STALE), `handoff_lint.py`, `source_symmetry_audit.py`
@@ -53,6 +54,25 @@ is the one advisory check whose non-zero reading is expected rather than tolerat
 
 Run it after a source harvest and after citing any marriage. It is not in the
 SessionStart banner.
+
+**`headless_block_audit.py` finds a person's body folded into the wrong entry**
+(banner line `headless ->`, advisory, baseline 0). A blank line is not an entry break,
+so body bullets left below one with no header of their own (a shard split that moved
+the header and meta but not the body; a minting pass that wrote the body under a
+blank line) are credited to the entry ABOVE, `Sources` bullet included.
+`entry_boundary_audit.py` cannot see this: the Markdown really does put the block
+under that entry, so its two readers agree.
+
+- It flags a block after a blank line whose first bullet is a `MINTED` / `CREATED` /
+  `ADDED ... resolving` lede, or that carries a second `Sources` bullet under a host
+  that already has one. Calibrated on a real vault: 5 of 5 known blocks, 0 false
+  positives; a pronoun-led rule was tried and dropped (its only hit was the host's
+  own "She ...").
+- **It cannot see** a misfiled block with no blank line above it; only reading the
+  entry catches that.
+- Fix a real row by moving the block under its owner's `- meta:` line, then run
+  `census_diff.py`: the owner gains its citation, the host loses exactly what it
+  borrowed. Run it after any shard split.
 
 ## Three things that go wrong when reading a gate
 
