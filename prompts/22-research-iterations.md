@@ -132,7 +132,7 @@ RECORDED instead of invisible to the bandit.
 (operator-directed 18 SEP 2026).** The dry-lane rule above almost never fired, because lanes
 almost never run dry: measured on the reference vault, September raised 36 questions and closed
 3, and the register grew +59 in 30 days. So there is now a **question slice**, owed every
-sitting exactly like the profile-review slice: `scripts/question_drain.py` draws **3** questions
+sitting exactly like the profile-review slice: `scripts/question_drain.py` draws **5** questions (3 until the 19 SEP 2026 operator ruling)
 ranked for closability (located-but-unread source, then free route, then small block, oldest
 first; op-gated, BIG and recently `blocked` questions excluded), you work each, and record one
 of four outcomes. The close command FAILS if the slice was not drawn or not recorded, and the
@@ -300,7 +300,7 @@ whichever lanes were drawn:
      ! `blocked` is an access limit (restricted image, site refusing, in-person only);
      the question cools off for three sittings. A site refusing for days goes into
      .maintenance.json `question_drain.blocked_routes` so the draw skips it.
-     ! Working more than three is encouraged; the slice is a floor.
+     ! Working more than five is encouraged; the slice is a floor.
      ! A drawn question that is not closable at all (the ranking is keyword-derived)
        is SWAPPED before it is worked, not recorded untouched:
          python3 scripts/question_drain.py --session <N> --swap Q<num> --note "why"

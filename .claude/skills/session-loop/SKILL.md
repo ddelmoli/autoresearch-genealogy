@@ -104,7 +104,7 @@ The Open_Questions register is worked **every sitting**, not only when a lane ru
 profile-review slice, it is drawn, worked and recorded:
 
 ```bash
-python3 scripts/question_drain.py --session N --draw          # 3 questions, ranked for closability
+python3 scripts/question_drain.py --session N --draw          # 5 questions, ranked for closability
 python3 scripts/question_drain.py --session N --record Q185 --outcome resolved --note "..."
 python3 scripts/question_drain.py --heartbeat                 # net flow: raised vs closed
 ```
@@ -117,7 +117,7 @@ python3 scripts/question_drain.py --heartbeat                 # net flow: raised
   `question_drain.py --session N --swap Q202 --note "why" [--with Q378]`. The next-ranked
   question (or the named one) takes the slot and counts as drawn; the swapped one cools off.
 - The close command FAILS if the slice was not drawn or not recorded, and warns when a
-  sitting raised questions and closed none. Three is a floor: work more when they close fast.
+  sitting raised questions and closed none. Five is a floor (raised from three, operator 19 SEP 2026): work more when they close fast.
 
 ## Recording work
 
