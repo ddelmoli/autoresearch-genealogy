@@ -145,8 +145,21 @@ def _qkey(label):
     return str(label).strip().upper().lstrip("Q").lower()
 
 
+def live_rows(history):
+    """History rows that still COUNT — i.e. not marked superseded by a later correction.
+
+    The store is APPEND-ONLY on purpose (same discipline as log_session.py and
+    question_store.py): a wrong outcome is never deleted, it is marked
+    `superseded: true` and the correcting row is appended after it. Every counter
+    and every cooldown reads through here, so a corrected outcome is counted ONCE
+    while the original stays visible as an audit trail.
+    """
+    return [h for h in history if not h.get("superseded")]
+
+
 def _sessions_since(history, qkey, outcome):
     """Distinct sittings recorded AFTER the last `outcome` for this question, or None."""
+    history = live_rows(history)
     last = None
     for i, h in enumerate(history):
         if h["q"] == qkey and h["outcome"] == outcome:
@@ -283,14 +296,27 @@ def draw(vault, session, register):
 
 
 def _unrecorded(state, pend):
-    done = {h["q"] for h in state["history"] if h.get("session") == pend["session"]}
+    done = {h["q"] for h in live_rows(state["history"])
+            if h.get("session") == pend["session"]}
     return [q for q in pend["offered"] if q not in done]
 
 
-def record(vault, session, label, outcome, note):
+def record(vault, session, label, outcome, note, supersede=False):
     q = _qkey(label)
     state = load_state(vault)
     live = {r["qlabel"] for r in GQI.parse(vault)}
+    prior = [h for h in live_rows(state["history"])
+             if h.get("session") == session and h["q"] == q]
+    if supersede and not prior:
+        print(f"question_drain: --supersede given but Q{q} has no live recorded outcome for "
+              f"sitting #{session}; record it normally.", file=sys.stderr)
+        return 1
+    if prior and not supersede:
+        print(f"question_drain: Q{q} is ALREADY recorded for sitting #{session} as "
+              f"'{prior[-1]['outcome']}'. Appending a second row would double-count it in the "
+              "slice tally. Pass --supersede to mark that row corrected and replace it.",
+              file=sys.stderr)
+        return 1
     if outcome == "resolved" and q in live:
         print(f"question_drain: Q{q} is still LIVE in the register. Write its terminal "
               "heading first (question_store.py --resolve), then record it resolved.",
@@ -298,11 +324,19 @@ def record(vault, session, label, outcome, note):
         return 1
     pend = state.get("pending") or {}
     offered = pend.get("session") == session and q in pend.get("offered", [])
+    if supersede:
+        for h in reversed(state["history"]):
+            if (h.get("session") == session and h["q"] == q
+                    and not h.get("superseded")):
+                h["superseded"] = True
+                h["superseded_on"] = date.today().isoformat()
+                break
     state["history"].append({"date": date.today().isoformat(), "session": session, "q": q,
                              "outcome": outcome, "note": note,
                              "drawn": bool(offered)})
     save_state(vault, state)
-    print(f"recorded Q{q}: {outcome} (sitting #{session}"
+    was = f" (supersedes '{prior[-1]['outcome']}')" if supersede else ""
+    print(f"recorded Q{q}: {outcome}{was} (sitting #{session}"
           f"{'' if offered else ', off-slice'})")
     return 0
 
@@ -320,7 +354,7 @@ def swap(vault, session, label, replacement=None, note=""):
         print(f"question_drain: Q{out_q} is not in sitting #{session}'s slice "
               f"({', '.join('Q' + q for q in pend['offered'])}).", file=sys.stderr)
         return 1
-    done = {h["q"] for h in state["history"] if h.get("session") == session}
+    done = {h["q"] for h in live_rows(state["history"]) if h.get("session") == session}
     if out_q in done:
         print(f"question_drain: Q{out_q} is already recorded for sitting #{session}; "
               "a swap is for a question that was NOT worked.", file=sys.stderr)
@@ -373,7 +407,7 @@ def check(vault, session, today=None):
     if unrec:
         return 1, (f"slice drawn but {', '.join('Q' + q for q in unrec)} unrecorded "
                    "(record each: resolved / advanced / blocked / untouched)")
-    mine = [h for h in state["history"] if h.get("session") == session]
+    mine = [h for h in live_rows(state["history"]) if h.get("session") == session]
     tally = {o: sum(h["outcome"] == o for h in mine) for o in OUTCOMES + (SWAPPED,)}
     raised = sum(1 for _r, _c, s in heading_dates(vault).values() if s == session)
     closed_today = sum(1 for _r, c, _s in heading_dates(vault).values() if c == today)
@@ -425,6 +459,10 @@ def main(argv=None):
     ap.add_argument("--record", metavar="QLABEL")
     ap.add_argument("--outcome", choices=OUTCOMES)
     ap.add_argument("--note", default="")
+    ap.add_argument("--supersede", action="store_true",
+                    help="this --record CORRECTS an outcome already recorded for this "
+                         "sitting: the prior row is marked superseded (kept, never "
+                         "deleted) so the slice tally counts the question once")
     ap.add_argument("--swap", metavar="QLABEL",
                     help="replace this drawn, unworked question in the pending slice")
     ap.add_argument("--with", dest="with_q", metavar="QLABEL",
@@ -446,7 +484,8 @@ def main(argv=None):
     if a.record:
         if not a.outcome:
             ap.error("--record needs --outcome")
-        return record(vault, a.session, a.record, a.outcome, a.note)
+        return record(vault, a.session, a.record, a.outcome, a.note,
+                      supersede=a.supersede)
     if a.swap:
         return swap(vault, a.session, a.swap, a.with_q, a.note)
     if a.with_q:

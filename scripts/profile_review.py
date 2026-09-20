@@ -826,7 +826,21 @@ def resolve_person_key(vault, person_id, candidates=None):
     return person_id
 
 
-def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), today=None):
+def live_rows(history):
+    """History rows that still COUNT — not marked superseded by a later correction.
+
+    The store is APPEND-ONLY (same discipline as log_session.py and question_store.py):
+    a wrong outcome is never deleted, it is marked `superseded: true` and the correcting
+    row appended after it. ⚠ In THIS store the append is not the only double-count —
+    `state["arms"]` is an incrementing counter, so a naive re-record inflates the arm's
+    polled/hits totals and therefore its hit-rate, which DOES feed the draw. `--supersede`
+    rolls the superseded row back out of the arm before applying the new one.
+    """
+    return [h for h in history if not h.get("superseded")]
+
+
+def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), today=None,
+           supersede=False):
     """Record ONE polled entry's outcome.
 
     ** REWARD IS SUBSTANTIVE. ** A hit is a source we do not cite, a relationship
@@ -844,6 +858,31 @@ def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), tod
     if outcome not in ("hit", "miss"):
         raise SystemExit("profile_review: --outcome must be 'hit' or 'miss'")
     person_id = resolve_person_key(vault, person_id)
+    # A repeat WITHIN THE SAME DAY is a correction, not a fresh poll; across days it is
+    # ordinary rotation and must pass through untouched.
+    prior = [h for h in live_rows(state["history"])
+             if h.get("id") == person_id and h.get("date") == today.isoformat()]
+    if supersede and not prior:
+        raise SystemExit(f"profile_review: --supersede given but {person_id} has no live "
+                         f"outcome recorded today ({today.isoformat()}); record it normally.")
+    if prior and not supersede:
+        raise SystemExit(
+            f"profile_review: {person_id} is ALREADY recorded today as "
+            f"'{prior[-1]['outcome']}'. A second row would inflate arm "
+            f"{prior[-1].get('arm') or 'UNASSIGNED'}'s polled/hits and so its hit-rate, "
+            "which feeds the draw. Pass --supersede to correct it.")
+    if supersede:
+        old = prior[-1]
+        for h in reversed(state["history"]):
+            if h is old:
+                h["superseded"] = True
+                h["superseded_on"] = today.isoformat()
+                break
+        oa = state["arms"].get(old.get("arm") or "UNASSIGNED")
+        if oa:
+            oa["polled"] = max(0, oa.get("polled", 0) - 1)
+            if old.get("outcome") == "hit":
+                oa["hits"] = max(0, oa.get("hits", 0) - 1)
     e = state["entries"].setdefault(person_id, {})
     e["last_polled"] = today.isoformat()
     e["outcome"] = outcome
@@ -888,6 +927,11 @@ def main():
     ap.add_argument("--heartbeat", action="store_true", help="SessionStart status line.")
     ap.add_argument("--record", metavar="VAULT_ID", help="Record one polled entry.")
     ap.add_argument("--outcome", choices=("hit", "miss"), help="With --record.")
+    ap.add_argument("--supersede", action="store_true",
+                    help="this --record CORRECTS an outcome already recorded TODAY for this "
+                         "person: the prior row is marked superseded (kept, never deleted) and "
+                         "rolled back out of its arm's polled/hits, so the hit-rate that feeds "
+                         "the draw counts the poll once")
     ap.add_argument("--arm", help="With --record: the arm it was drawn from.")
     ap.add_argument("--note", help="With --record: what was found (or not).")
     ap.add_argument("--probed", default="", help="With --record: platforms probed, "
@@ -948,7 +992,8 @@ def main():
             raise SystemExit("profile_review: --record needs --outcome hit|miss")
         probed = [p for p in args.probed.split(",") if p.strip()]
         record(vault, state, args.record, args.outcome, arm=args.arm,
-               note=args.note, probed=probed, today=today)
+               note=args.note, probed=probed, today=today,
+               supersede=args.supersede)
         path = save_state(vault, state)
         print(f"recorded {args.record}: {args.outcome}"
               + (f" (arm {args.arm})" if args.arm else "")
