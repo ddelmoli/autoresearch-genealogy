@@ -33,26 +33,29 @@ AUTORESEARCH_VAULT="[VAULT_PATH]".
 0. WHAT IS ALREADY RECORDED? ALWAYS PASS --session <SESSION NUMBER> (phase 1
    established it). The close command then TELLS you whether this is a first close
    or a re-close, from the `last_close` stamp, instead of asking you to remember —
-   and it REFUSES --lane/--outcome and --log on a re-close rather than letting them
-   double-count. Each iteration recorded its own outcome in phase 2, and phase 3
+   and on a re-close it REFUSES --lane/--outcome (a second bandit observation) while
+   letting --log/--summary REPLACE the sitting's own Research_Log row. Each iteration recorded its own outcome in phase 2, and phase 3
    reconciled them. So:
    - NORMALLY, RUN THE CLOSE WITHOUT --lane/--outcome. Passing them records ONE
      MORE observation on top of the per-iteration ones, and afterwards it is
      indistinguishable from a real session.
    - Pass --lane/--outcome ONLY if an iteration was worked and never recorded
      (phase 3 step 1 finds this), and then only for that one iteration.
-   - IF THE COMMAND REPORTS A RE-CLOSE (the sitting was closed, then extended): the
-     extra work went through 22-research-iterations and recorded itself, so
-     --lane/--outcome and --log are refused, by design. One sitting is ONE bandit
-     observation and ONE Research_Log row. Instead correct the now-stale row and any stale bandit
-     note IN PLACE with a targeted replacement command (sed or python -c) rather
-     than reading those files into context, and REWRITE the close block to cover
-     the whole sitting, not just the part before the first close.
+   - IF THE COMMAND REPORTS A RE-CLOSE (the sitting was closed, then extended — a
+     normal shape, e.g. close then cleanup): the extra work went through
+     22-research-iterations and recorded itself, so --lane/--outcome is refused, by
+     design. One sitting is ONE bandit observation and ONE Research_Log row.
+     ⭐ **Pass --log and --summary again with a summary covering the WHOLE sitting**:
+     on a re-close they REPLACE the sitting's own row (log_session.py --replace,
+     matched on the log link, original date kept) instead of adding a second one.
+     REWRITE the close block to cover the whole sitting too. ⛔ Do not hand-edit
+     Research_Log.md or sed it — the guard blocks in-place stream edits on vault
+     Markdown, and --replace is the sanctioned path (added 20 SEP 2026).
 
 1. RUN THE CLOSE COMMAND, ONCE per sitting, with flags matching what actually
    happened:
      python3 scripts/session_close.py --session <SESSION NUMBER> \
-       --log logs/<today>-<slug> --summary "<one line>"   # refused on a re-close
+       --log logs/<today>-<slug> --summary "<one line>"   # on a re-close: REPLACES the row
        [--lane <LANE> --outcome <hit|miss> --note "<one line>"]  # only if unrecorded
        [--rotation-done] [--apply-archive] --next-plan
    - --rotation-done ONLY if the profile-review slice was fully polled AND every
@@ -153,9 +156,9 @@ sitting; the vault pre-commit hook output READ, not merely exited.
   `pending`, so a plan run before the close is wiped by it. `--next-plan` exists
   so this cannot be got wrong by hand.
 - **A one-line `--note` or `--summary` goes stale the moment a sitting
-  continues.** On a re-close, correct it in place rather than adding a second row
-  or leaving a false one standing, and never read `Research_Log.md` into context
-  to do it.
+  continues.** On a re-close, re-run the close with a whole-sitting `--summary`: it
+  replaces the row in place rather than adding a second one or leaving a false one
+  standing, and never reads `Research_Log.md` into context.
 - `--rotation-done` only when the rotation slice was actually polled and each
   entry recorded; resetting the clock on unpolled work lies to the next session.
   Leaving an entry's `last_polled` unset is better than recording a miss for an
