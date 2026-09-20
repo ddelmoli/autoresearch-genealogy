@@ -710,3 +710,41 @@ before any gate measures it.
 **The hypothesis discipline itself cannot be enforced, only followed** — nothing can verify from
 outside that an observation was actually made. That is why these narratives are kept: they change
 the prior a fresh session starts with, which is the only thing that survives iteration nine.
+
+## A transcription is a finding aid, not the record (operator ruling, 20 SEP 2026)
+
+**The ruling, in the operator's words:** *"If there's one lesson I've learned it's that
+transcriptions are good for indexing and searching, but are often wrong — if I feel confident
+that the record is correct, I should read it directly."*
+
+**The incident that produced it.** A colonial will of 1688 had been read a month earlier through
+a provider's OCR full-text transcription — **5,952 characters, read end to end, in good faith** —
+and the session enumerated the children named in it. Reading the **register image** of the same
+will found **four legatees the transcription did not contain**: four grandsons, all of one
+surname, each left forty shillings.
+
+**The cost was not a missing fact. It was a manufactured question.** Because those four were
+absent from the transcript, the vault recorded that a daughter of the testator was *"in the book,
+NOT in the will"* and opened a numbered discrepancy question about her. She had been in the will
+all along, represented by her sons — the same mechanism the question had already accepted for
+another predeceased daughter on the very same page. **The register carried a research question
+for a month whose entire content was an OCR omission**, and the reasoning that built it was sound
+at every step except the surface it stood on.
+
+⭐ **Three details make the general rule.**
+1. **Reading the transcript IN FULL did not help.** The failure mode is silent omission, not
+   truncation, so completeness of reading is no protection.
+2. **The wrong conclusion was a NEGATIVE.** "X is not named here" is the claim a transcription
+   cannot support, and it is the one that propagates: a missing name and an absent name are
+   indistinguishable downstream.
+3. **The same document surfaced under two image locators one character apart** (`…RYK6` /
+   `…RYKX`), which is the ordinary shape of provider personas — they are **one record with two
+   locators**, and a session skimming for new locators will count them twice.
+
+⚠ **The corollary for finding aids generally.** The same sitting refuted a route this vault had
+closed TWICE: an archive's docket index had been withdrawn from a scan host, and two sessions
+concluded from that that the RECORDS needed an in-person visit. The film of the record series was
+online the whole time. The lesson the vault had already written for itself, one paragraph away on
+the same entry, was **"a closed FINDING AID is not a closed DOCUMENT"** — and it is the same
+confusion as the transcript one, running the other direction: **an index tells you about the
+index.**
