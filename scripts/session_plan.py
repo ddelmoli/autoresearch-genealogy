@@ -1480,12 +1480,54 @@ def resolve_lane_target(vault, cfg, override=None, lane=None):
         pct, src = float(override), "session-override"
     if pct <= 0:
         raise SystemExit("session_plan: lane target percent must be > 0")
+    pool = lane_pool_size(vault, lane)
+    return (max(1, round(pool * pct / 100.0)) if pool else 0), pct, src
+
+
+# The lanes whose UNIT IS THE PROFILE-REVIEW SLICE, and which must therefore be
+# floored against the pool that slice draws from. See lane_pool_size.
+SLICE_SIZED_LANES = ("ROTATE",)
+
+
+def lane_pool_size(vault, lane=None):
+    """How many people a lane's floor is a percentage OF.
+
+    ** THE POOL IS PER-LANE BECAUSE ROTATE'S UNIT IS SOMEONE ELSE'S SLICE
+    (20 SEP 2026). ** EXPAND and IMPROVE are floored against every person record,
+    which is right: either lane may draw anyone. ROTATE cannot. Its unit is one
+    entry POLLED and RECORDED by `profile_review.py`, and that loop refuses to
+    draw living/unknown people at all, so a floor sized off the full record count
+    is a floor the slice can never meet by working — only by running dry.
+
+    ⚠ IT HAD ALREADY FIRED, which is why this is a fix and not a tidy-up. The
+    17 SEP 2026 per-lane ruling set ROTATE to 1.5% precisely so that it would
+    track the slice (`.maintenance.json`: "ROTATE keeps 1.5% because its unit is
+    the profile-review slice, which is sized by profile_review.sample_percent").
+    The two agreed while both pools rounded the same way and came apart the moment
+    the vault crossed 1,700 records: measured at the #209 close, 1.5% of 1,709
+    records = 26 while 1.5% of the 1,694-person slice pool = 25. The 15-person gap
+    is exactly the living and unknown people. Session #209's slice polled all 25
+    it could and still stood one short of its own floor.
+
+    ⛔ Do NOT "fix" this by rounding differently or by nudging the rate: both
+    scripts round the same way and share the rate ON PURPOSE. The pool was the
+    only thing that differed, and the divergence recurs unpredictably as the vault
+    grows, whenever 1.5% of the two pools falls either side of a half.
+
+    Falls back to the record count if the profile-review builder cannot run, so a
+    broken import costs a slightly-too-high floor rather than no plan at all.
+    """
+    if lane in SLICE_SIZED_LANES:
+        try:
+            import profile_review as _pr
+            return len(_pr.build_candidates(vault))
+        except Exception:
+            pass
     try:
         import gen_person_index as _g
-        pool = sum(1 for _ in _g.parse_narrative())
+        return sum(1 for _ in _g.parse_narrative())
     except Exception:
-        pool = 0
-    return (max(1, round(pool * pct / 100.0)) if pool else 0), pct, src
+        return 0
 
 
 def target_and_dryness(lane_target, lane_size):
