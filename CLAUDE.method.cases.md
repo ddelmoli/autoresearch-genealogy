@@ -748,3 +748,21 @@ online the whole time. The lesson the vault had already written for itself, one 
 the same entry, was **"a closed FINDING AID is not a closed DOCUMENT"** — and it is the same
 confusion as the transcript one, running the other direction: **an index tells you about the
 index.**
+
+### Corollary, same sitting: the container's metadata is not the record either
+
+Eleven children's births of a **Massachusetts** family, each naming the father, sat on his
+FamilySearch profile under a collection titled for a **different state** — and dated **before that
+collection's own stated start year**. Both signals pointed the same way and both were wrong: each
+record's own person-details panel gave the correct town and county. The records had been misfiled
+under the collection label.
+
+⚠ **The sitting very nearly acted on the label.** It had already flagged the row as "anomalous — do
+not credit", which was the right instinct about the SIGNAL and the wrong conclusion about the
+RECORDS. Judged on the title, eleven records are thrown away; and the natural next step — queueing a
+write-back to **detach** them as mis-attached — would have pushed the error outward onto a shared
+public tree, where it is other people's problem too.
+
+⭐ So the family is three: **a result card's date range is a waypoint label; a transcription is not
+the record; a collection title is not the record.** In each case the cheap surface is metadata about
+a container, and the record's own fields are one click further in.
