@@ -9,7 +9,7 @@ in order, reports each as PASS / DUE / SKIP / FAIL, and never silently omits one
 
 STEPS, IN ORDER
   0. close#     with --session N, report whether this is a FIRST CLOSE or a RE-CLOSE,
-                and FAIL if a re-close passes --lane/--outcome or --log. ** Derived,
+                and FAIL if a re-close passes --lane/--outcome. ** Derived,
                 not remembered (31 JUL 2026): ** the close prompt used to ask the agent
                 whether it had already closed this sitting, which a resumed or cold
                 agent cannot answer -- `history` carries a date and a lane, and two
@@ -125,15 +125,16 @@ def main(argv=None):
         report.append(("close#", "INFO",
                        f"session #{a.session}" + (
                            f" — RE-CLOSE (already closed {(state.get('last_close') or {}).get('date')}): "
-                           "record no new observation, add no second Research_Log row, "
+                           "record no new observation; --log/--summary REPLACES this sitting's own "
+                           "Research_Log row (never adds a second); "
                            "rewrite the close block to cover the whole sitting"
                            if reclose else " — first close")))
-        if reclose and (a.lane or a.log):
+        if reclose and a.lane:
             report.append(("guard", "FAIL",
-                           "this sitting is already closed: --lane/--outcome and --log "
-                           "are REFUSED below (they would double-count the bandit and "
-                           "add a second Research_Log row). Correct the existing note "
-                           "and row in place instead."))
+                           "this sitting is already closed: --lane/--outcome is REFUSED "
+                           "below (it would be a SECOND bandit observation for one "
+                           "sitting). A re-close's --log/--summary is allowed: it "
+                           "REPLACES this sitting's own Research_Log row."))
             failed = True
 
     # 1. Plan outcome.
@@ -180,11 +181,18 @@ def main(argv=None):
                        "no --session; the question slice cannot be checked (pass --session N)"))
 
     # 3. Research_Log index row.
-    if reclose and (a.log or a.summary):
-        report.append(("log", "BLOCK",
-                       "refused: session already closed, so this would be a SECOND "
-                       "Research_Log row for one sitting; correct the existing row in "
-                       "place with a targeted replacement"))
+    if reclose and a.log and a.summary:
+        # ** RE-CLOSE CORRECTS ITS OWN ROW (20 SEP 2026). ** This used to BLOCK with
+        # "correct the existing row in place with a targeted replacement" while offering
+        # no tool to do it -- and the Edit tool is forbidden on this file -- so a sitting
+        # extended after its first close kept a permanently wrong index row.
+        # log_session.py --replace matches on the LOG-LINK cell only and refuses 0 or 2+
+        # matches, so it can only ever touch the sitting that --log names.
+        ok, out = run("log_session.py", "--log", a.log, "--summary", a.summary,
+                      "--replace", vault=vault)
+        report.append(("log", "PASS" if ok else "FAIL",
+                       ("RE-CLOSE: replaced this sitting's own row. " if ok else "") + out))
+        failed |= not ok
     elif a.log and a.summary:
         ok, out = run("log_session.py", "--log", a.log, "--summary", a.summary, vault=vault)
         report.append(("log", "PASS" if ok else "FAIL", out))
