@@ -1070,6 +1070,62 @@ def set_meta_key(line, key, value):
         line[m.start(1) + len(m.group(1)):]
 
 
+def remove_meta_key(line, key):
+    """DELETE `key` from a `- meta:` line entirely. Returns the new line.
+
+    ** WHY THIS EXISTS, AND IT IS A MIGRATION BLOCKER (20 SEP 2026, session #212). **
+    `set_meta_key` can only WRITE a value; passing None or "" writes `key: ` with an
+    empty value rather than removing the key, and that empty form is itself pinned
+    behaviour (the readers treat it as absent). So there was no supported way to
+    RETRACT a key — and hand-splicing a meta block is forbidden by the same rule that
+    mandates the writer.
+
+    That gap has a live cost. A `fs_probed` stamp asserts "the attached-source set was
+    READ and holds no records". The 16 SEP 2026 limb-(g) ruling made a relative's
+    record that NAMES the person count, so every such stamp written before that date
+    may now be FALSE — measured that day at **36 SOURCE_GAP rows**, and `fs_probed` is
+    itself what suppresses those rows from the lane that would re-examine them
+    (Open_Questions Q400). Retracting the key is the correcting write, and it had no
+    tool.
+
+    Semantics, deliberately narrow:
+      * removes EVERY occurrence of the key (a pre-existing duplicate collapses away,
+        matching `set_meta_key`'s behaviour on the write side);
+      * absent key -> the line is returned UNCHANGED, so the call is idempotent;
+      * a non-meta line, or the legacy `;` form, is returned UNCHANGED — same guard as
+        `set_meta_key`, which deliberately does not invent a flow mapping;
+      * ⛔ **`id` cannot be removed** and the attempt RAISES. It is the vault's primary
+        key, REQUIRED and never hand-edited, and dropping it trips the HARD MISSING_ID
+        gate. A silent refusal would hide the bug; a loud one cannot.
+
+    ⚠ Removing a key is a CLAIM that the thing it asserted is no longer true. Say so in
+    the entry prose as well — the meta block records state, the narrative records why.
+    """
+    if str(key).strip().lower() == "id":
+        raise ValueError(
+            "person_store.remove_meta_key: refusing to remove `id` — it is the vault's "
+            "primary key and its absence is a HARD gate (MISSING_ID). If an entry is "
+            "being retired, delete the ENTRY, not its id.")
+    m = _META.match(line)
+    if not m:
+        return line
+    raw = m.group(1).strip()
+    if not raw.startswith("{"):
+        return line                       # legacy `;` form: not ours to rewrite
+    out, dropped = [], False
+    for part in _flow_split(raw):
+        k, sep, _ = part.partition(":")
+        if sep and k.strip().lower() == str(key).strip().lower():
+            dropped = True
+            continue
+        out.append(part.strip())
+    if not dropped:
+        return line
+    return line[:m.start(1)] + "{" + ", ".join(out) + "}" + \
+        line[m.start(1) + len(m.group(1)):]
+
+
+
 def _flow_quote(v):
     """Single-quote a flow-mapping value when the vault's convention wants it.
 
