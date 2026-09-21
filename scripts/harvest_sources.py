@@ -850,6 +850,48 @@ def is_reference_work(title: str) -> bool:
     return reference_work_limb(title) is not None
 
 
+# A tree host may serve, as an attached "source", something that is not a document:
+# a contributor-built summary of DNA matches, generated from the very tree it hangs
+# on. Operator ruling 20 SEP 2026 (deferred 62) puts the class OFF-METRIC rather
+# than in an exclusion limb — the same treatment as WikiTree corroboration, because
+# DNA is real relationship evidence that simply is not a record.
+#
+# ⚠ THE MARKERS DELIBERATELY UNDER-CATCH, for the same reason `is_book_collection`
+# does: a false positive moves a REAL record off the census, which is the expensive
+# direction. Each marker is a two-word phrase, never a bare `dna` — a bare token
+# would match the many ordinary collection titles that merely mention it.
+ANALYSIS_ARTIFACT_MARKERS = (
+    "dna connections",
+    "dna match",        # covers "DNA Matches" as a substring
+    "dna story",
+    "dna test",
+)
+
+
+def is_analysis_artifact(title: str) -> bool:
+    """Does this attachment title name a contributor-built ANALYSIS artifact?
+
+    True means OFF-METRIC, not excluded-and-forgotten: capture what the artifact
+    asserts in a labelled `- **DNA evidence** (…; off the FS-ARK coverage metric)`
+    bullet with a `~`-negated locator. It corroborates an edge; it never moves the
+    census, and it can never alone support `profile_status: complete`.
+
+    ⚠⚠ SCREEN ON THE TITLE, NEVER ON THE LOCATOR'S SHAPE. Such an artifact wears an
+    internal source id rather than an ARK, and the measurement behind this rule is
+    that the bare id does not count while the SAME id written in the prescribed
+    `host:locator` grammar does. Spelling a citation correctly must not be what
+    breaks the census, so the class needs a policy screen and not a shape accident —
+    the coupling that hid digitised books wearing image-ARK locators for fourteen
+    months.
+
+    ⚠ `False` means "not this class"; it does NOT mean "this is a record". Screen a
+    title with `is_book_collection`, `is_memorial_collection`, `is_obituary_collection`
+    and `reference_work_limb` too.
+    """
+    t = (title or "").casefold()
+    return any(m in t for m in ANALYSIS_ARTIFACT_MARKERS)
+
+
 def extract_arks(text: str) -> set:
     """Extract all source-record-IDs from vault narrative text, normalized.
 
