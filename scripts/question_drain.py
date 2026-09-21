@@ -12,7 +12,7 @@ an event that does not happen is not a rule.
 one per-sitting duty the loop reliably performs, because a script draws it, the banner
 reports it and the close command checks it. This copies all three:
 
-  * a DRAW of `per_session` questions (default 5; raised from 3 by operator ruling 19 SEP 2026), registered for the sitting;
+  * a DRAW of `per_session` questions (default 10; raised from 3 by operator ruling 19 SEP 2026 and to 10 on 21 SEP 2026), registered for the sitting;
   * a RECORD per drawn question with one of four outcomes;
   * a CHECK the close command runs (FAIL if the slice was not worked);
   * a HEARTBEAT line with the register's NET FLOW, so growth is visible every session.
@@ -64,7 +64,7 @@ Usage:
     python3 scripts/question_drain.py --net [--days 30]        # raised vs closed by week
 
 Config (optional) in .maintenance.json:
-    "question_drain": {"per_session": 5, "blocked_cooldown": 3, "swap_cooldown": 3,
+    "question_drain": {"per_session": 10, "blocked_cooldown": 3, "swap_cooldown": 3,
                        "blocked_routes": []}
 
 Exit codes for --check: 0 PASS, 1 FAIL (slice missing or unrecorded), 2 WARN (the sitting
@@ -88,7 +88,7 @@ MAINTENANCE_FILE = ".maintenance.json"
 CONFIG_KEY = "question_drain"
 OUTCOMES = ("resolved", "advanced", "blocked", "untouched")
 SWAPPED = "swapped"    # written only by --swap, never a --record outcome
-DEFAULTS = {"per_session": 5, "blocked_cooldown": 3, "swap_cooldown": 3, "blocked_routes": []}
+DEFAULTS = {"per_session": 10, "blocked_cooldown": 3, "swap_cooldown": 3, "blocked_routes": []}
 
 MONTHS = {m: i for i, m in enumerate(
     "JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split(), 1)}
