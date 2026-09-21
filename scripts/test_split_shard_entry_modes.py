@@ -11,6 +11,8 @@ WHAT IS BEING DEFENDED.
      free prose line BETWEEN entries has nothing to travel with; it used to vanish
      silently while the id-conservation check (which counts ids, not prose) passed.
      Now it is returned and the caller refuses to write.
+  3. A MULTI-LINE section intro is placed whole (it used to place only its first line
+     and abort on the rest).
 
 Placeholder names only.
 """
@@ -91,6 +93,16 @@ class ProseIsNeverLost(unittest.TestCase):
         src, _, _, _, dropped = ss.cluster_split(text, ss.meta_gen_matcher(0, 999), "S.md", "D.md", "t")
         self.assertEqual(dropped, [])
         self.assertIn(self.INTRO, src)
+
+    def test_multi_line_intro_placed_whole(self):
+        # A wrapped intro paragraph: every line after the first used to be reported
+        # as unplaceable, aborting the split.
+        intro = "*Minted from a sweep; both were named on\ntheir daughter's entry and had no\nrecords to point at.*"
+        text = FIXTURE.replace("(migrated from Person_Index)\n", "(migrated from Person_Index)\n\n" + intro + "\n")
+        src, dst, _, _, dropped = ss.cluster_split(text, ss.meta_gen_matcher(31, 32), "S.md", "D.md", "t")
+        self.assertEqual(dropped, [])
+        self.assertIn(intro, src)
+        self.assertNotIn("records to point at", dst)
 
     def test_prose_after_an_entry_travels_with_it(self):
         note = "> A note about the Gen 31 band."

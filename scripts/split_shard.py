@@ -182,6 +182,7 @@ def cluster_split(text, match, source_name, dest_name, ts):
     pending = {"src": None, "dst": None}   # a heading awaiting its first entry per stream
     mode = "gen"                            # 'gen' | 'collateral' | 'prose'
     cur_heading = None
+    in_intro = False                        # between a section heading and its first entry
 
     hdr_name = _hdr_name
 
@@ -190,15 +191,16 @@ def cluster_split(text, match, source_name, dest_name, ts):
             src_out.append(txt)
         elif kind == "heading":
             if GEN_H.match(txt):
-                mode, cur_heading = "gen", txt
+                mode, cur_heading, in_intro = "gen", txt, True
                 pending["src"] = pending["dst"] = txt
             elif COLLAT_H.match(txt):
-                mode, cur_heading = "collateral", txt
+                mode, cur_heading, in_intro = "collateral", txt, True
                 pending["src"] = pending["dst"] = txt
             else:  # other '##' prose section (Research path, Status)
-                mode, cur_heading = "prose", txt
+                mode, cur_heading, in_intro = "prose", txt, False
                 src_out.append(txt)
         elif kind == "entry":
+            in_intro = False
             if mode == "prose" or not has_meta:
                 # a non-person bold paragraph (e.g. **FamilySearch status:**) or an
                 # entry inside a prose section → keep with source.
@@ -215,13 +217,18 @@ def cluster_split(text, match, source_name, dest_name, ts):
             if mode == "prose":
                 src_out.append(txt)
             elif txt.strip() and txt.strip() != "---":
-                if pending["src"] is not None and pending["src"] == cur_heading:
+                if in_intro:
                     # a section INTRO (prose before the section's first entry): it
                     # describes the section, so it stays with the source's copy of
-                    # the heading, which is emitted now rather than lazily.
-                    src_out.append("\n" + pending["src"])
-                    pending["src"] = None
-                    src_out.append("\n" + txt)
+                    # the heading, which is emitted now rather than lazily. EVERY line
+                    # of it: a multi-line intro paragraph used to place its first line
+                    # and report the rest as unplaceable.
+                    if pending["src"] is not None:
+                        src_out.append("\n" + pending["src"])
+                        pending["src"] = None
+                        src_out.append("\n" + txt)
+                    else:
+                        src_out.append(txt)
                 elif not moved and not kept:
                     src_out.append(txt)
                 else:
