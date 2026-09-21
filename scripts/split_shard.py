@@ -22,6 +22,22 @@ Status, Collateral stubs, etc.) and out-of-range generations stay in the source;
 move those by hand if needed. The pre-commit hook still runs the full integrity
 gate afterward.
 
+Entry-level modes (for a shard whose entries sit under ONE section, e.g. a
+gen-sorted `## Collateral stub entries` appendix with no `### Generation N`
+headings, where the block mode above finds nothing to carve):
+
+  * `--surnames A,B`  moves each person entry whose HEADER whole-word-matches;
+  * `--by-meta-gen` with `--gen-min/--gen-max` moves each person entry whose
+    `- meta:` `generation` lies in range (the meta field is the machine truth;
+    an entry with no generation stays in the source).
+
+  ⚠ Entry mode rebuilds each section from its entries. A prose line AFTER an
+  entry is part of that entry's block and travels with it; a section INTRO
+  (prose between a heading and its first entry) stays with the source's copy of
+  the heading. Intros used to be DROPPED SILENTLY (the id-conservation check
+  counts ids, not prose); any line the rebuild still cannot place now ABORTS
+  the split and is listed. Blank lines and `---` rules are normalised away.
+
 Usage:
   python3 scripts/split_shard.py --source Family_Tree_Maternal.md \
       --gen-min 5 --gen-max 6 --dest Family_Tree_Maternal_Deep.md \
@@ -126,25 +142,48 @@ def _blockify(lines):
     return blocks
 
 
-def cluster_split(text, surnames, source_name, dest_name, ts):
+META_GEN_RE = re.compile(r"^\s*-\s*meta:\s*\{[^\n]*?\bgeneration:\s*(\d+)", re.MULTILINE)
+
+
+def surname_matcher(surnames):
+    """Route an entry whose HEADER whole-word-matches one of `surnames`."""
+    sur_re = re.compile(r"\b(" + "|".join(re.escape(s) for s in surnames) + r")\b")
+    return lambda entry_txt: bool(sur_re.search(_hdr_name(entry_txt)))
+
+
+def meta_gen_matcher(gen_min, gen_max):
+    """Route an entry whose FIRST `- meta:` line carries generation in range."""
+    def match(entry_txt):
+        m = META_GEN_RE.search(entry_txt)
+        return bool(m) and gen_min <= int(m.group(1)) <= gen_max
+    return match
+
+
+def _hdr_name(entry_txt):
+    m = re.match(r"^\*\*(.+?)\*\*", entry_txt)
+    return (m.group(1) if m else entry_txt[:40]).strip()
+
+
+def cluster_split(text, match, source_name, dest_name, ts):
     """Entry-level split: route each PERSON entry (a '**'-header block containing a
-    '- meta:') to the dest if its header whole-word-matches a target surname, else
-    keep it in source. Generation / Collateral headings are emitted lazily to each
+    '- meta:') to the dest if `match(entry_text)` is true, else keep it in source.
+    (`match` may also be a list of surnames, the original calling form.) Generation / Collateral headings are emitted lazily to each
     stream (so emptied headings vanish and dest headings are reconstructed). Prose
     '##' sections (Research path / Status) stay in source. Returns
-    (new_src, dest_body, moved, kept)."""
-    sur_re = re.compile(r"\b(" + "|".join(re.escape(s) for s in surnames) + r")\b")
+    (new_src, dest_body, moved, kept, dropped) -- `dropped` lists the non-blank,
+    non-rule prose lines the rebuild could not place; callers must refuse to
+    write when it is non-empty."""
+    if not callable(match):
+        match = surname_matcher(match)
     blocks = _blockify(text.splitlines(keepends=True))
 
     src_out, dst_out = [], []
-    moved, kept = [], []
+    moved, kept, dropped = [], [], []
     pending = {"src": None, "dst": None}   # a heading awaiting its first entry per stream
     mode = "gen"                            # 'gen' | 'collateral' | 'prose'
     cur_heading = None
 
-    def hdr_name(entry_txt):
-        m = re.match(r"^\*\*(.+?)\*\*", entry_txt)
-        return (m.group(1) if m else entry_txt[:40]).strip()
+    hdr_name = _hdr_name
 
     for kind, txt, has_meta in blocks:
         if kind == "head":
@@ -165,7 +204,7 @@ def cluster_split(text, surnames, source_name, dest_name, ts):
                 # entry inside a prose section → keep with source.
                 src_out.append(txt)
                 continue
-            to_dst = bool(sur_re.search(hdr_name(txt)))
+            to_dst = bool(match(txt))
             stream, out = ("dst", dst_out) if to_dst else ("src", src_out)
             if pending[stream] is not None and mode in ("gen", "collateral"):
                 out.append("\n" + pending[stream])
@@ -175,8 +214,20 @@ def cluster_split(text, surnames, source_name, dest_name, ts):
         else:  # prose line
             if mode == "prose":
                 src_out.append(txt)
-            # else: inter-entry blanks/separators in gen/collateral — normalized away
-    return "".join(src_out), "".join(dst_out), moved, kept
+            elif txt.strip() and txt.strip() != "---":
+                if pending["src"] is not None and pending["src"] == cur_heading:
+                    # a section INTRO (prose before the section's first entry): it
+                    # describes the section, so it stays with the source's copy of
+                    # the heading, which is emitted now rather than lazily.
+                    src_out.append("\n" + pending["src"])
+                    pending["src"] = None
+                    src_out.append("\n" + txt)
+                elif not moved and not kept:
+                    src_out.append(txt)
+                else:
+                    dropped.append(txt.rstrip("\n"))
+            # blanks and '---' rules between entries are normalised away
+    return "".join(src_out), "".join(dst_out), moved, kept, dropped
 
 
 def gen_range_label(gens):
@@ -232,11 +283,17 @@ def update_manifest(master_text, dest_name, region, content, source_name):
 
 
 def _run_cluster(args, src, dest, text):
-    surnames = [s.strip() for s in args.surnames.split(",") if s.strip()]
     ts = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    new_src, dest_body, moved, kept = cluster_split(text, surnames, args.source, args.dest, ts)
+    if args.by_meta_gen:
+        match = meta_gen_matcher(args.gen_min, args.gen_max)
+        what = f"Gen {args.gen_min}-{args.gen_max}" if args.gen_min != args.gen_max else f"Gen {args.gen_min}"
+    else:
+        surnames = [s.strip() for s in args.surnames.split(",") if s.strip()]
+        match = surname_matcher(surnames)
+        what = "surnames " + ", ".join(surnames)
+    new_src, dest_body, moved, kept, dropped = cluster_split(text, match, args.source, args.dest, ts)
     if not moved:
-        print(f"No person entries match surnames {surnames} in {args.source}.")
+        print(f"No person entries match ({what}) in {args.source}.")
         return 0
 
     title = args.dest.replace("Family_Tree_", "").replace(".md", "").replace("_", " ")
@@ -245,11 +302,14 @@ def _run_cluster(args, src, dest, text):
           f"prior update: split from {args.source} {ts[:10]}\n---\n\n"
           f"# Family Tree: {title}\n\n"
           f"> Split from [[{Path(args.source).stem}]] on {ts[:10]} "
-          f"(this branch carved out by lineage to keep the source shard readable). "
-          f"The joining person + the other branch remain in [[{Path(args.source).stem}]].\n")
+          + (f"(the {what} entries carved out to keep the source shard readable). "
+             f"The other generations remain in [[{Path(args.source).stem}]].\n"
+             if args.by_meta_gen else
+             f"(this branch carved out by lineage to keep the source shard readable). "
+             f"The joining person + the other branch remain in [[{Path(args.source).stem}]].\n"))
     dest_text = fm + dest_body
     # cross-ref note into the source, right after its frontmatter+intro head
-    note = f"\n> **Maternal/other branch ({title}) moved to [[{dest.stem}]]** (split {ts[:10]}).\n"
+    note = f"\n> **{len(moved)} entries ({what}) moved to [[{dest.stem}]]** (split {ts[:10]}).\n"
     m = re.search(r"\n---\n", new_src)
     new_src = (new_src[:m.end()] + note + new_src[m.end():]) if m else note + new_src
 
@@ -267,6 +327,12 @@ def _run_cluster(args, src, dest, text):
     new_master, man_ok = update_manifest(master_text, args.dest, args.region, args.content, args.source)
     print(f"  manifest: {'will add File Index row for ' + dest.stem if man_ok else 'NO File/Region table — add by hand'}")
 
+    if dropped:
+        print(f"  ABORT: {len(dropped)} prose line(s) sit between entries and have no entry to "
+              "travel with; move or attach them by hand first. Nothing written:")
+        for d in dropped:
+            print(f"    | {d[:150]}")
+        return 2
     if not ok:
         print("  ABORT: meta-block conservation FAILED (ids lost/duplicated). Nothing written.")
         return 2
@@ -295,6 +361,10 @@ def main():
     ap.add_argument("--gen-max", type=int, help="generation-range mode: high bound")
     ap.add_argument("--surnames", help="entry-level mode: comma-separated surnames; "
                                        "move person entries whose header whole-word-matches one")
+    ap.add_argument("--by-meta-gen", action="store_true",
+                    help="entry-level mode: with --gen-min/--gen-max, move person entries "
+                         "whose meta generation is in range (for a shard with no "
+                         "'### Generation N' blocks)")
     ap.add_argument("--dest", required=True, help="new shard filename (in vault/)")
     ap.add_argument("--region", required=True, help="File Index Region column value")
     ap.add_argument("--content", required=True, help="File Index Content column value")
@@ -311,6 +381,11 @@ def main():
         return 1
 
     text = src.read_text(encoding="utf-8")
+    if args.by_meta_gen:
+        if args.surnames or args.gen_min is None or args.gen_max is None:
+            print("ERROR: --by-meta-gen needs --gen-min and --gen-max, and not --surnames.")
+            return 2
+        return _run_cluster(args, src, dest, text)
     if args.surnames:
         return _run_cluster(args, src, dest, text)
     if args.gen_min is None or args.gen_max is None:
