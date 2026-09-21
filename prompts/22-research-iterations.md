@@ -232,6 +232,15 @@ movement honestly.
      tie-break, and the staleness floor was doing all the real rotation.
    - Record the lane WORKED, never the lane drawn, when they differ.
    - Recording clears `pending`; the next iteration's plan run draws afresh.
+   - ! A WRONG OUTCOME IS CORRECTED WITH --supersede, never by recording again
+     and never by editing session_plan_snapshots.json:
+       python3 scripts/session_plan.py --record --lane <L> --outcome <right> \
+         --session <N> --supersede --note "<why the first was wrong>"
+     It marks the most recent row for that lane and sitting superseded (kept),
+     rolls it out of the arm, and appends the correction under the original's
+     date; it never consumes `pending`. A plain second --record is NOT refused
+     (N iterations of one lane in one sitting are N real rows), so without the
+     flag it would add a phantom observation.
 
 5. COMMIT what the iteration produced, one logical unit per commit, gates green
    each time, and APPEND TO THE SESSION LOG as findings land:

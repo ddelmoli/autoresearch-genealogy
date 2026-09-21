@@ -87,6 +87,13 @@ python3 scripts/session_plan.py --record --lane <L> --outcome hit|miss
 python3 scripts/session_close.py --log ... --summary ... --next-plan
 ```
 
+**A wrong outcome is CORRECTED, never re-recorded or hand-edited** (21 SEP 2026):
+`--record --lane <L> --outcome <right> --session N --supersede` marks the most recent
+row for that lane and sitting `superseded` (kept as the audit trail), rolls it out of the
+arm, and appends the correction with the original's date. A plain second `--record` is
+NOT refused, because several iterations of one lane in one sitting are normal, so it would
+silently add an observation: ask for the correction explicitly.
+
 **A hit is the lane target met, or the lane ran dry. Short of target is a MISS.** An
 arm that never loses carries no signal.
 

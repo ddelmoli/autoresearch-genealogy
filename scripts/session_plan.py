@@ -1585,6 +1585,18 @@ def arm_of(state, lane):
             "iterations": a.get("iterations", a.get("sessions", 0))}
 
 
+def live_rows(history):
+    """History rows that still COUNT: not marked superseded by a later correction.
+
+    ** THE STORE IS APPEND-ONLY (21 SEP 2026), same discipline as question_drain.py and
+    profile_review.py (commit 9305b91). ** A wrong outcome is never deleted: it is marked
+    `superseded: true` by `record(..., supersede=True)` and the correcting row is appended
+    after it. Every floor, window, cooldown and report reads history through here, so a
+    corrected observation counts ONCE while the original stays visible as the audit trail.
+    """
+    return [h for h in (history or []) if not h.get("superseded")]
+
+
 def since_epoch(state):
     """History the FLOORS are allowed to see: observations from the current rule epoch.
 
@@ -1605,7 +1617,7 @@ def since_epoch(state):
     `arms_reset.date` rather than replacing it, and an absent key means "no per-lane
     epoch", i.e. exactly the previous behaviour.
     """
-    hist = state.get("history", [])
+    hist = live_rows(state.get("history", []))
     epoch = (state.get("arms_reset") or {}).get("date")
     lane_epochs = state.get("lane_epochs") or {}
     out = []
@@ -1675,7 +1687,7 @@ def cooling(state, lane, row_id, cooldown=OFFER_COOLDOWN):
     stamp = ((state.get("offered") or {}).get(lane) or {}).get(row_id)
     if not stamp:
         return False, None
-    order = sittings_in_order(state.get("history") or [])
+    order = sittings_in_order(live_rows(state.get("history")))
     if stamp not in order:
         return False, None
     since = len(order) - 1 - order.index(stamp)
@@ -1895,7 +1907,7 @@ def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER)
 
 
 def record(state, lane, outcome, note="", session=None, today=None,
-           sourced=None, corroborated=None, verified=None):
+           sourced=None, corroborated=None, verified=None, supersede=False):
     """Record one iteration's outcome for `lane`.
 
     ** `sourced` / `corroborated` SPLIT THE IMPROVE UNIT (deferred 34, option 1,
@@ -1932,6 +1944,8 @@ def record(state, lane, outcome, note="", session=None, today=None,
         split = {"sourced": sourced or 0, "corroborated": corroborated or 0,
                  "verified": verified or 0}
     today = today or date.today().isoformat()
+    if supersede:
+        return _supersede(state, lane, outcome, note, session, today, split)
     cur = arm_of(state, lane)
     state.setdefault("arms", {})[lane] = {
         "wins": cur["wins"] + (1 if outcome == "hit" else 0),
@@ -1964,6 +1978,57 @@ def record(state, lane, outcome, note="", session=None, today=None,
     return state
 
 
+def _supersede(state, lane, outcome, note, session, today, split):
+    """CORRECT the most recent live observation for (lane, sitting) -- 21 SEP 2026.
+
+    Mirrors `--supersede` on question_drain.py / profile_review.py (9305b91), with three
+    differences the bandit forces, each pinned by scripts/test_session_plan_supersede.py:
+
+    * ** NO REFUSAL OF A PLAIN RE-RECORD. ** Those stores refuse a second row for the same
+      question / person in one sitting, because that key is unique. Here (lane, sitting)
+      is NOT: `Iterations: N` legitimately records N rows for one lane in one sitting, so
+      there is no narrower key to refuse on and a refusal would break the normal case.
+      A correction must therefore be asked for explicitly.
+    * ** THE CORRECTION INHERITS THE ORIGINAL'S `date` AND `session` ** (and records
+      `corrected_on`). It is the same observation, corrected -- so it falls in exactly
+      the epoch and the sitting the original did. Dating it today would leak a pre-reset
+      observation into the current epoch's floors.
+    * ** THE ARM MOVES ONLY IF THE ORIGINAL WAS COUNTED. ** `arms` is zeroed by a reset
+      (`set_lane_epoch`, `arms_reset`), so an original outside `since_epoch` is no longer
+      in the tally: rolling it back would drive the arm negative. Inside the epoch the old
+      contribution is removed and the new one applied; outside it the arm is untouched.
+    * ** `pending` IS NEVER CONSUMED ** and no cooldown is stamped: the original record
+      already consumed its draw, and a later draw registered since belongs to the NEXT
+      iteration, which a correction must not eat.
+    """
+    if session is None:
+        raise SystemExit("--supersede needs --session N: a correction is matched on "
+                         "(lane, sitting), and a row without a sitting cannot be matched")
+    hist = state.setdefault("history", [])
+    prior = next((h for h in reversed(hist)
+                  if h.get("lane") == lane and h.get("session") == session
+                  and not h.get("superseded")), None)
+    if prior is None:
+        raise SystemExit(f"--supersede given but lane {lane} has no live recorded outcome "
+                         f"for sitting #{session}; record it normally")
+    counted = any(h is prior for h in since_epoch(state))
+    prior["superseded"] = True
+    prior["superseded_on"] = today
+    if counted:
+        cur = arm_of(state, lane)
+        state.setdefault("arms", {})[lane] = {
+            "wins": max(0, cur["wins"] - (prior.get("outcome") == "hit")
+                        + (outcome == "hit")),
+            "iterations": cur["iterations"],
+        }
+    hist.append({"date": prior.get("date") or today, "lane": lane, "outcome": outcome,
+                 "session": session, "corrected_on": today,
+                 "corrects": prior.get("outcome"),
+                 **({"split": split} if split else {}),
+                 **({"note": note} if note else {})})
+    return state
+
+
 def last_improve_split(state):
     """The most recent IMPROVE record that carried a SOURCED/CORROBORATED split.
 
@@ -1973,7 +2038,7 @@ def last_improve_split(state):
     treated as zeroes, because "not reported" and "reported as none" are different
     facts and only the first should be silent.
     """
-    for h in reversed(state.get("history", []) or []):
+    for h in reversed(live_rows(state.get("history"))):
         if h.get("lane") == "IMPROVE" and h.get("split"):
             sp = h["split"]
             return {"date": h.get("date", "?"),
@@ -1989,7 +2054,7 @@ def heartbeat(state):
     """Cheap: reads state only, builds no lanes (the SessionStart hook budget is
     the whole point — the full plan is the session's FIRST COMMAND, not hook work)."""
     pend = state.get("pending")
-    hist = state.get("history", [])
+    hist = live_rows(state.get("history"))
     if pend:
         line = (f"PLAN: lane {pend.get('lane')} drawn {pend.get('date')} and NOT yet "
                 f"recorded — it is the NEXT iteration's lane, and that iteration "
@@ -2055,6 +2120,11 @@ def main(argv=None):
                          "lane's arm (prior kept in lane_resets) and retire its earlier "
                          "observations from the floors. Needs --reason.")
     ap.add_argument("--reason", default="", help="with --set-epoch: why the lane changed")
+    ap.add_argument("--supersede", action="store_true",
+                    help="with --record: CORRECT the most recent outcome already recorded "
+                         "for this --lane and --session. The prior row is marked "
+                         "superseded (kept, never deleted) and the arm tally is rolled "
+                         "back before the corrected outcome is applied")
     ap.add_argument("--session", type=int, metavar="N",
                     help="the SITTING this observation belongs to (the session number "
                          "21-session-start established). The bandit floors count "
@@ -2099,9 +2169,11 @@ def main(argv=None):
             raise SystemExit("--record needs --lane and --outcome")
         save_state(vault, record(state, a.lane.upper(), a.outcome, a.note, a.session,
                                  sourced=a.sourced, corroborated=a.corroborated,
-                                 verified=a.verified))
+                                 verified=a.verified, supersede=a.supersede))
         stamp = f" (sitting #{a.session})" if a.session is not None else ""
-        print(f"PLAN: recorded lane {a.lane.upper()} -> {a.outcome}{stamp}")
+        was = (f" (supersedes '{state['history'][-1].get('corrects')}')"
+               if a.supersede else "")
+        print(f"PLAN: recorded lane {a.lane.upper()} -> {a.outcome}{was}{stamp}")
         if a.sourced is not None or a.corroborated is not None or a.verified is not None:
             print(f"  IMPROVE split: {a.sourced or 0} sourced (0 -> cited) / "
                   f"{a.corroborated or 0} corroborated (1 host -> 2+) / "

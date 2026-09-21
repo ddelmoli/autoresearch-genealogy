@@ -41,6 +41,9 @@ AUTORESEARCH_VAULT="[VAULT_PATH]".
      indistinguishable from a real session.
    - Pass --lane/--outcome ONLY if an iteration was worked and never recorded
      (phase 3 step 1 finds this), and then only for that one iteration.
+   - An iteration recorded with the WRONG outcome is not fixed here: correct it
+     first with `session_plan.py --record --lane <L> --outcome <right> --session <N>
+     --supersede`, which replaces the row instead of adding one.
    - IF THE COMMAND REPORTS A RE-CLOSE (the sitting was closed, then extended — a
      normal shape, e.g. close then cleanup): the extra work went through
      22-research-iterations and recorded itself, so --lane/--outcome is refused, by
