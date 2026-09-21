@@ -394,6 +394,7 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
 
     by_arm, eligible_by_arm = defaultdict(list), defaultdict(list)
     retired_by_route = defaultdict(int)
+    retired_unprobeable = defaultdict(int)
     for c in candidates:
         by_arm[c["arm"]].append(c)
         es = entries_state.get(c["id"], {})
@@ -414,6 +415,21 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
             due = False
             why = f"route declared ({c['route']}) — this arm's poll is answered"
             retired_by_route[c["arm"]] += 1
+        # UNPROBEABLE RETIREMENT (deferred 71, operator ruling 21 SEP 2026, option 4).
+        # An existence probe is answered through a RELATIVE's FS profile, so a row
+        # none of whose relatives carries a live FS PID cannot be answered at all --
+        # and an unanswered probe writes no dated key, so without this the row was
+        # re-drawn every sitting (measured #214: 125 of 238, 53%). Retired from
+        # ELIGIBILITY only: `pool` still counts it, and it re-enters by itself the
+        # moment any relative gains a live PID. ⚠ `live_pid_relatives` is None when
+        # a caller did not compute it; only an explicit 0 retires. ⚠ Does NOT cover a
+        # probeable row whose answer was "known, deliberately not adopted": that too
+        # writes no dated key and still recycles (the residual named in the ruling).
+        if (c["arm"] == EXISTENCE_PROBE and due
+                and c.get("live_pid_relatives") == 0):
+            due = False
+            why = "no relative carries a live FS PID — unprobeable until one does"
+            retired_unprobeable[c["arm"]] += 1
         c = dict(c, _due=due, _days=days, _why=why, _score=prior_score(c))
         if due:
             eligible_by_arm[c["arm"]].append(c)
@@ -492,12 +508,14 @@ def allocate(candidates, state, today=None, cadence=DEFAULT_CADENCE,
         "per_arm": {a: {"pool": len(by_arm[a]), "eligible": len(eligible_by_arm.get(a) or []),
                         "drawn": assigned[a],
                         "retired_by_route": retired_by_route.get(a, 0),
+                        "retired_unprobeable": retired_unprobeable.get(a, 0),
                         "polled": (arms_state.get(a) or {}).get("polled", 0),
                         "hits": (arms_state.get(a) or {}).get("hits", 0)}
                     for a in ordered},
         "pool_total": len(candidates),
         "eligible_total": sum(len(v) for v in eligible_by_arm.values()),
         "retired_by_route_total": sum(retired_by_route.values()),
+        "retired_unprobeable_total": sum(retired_unprobeable.values()),
     }
 
 
@@ -542,6 +560,15 @@ def build_candidates(vault, gen_lo=None, gen_hi=None, confidence=None, region=No
 
     people = {r.id: r for r in PS.iter_people(vault) if r.id}
     oq = open_question_tokens(vault)
+    # deferred 71: which people could an existence probe be answered THROUGH? A
+    # relative (parent, spouse or child, `?` edges included) with a live FS PID.
+    live = {i for i, r in people.items() if PS.fs(r, "fs")}
+    relatives = defaultdict(set)
+    for i, r in people.items():
+        for tok in list(r.parents or ()) + list(r.spouse or ()):
+            j = str(tok).rstrip("?")
+            relatives[i].add(j)
+            relatives[j].add(i)          # the edge read from the other end: child / spouse
     out = []
     for rec in H.gather_records(gen_lo, gen_hi, confidence, region):
         p = people.get(rec["id"])
@@ -599,6 +626,9 @@ def build_candidates(vault, gen_lo=None, gen_hi=None, confidence=None, region=No
             # retirement-shaped: it expires, so a profile created later is still
             # found.
             "fs_absent": (person_store.fs_absent(p) if p else None),
+            # deferred 71: how many relatives carry a live FS PID. Only an
+            # EXISTENCE_PROBE row reads it (0 = unprobeable, retired in allocate()).
+            "live_pid_relatives": sum(1 for j in relatives.get(rec["id"], ()) if j in live),
             # deferred 42 (operator, 03 AUG 2026): the WELL_SOURCED backlog is NOT
             # audited as a campaign -- but a row DRAWN here is audited on the spot,
             # because the poll opens the Sources tab anyway and the event descriptors
@@ -705,6 +735,13 @@ def print_draw(result, clamp_note=None, rate=None):
         print("  ** A RISE IN THESE ARMS' HIT RATE FROM HERE IS MECHANICAL, NOT THE LANE")
         print("  IMPROVING ** -- what is left is the undeclared remainder, which is the real")
         print("  work. Do not read it as evidence in the ROTATE arm-selection decision.")
+    if result.get("retired_unprobeable_total"):
+        print()
+        print(f"  UNPROBEABLE ({result['retired_unprobeable_total']} {EXISTENCE_PROBE} rows, deferred 71): "
+              "no relative carries a live FS PID,")
+        print("  so the probe cannot be answered and is not offered. Counted in `pool`, not in")
+        print("  `elig`; a row returns by itself once any relative gains a live PID. The research")
+        print("  move for these is to give ONE relative a PID, not to re-draw the row.")
     print()
     print("THE DRAW:")
     for i, c in enumerate(result["draw"], 1):
@@ -734,7 +771,11 @@ def print_draw(result, clamp_note=None, rate=None):
         for arm in result["floor_unmet"]:
             a = result["per_arm"][arm]
             ret, poolsz = a.get("retired_by_route", 0), a["pool"]
-            if ret and ret >= poolsz:
+            unp = a.get("retired_unprobeable", 0)
+            if unp:
+                parts.append(f"{arm} ({unp} of {poolsz} unprobeable — no live-PID relative; "
+                             f"the rest in cooldown)")
+            elif ret and ret >= poolsz:
                 parts.append(f"{arm} (all {poolsz} DECLARED — settled, not cold; "
                              f"this arm is complete and will not return)")
             elif ret:
