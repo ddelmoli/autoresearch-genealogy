@@ -306,6 +306,14 @@ whichever lanes were drawn:
      question_store.py --resolve (the script refuses `resolved` on a live question).
      ! `advanced` means the NEXT document is now named specifically, appended with
      question_store.py --append; it is real work but it does not shrink the register.
+     ⭐ THE SLICE IS JUDGED BY CLOSURES, NOT MOVEMENT (operator ruling 22 SEP 2026).
+     Work each drawn question TO A TERMINAL STATUS: if the next document is readable
+     this sitting, read it and keep going. Record `advanced` only when the sitting
+     genuinely cannot continue, and say in the note what stopped it. The close gate
+     WARNS when the slice closed nothing, and the draw ranks a question one point lower
+     for each earlier `advanced` (the draw prints "adv xN"), so a long chain stops
+     crowding out questions one read would close. Measured before the ruling: 12
+     closures in 125 slice outcomes, one question drawn nine times.
      ! `blocked` is an access limit (restricted image, site refusing, in-person only);
      the question cools off for three sittings. A site refusing for days goes into
      .maintenance.json `question_drain.blocked_routes` so the draw skips it.
@@ -315,6 +323,24 @@ whichever lanes were drawn:
          python3 scripts/question_drain.py --session <N> --swap Q<num> --note "why"
        The next-ranked eligible question takes its slot (--with Q<num> names one
        instead), counts as drawn, and the swapped one sits out three sittings.
+   - THE BIOGRAPHY SLICE (added 22 SEP 2026, operator). Owed EVERY sitting, like the
+     question slice, because no lane's unit credits writing a life: IMPROVE credits
+     citations (sourced / corroborated / verified) and ROTATE credits finding something
+     new outside the vault, so BIO_COMPLETE moved about one point in five weeks.
+       python3 scripts/bio_slice.py --session <N> --draw
+     then, for each drawn entry, WRITE THE LIFE from what the entry already cites: a
+     lede, then origin, parents, occupation, residences, marriage(s), children, death and
+     burial in order (CLAUDE.method.md "The entry is a biography"); promote dates the
+     cited records carry into the `born` / `died` fields; move process narration to the
+     log. Then record it:
+       python3 scripts/bio_slice.py --session <N> --record P-XXXXXX \
+         --outcome written|nothing-to-add|blocked --note "<one line>"
+     ! `written` is MEASURED: the script re-reads the entry and refuses it unless a
+     facet was gained or at least 3 lines of biography were added since the draw.
+     ! `nothing-to-add` needs a note naming what was read; `blocked` is an access limit.
+     ! The draw ranks direct ancestors first, entries that already cite sources before
+     uncited ones, then the fewest writable facets (dates, family); a missing PARENT is
+     EXPAND's gap, not this slice's.
    - NOT here: the Research_Log row and the Handoff close block. Those are one
      per sitting and belong to 24-session-close.
 

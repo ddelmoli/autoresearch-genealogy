@@ -39,6 +39,19 @@ is not a `--record` outcome; only `--swap` writes it.
 how the register grew while looking busy. The heartbeat therefore counts CLOSURES from
 the headings themselves, not from this script's own records.
 
+** THE SLICE IS JUDGED BY CLOSURES, NOT BY MOVEMENT (operator ruling 22 SEP 2026). **
+Measured before the ruling: 125 slice outcomes over 17 sittings were 12 resolved and 75
+advanced, and the same questions came back again and again (one drawn nine times, each
+time moved one page). Two causes, both fixed here:
+  * the close gate PASSED as soon as every drawn question carried ANY outcome, so a slice of
+    ten "advanced" rows was a clean pass. It now WARNS (CHECK) whenever the slice closed
+    nothing, whatever the sitting raised, and its summary leads with the closure count.
+  * the ranking never looked back, so a question that is a long chain of documents outranked
+    one a single read would close. Each prior `advanced` record now costs a point
+    (ADVANCED_PENALTY_CAP at most), and the draw prints the count, so a chain is visible
+    as a chain. Work a drawn question to a terminal status; `advanced` is what you record
+    when the sitting genuinely cannot finish it, not a unit of progress.
+
 ** RANKING (a triage heuristic, not a verdict). ** Candidates are the live questions from
 gen_question_index.parse() (ONE home for the block grammar and liveness). Excluded:
 `op-gated` and `BIG` tags, a question recorded `blocked` within the cooldown, and any
@@ -89,6 +102,7 @@ CONFIG_KEY = "question_drain"
 OUTCOMES = ("resolved", "advanced", "blocked", "untouched")
 SWAPPED = "swapped"    # written only by --swap, never a --record outcome
 DEFAULTS = {"per_session": 10, "blocked_cooldown": 3, "swap_cooldown": 3, "blocked_routes": []}
+ADVANCED_PENALTY_CAP = 3   # a question advanced in N earlier sittings ranks N points lower
 
 MONTHS = {m: i for i, m in enumerate(
     "JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split(), 1)}
@@ -182,6 +196,10 @@ def candidates(vault, cfg, state):
     cooldown = int(cfg.get("blocked_cooldown", 3))
     swap_cool = int(cfg.get("swap_cooldown", 3))
     routes = [re.compile(p, re.I) for p in (cfg.get("blocked_routes") or [])]
+    advanced_n = {}
+    for h in live_rows(state["history"]):
+        if h.get("outcome") == "advanced":
+            advanced_n[h["q"]] = advanced_n.get(h["q"], 0) + 1
     out = []
     for r in rows:
         if "op-gated" in r["tags"] or "BIG" in r["tags"]:
@@ -195,6 +213,8 @@ def candidates(vault, cfg, state):
             continue
         score = (3 if "UNREAD-SRC" in r["tags"] else 0) + (2 if "free" in r["tags"] else 0) \
             + (1 if r["resolver"] else 0) + (1 if r["kb"] < 5 else 0)
+        r = dict(r, advanced=advanced_n.get(q, 0))
+        score -= min(r["advanced"], ADVANCED_PENALTY_CAP)
         out.append((score, r))
     out.sort(key=lambda t: (-t[0], t[1]["num"], t[1]["suffix"]))
     if routes:
@@ -270,8 +290,9 @@ def draw(vault, session, register):
     print(f"=== QUESTION SLICE — sitting #{session}: {len(pick)} of {len(cands)} eligible "
           f"({live_count(vault)} live) ===")
     for score, r in pick:
+        adv = f" adv x{r['advanced']}" if r.get("advanced") else ""
         print(f"  Q{r['qlabel']:<6} [{score}] {r['kb']:4.1f} KB  {' '.join(r['tags']) or '-':<18} "
-              f"{r['title'][:70]}")
+              f"{r['title'][:70]}{adv}")
         if r["resolver"]:
             print(f"          resolver: {r['resolver'][:100]}")
     if pend and pend.get("session") != session:
@@ -411,12 +432,13 @@ def check(vault, session, today=None):
     tally = {o: sum(h["outcome"] == o for h in mine) for o in OUTCOMES + (SWAPPED,)}
     raised = sum(1 for _r, _c, s in heading_dates(vault).values() if s == session)
     closed_today = sum(1 for _r, c, _s in heading_dates(vault).values() if c == today)
-    summary = (f"slice worked: {tally['resolved']} resolved, {tally['advanced']} advanced, "
-               f"{tally['blocked']} blocked, {tally['untouched']} untouched, "
-               f"{tally[SWAPPED]} swapped; this sitting "
+    summary = (f"slice CLOSED {tally['resolved']} of {len(pend['offered'])} drawn "
+               f"(advanced {tally['advanced']} is not a closure; blocked {tally['blocked']}, "
+               f"untouched {tally['untouched']}, swapped {tally[SWAPPED]}); this sitting "
                f"raised {raised}, register closures dated today {closed_today}")
-    if raised and not closed_today and not tally["resolved"]:
-        return 2, summary + " — raised questions and closed none: say why in the close block"
+    if not closed_today and not tally["resolved"]:
+        why = "raised questions and closed none" if raised else "the slice closed nothing"
+        return 2, summary + f" — {why}: the slice is judged by closures; say why in the close block"
     return 0, summary
 
 
@@ -432,8 +454,14 @@ def heartbeat(vault, today=None):
                      + (f"{len(unrec)} unrecorded" if unrec else "fully recorded"))
     else:
         slice_txt = "no slice drawn yet"
+    rows = [h for h in live_rows(state["history"]) if h.get("outcome") != SWAPPED]
+    recent = sorted({h.get("session") for h in rows if h.get("session") is not None})[-5:]
+    inrec = [h for h in rows if h.get("session") in recent]
+    closed_n = sum(h["outcome"] == "resolved" for h in inrec)
+    rate_txt = (f"slice closures, last {len(recent)} sittings: {closed_n}/{len(inrec)} worked"
+                if inrec else "no slice closures recorded yet")
     return (f"Question-Drain: {live_count(vault)} live; net flow 14d raised {r14} / closed "
-            f"{c14} ({r14 - c14:+d}), 30d {r30} / {c30} ({r30 - c30:+d}); {slice_txt}; "
+            f"{c14} ({r14 - c14:+d}), 30d {r30} / {c30} ({r30 - c30:+d}); {rate_txt}; {slice_txt}; "
             f"DUE every sitting: question_drain.py --session N --draw, work it, --record each")
 
 

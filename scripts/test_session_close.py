@@ -51,6 +51,11 @@ class CloseOrderTests(unittest.TestCase):
             f.write(VAULT_TREE)
         with open(os.path.join(self.vault, ".autoresearch.json"), "w", encoding="utf-8") as f:
             json.dump({"person_model": "narrative"}, f)
+        # These tests pin the close ORDER and re-close detection, not the per-sitting
+        # slices; the biography slice is opted out so its gate does not mask them
+        # (bio_slice's own gate is pinned in test_bio_slice.py).
+        with open(os.path.join(self.vault, ".maintenance.json"), "w", encoding="utf-8") as f:
+            json.dump({"bio_slice": {"per_session": 0}}, f)
 
     def tearDown(self):
         shutil.rmtree(self.vault, ignore_errors=True)

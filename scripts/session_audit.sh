@@ -394,6 +394,11 @@ parts = [
     # rule waited for a lane to run dry. DUE every sitting, like the profile-review slice.
     "question-drain -> " + run("question_drain.py", r"Question-Drain:",
                                args=["--heartbeat"], max_lines=1),
+    # Biography slice (bio_slice.py --heartbeat): BIO_COMPLETE plus what the last few
+    # slices WROTE, measured as facets gained. Added 22 SEP 2026 (operator): no lane's
+    # unit credited writing a life. DUE every sitting, like the question slice.
+    "bio-slice -> " + run("bio_slice.py", r"Bio-Slice:",
+                          args=["--heartbeat"], max_lines=1),
     "handoff -> " + next_session_size(),
     # Handoff close-block conformance (handoff_lint.py --quiet). ADVISORY; promote to
     # blocking once its baseline is 0. Checks the item-12 template: required fields

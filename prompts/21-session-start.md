@@ -137,6 +137,9 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
       line (raised vs closed over 14 and 30 days). Report it in one line; a
       positive net means the register is growing. Phase 2 owes a question slice
       every sitting (question_drain.py), so this is a number to watch, not an ask.
+      Report the slice closure rate from the same line, and the `bio-slice ->`
+      line's BIO_COMPLETE and recent facets gained: phase 2 also owes a
+      biography slice every sitting (bio_slice.py, since 22 SEP 2026).
    e. Anything above baseline from step 1.
    Then: if I am present, ask with AskUserQuestion (multiSelect) and act on the
    answers. If I am away or this is an autonomous run, Operating_Protocol wins

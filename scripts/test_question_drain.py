@@ -17,7 +17,10 @@
   (g) `--swap` replaces a drawn, UNWORKED question in the pending slice (next-ranked by
       default, or a named live one), needs a reason, refuses a recorded or undrawn
       question, counts the replacement as DRAWN, lets the close gate PASS, and cools the
-      swapped-out question for `swap_cooldown` sittings.
+      swapped-out question for `swap_cooldown` sittings;
+  (h) the slice is judged by CLOSURES (operator ruling 22 SEP 2026): the gate WARNS when a
+      slice closed nothing even if the sitting raised nothing, each prior `advanced` costs
+      a question one rank point (capped), and the heartbeat reports the closure rate.
 """
 import json
 import os
@@ -130,6 +133,29 @@ def main():
             QD.record(d, 9, q, "untouched", "")
         code, _ = QD.check(d, 9)
         check("WARN when the sitting raised questions and closed none", code == 2)
+        # (h) closures, not movement (operator ruling 22 SEP 2026): a slice that raised
+        # nothing and closed nothing is no longer a clean PASS
+        for q in drawn(d, 30):
+            QD.record(d, 30, q, "advanced", "")
+        code, msg = QD.check(d, 30)
+        check("WARN when an all-advanced slice closed nothing, even with nothing raised",
+              code == 2 and "closed nothing" in msg and "CLOSED 0 of" in msg)
+
+    with tempfile.TemporaryDirectory() as d:
+        build(d, {"per_session": 3})
+        # (h') each prior `advanced` costs rank, capped, and the draw shows the count
+        top = drawn(d, 40)[0]
+        for s in (41, 42, 43, 44, 45):
+            QD.record(d, s, top, "advanced", "")
+        cands = QD.candidates(d, QD.load_config(d), QD.load_state(d))
+        adv = {r["qlabel"]: (sc, r["advanced"]) for sc, r in cands}
+        check("a repeatedly advanced question loses its first place",
+              cands[0][1]["qlabel"] != top and adv[top][1] == 5)
+        base = [sc for sc, r in QD.candidates(d, QD.load_config(d), QD.empty_state())
+                if r["qlabel"] == top][0]
+        check("the penalty is capped", adv[top][0] == base - QD.ADVANCED_PENALTY_CAP)
+        check("heartbeat reports the slice closure rate",
+              "slice closures, last 5 sittings: 0/5" in QD.heartbeat(d))
 
     with tempfile.TemporaryDirectory() as d:
         build(d, {"per_session": 3, "blocked_cooldown": 2})
@@ -167,7 +193,7 @@ def main():
         check("gate still FAILS while the rest is unrecorded", code == 1)
         QD.record(d, 9, "Q22", "untouched", "")
         code, msg = QD.check(d, 9)
-        check("gate PASSES with a swap in the slice", code == 0 and "1 swapped" in msg)
+        check("gate PASSES with a swap in the slice", code == 0 and "swapped 1" in msg)
         check("swapped question cools off", "23" not in drawn(d, 10))
         QD.record(d, 10, "22", "advanced", "")
         QD.record(d, 11, "22", "advanced", "")
@@ -190,7 +216,7 @@ def main():
     if bad:
         print("FAIL test_question_drain:", "; ".join(bad))
         return 1
-    print("PASS test_question_drain (27 checks)")
+    print("PASS test_question_drain (32 checks)")
     return 0
 
 

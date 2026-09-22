@@ -111,7 +111,7 @@ The Open_Questions register is worked **every sitting**, not only when a lane ru
 profile-review slice, it is drawn, worked and recorded:
 
 ```bash
-python3 scripts/question_drain.py --session N --draw          # 5 questions, ranked for closability
+python3 scripts/question_drain.py --session N --draw          # 10 questions, ranked for closability
 python3 scripts/question_drain.py --session N --record Q185 --outcome resolved --note "..."
 python3 scripts/question_drain.py --heartbeat                 # net flow: raised vs closed
 ```
@@ -123,8 +123,35 @@ python3 scripts/question_drain.py --heartbeat                 # net flow: raised
 - **swap** a drawn question that is not closable before working it:
   `question_drain.py --session N --swap Q202 --note "why" [--with Q378]`. The next-ranked
   question (or the named one) takes the slot and counts as drawn; the swapped one cools off.
-- The close command FAILS if the slice was not drawn or not recorded, and warns when a
-  sitting raised questions and closed none. Five is a floor (raised from three, operator 19 SEP 2026): work more when they close fast.
+- The close command FAILS if the slice was not drawn or not recorded, and warns when the
+  slice closed nothing. Ten is a floor (raised from three and five by operator rulings of 19
+  and 21 SEP 2026): work more when they close fast.
+- ⭐ **Judged by closures, not movement (operator, 22 SEP 2026).** Work each drawn question
+  to a terminal status; `advanced` is what you record when the sitting cannot continue, not
+  a unit of progress. Each earlier `advanced` costs a question one rank point (the draw shows
+  `adv xN`), so long chains stop crowding out closable questions. The heartbeat prints the
+  slice closure rate.
+
+## The biography slice (every sitting, since 22 SEP 2026)
+
+No lane's unit credits writing a life: IMPROVE credits citations, ROTATE credits external
+finds. So a script draws a biography slice, like the question slice:
+
+```bash
+python3 scripts/bio_slice.py --session N --draw               # 5 entries: direct first, cited first
+python3 scripts/bio_slice.py --session N --record P-XXXXXX --outcome written --note "..."
+python3 scripts/bio_slice.py --heartbeat                      # BIO_COMPLETE + what slices wrote
+```
+
+- **written**: MEASURED. The script re-reads the entry and refuses the outcome unless a facet
+  was gained or 3+ lines of biography were added since the draw.
+- **nothing-to-add**: the cited sources hold nothing more; the note names what was read.
+- **blocked**: an access limit.
+- Write the life in the entry's biography order (lede, origin, parents, occupation,
+  residences, marriages, children, death, burial), promote cited dates into `born`/`died`,
+  and move process narration to the log. A missing parent is EXPAND's gap, not this slice's.
+- The close command FAILS if the slice was not drawn or not recorded, and warns when
+  nothing was written.
 
 ## Recording work
 

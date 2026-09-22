@@ -29,8 +29,12 @@ STEPS, IN ORDER
                 the next session.
   2b. questions with --session N, question_drain.check(): FAIL if the sitting's
                 question slice was not drawn or a drawn question is unrecorded; CHECK
-                (a warning) if the sitting raised questions and closed none. Added
-                18 SEP 2026 when the register was measured growing +59 in 30 days.
+                (a warning) if the slice closed nothing (since 22 SEP 2026; before that,
+                only when the sitting also raised questions). Added 18 SEP 2026 when the
+                register was measured growing +59 in 30 days.
+  2c. biography with --session N, bio_slice.check(): FAIL if the biography slice was
+                not drawn or a drawn entry is unrecorded; CHECK if nothing was written.
+                Added 22 SEP 2026 (operator): no lane's unit credited writing a life.
   3. log        with --log SLUG --summary "...", append the Research_Log session
                 index row via log_session.py (NEVER the Edit tool on that file).
   4. lint       handoff_lint.py --quiet — the close-block template check.
@@ -179,6 +183,19 @@ def main(argv=None):
     else:
         report.append(("questions", "SKIP",
                        "no --session; the question slice cannot be checked (pass --session N)"))
+
+    # 2c. The per-sitting BIOGRAPHY SLICE (operator ruling 22 SEP 2026). No lane's unit
+    # credited writing a life, so BIO_COMPLETE moved about a point in five weeks. Same
+    # shape as the question slice: FAIL if not drawn or not recorded, WARN (CHECK) if
+    # nothing was written.
+    if a.session is not None:
+        import bio_slice as bs  # noqa: E402
+        code, msg = bs.check(vault, a.session)
+        report.append(("biography", {0: "PASS", 1: "FAIL", 2: "CHECK"}[code], msg))
+        failed |= code == 1
+    else:
+        report.append(("biography", "SKIP",
+                       "no --session; the biography slice cannot be checked (pass --session N)"))
 
     # 3. Research_Log index row.
     if reclose and a.log and a.summary:

@@ -67,9 +67,13 @@ AUTORESEARCH_VAULT="[VAULT_PATH]".
      session.
    - With --session N the close also runs the QUESTION SLICE gate
      (question_drain.check): FAIL if the sitting's slice was not drawn or a drawn
-     question is unrecorded; CHECK if the sitting raised questions and closed
-     none, in which case say why in the close block. Report the slice's outcomes
-     (resolved / advanced / blocked) in WHAT MOVED.
+     question is unrecorded; CHECK if the slice closed nothing, in which case
+     say why in the close block. Report CLOSURES first (the slice is judged by
+     them since 22 SEP 2026), then advanced / blocked, in WHAT MOVED.
+   - With --session N the close also runs the BIOGRAPHY SLICE gate
+     (bio_slice.check): FAIL if the slice was not drawn or a drawn entry is
+     unrecorded; CHECK if nothing was written. Report biographies written and
+     facets gained in WHAT MOVED.
    - --next-plan runs scripts/session_plan.py AFTER the outcome is recorded, so
      the pending draw it registers is the NEXT session's and survives. ! Running
      the plan BEFORE the close command instead wipes that draw: --record clears
