@@ -88,6 +88,12 @@ gate() {
     local out n
     out="$("$@" 2>&1)"
     n="$(printf '%s\n' "$out" | grep -oE "$pat" | grep -oE '[0-9]+' | tail -1)"
+    classify "$label" "$blocking" "$n"
+}
+
+# Classify one count.   $1 label   $2 blocking(1/0)   $3 count ("" = unreadable)
+classify() {
+    local label="$1" blocking="$2" n="$3"
     if [ -z "$n" ]; then
         note "  ?  ${label}: could not read a count — RUN IT BY HAND"
         return
@@ -98,6 +104,32 @@ gate() {
         fail "  ✗  ${label}: ${n}   [BLOCKING]"
     else
         note "  !  ${label}: ${n}   [advisory — read the rows]"
+    fi
+}
+
+# The three DATE gates, from ONE prose_audit run.
+#
+# WHY (session #217, 21 SEP 2026). This used to gate DATE_DRIFT alone, but the
+# pre-commit hook blocks on prose_audit's EXIT CODE, which is non-zero for
+# DATE_IMPOSSIBLE and DATE_UNATTESTED as well. A header missing the year its meta
+# `died` field stored printed "PRECHECK: no blocking finding" here and was then
+# refused at commit. Same parse as the hook's view: the SUMMARY lines
+#   DATE_IMPOSSIBLE / DATE_UNATTESTED: a / b   [BLOCKING]
+#   DATE_DRIFT:    n   [BLOCKING] ...
+# and the exit code is cross-checked, so a failing run that reports all zeros
+# (a format change, a crash) reads "?" rather than a false "ok".
+date_gates() {
+    local out rc drift pair imp unatt
+    out="$(python3 scripts/prose_audit.py 2>&1)"; rc=$?
+    drift="$(printf '%s\n' "$out" | grep -oE 'DATE_DRIFT: *[0-9]+' | grep -oE '[0-9]+' | tail -1)"
+    pair="$(printf '%s\n' "$out" | grep -oE 'DATE_IMPOSSIBLE / DATE_UNATTESTED: *[0-9]+ */ *[0-9]+' | tail -1)"
+    imp="$(printf '%s\n' "$pair" | grep -oE '[0-9]+' | sed -n 1p)"
+    unatt="$(printf '%s\n' "$pair" | grep -oE '[0-9]+' | sed -n 2p)"
+    classify "DATE_DRIFT" 1 "$drift"
+    classify "DATE_IMPOSSIBLE" 1 "$imp"
+    classify "DATE_UNATTESTED" 1 "$unatt"
+    if [ "$rc" -ne 0 ] && [ "${drift:-0}" = 0 ] && [ "${imp:-0}" = 0 ] && [ "${unatt:-0}" = 0 ]; then
+        fail "  ?  prose_audit exited ${rc} with every DATE count 0 — RUN IT BY HAND   [BLOCKING]"
     fi
 }
 
@@ -122,8 +154,7 @@ gate "entry attribution (changed)"   0 'ENTRY_ATTRIBUTION \(changed\): *[0-9]+' 
 if [ "$FAST" -eq 0 ]; then
     gate "integrity HARD"            1 'HARD violations[^:]*: *[0-9]+' \
          python3 scripts/gen_person_index.py --integrity
-    gate "DATE_DRIFT"                1 'DATE_DRIFT: *[0-9]+' \
-         python3 scripts/prose_audit.py
+    date_gates
     gate "entry boundary"            1 'ENTRY_MISATTRIBUTION *[0-9]+' \
          python3 scripts/entry_boundary_audit.py
     gate "self-negation"             0 'SELF_NEGATION: *[0-9]+' \
