@@ -2179,7 +2179,21 @@ SCHOLARLY_CITATION_RE = re.compile(
     # failure shapes that refused Muskett, Metcalfe and Blomefield and that forced VCH
     # into a bibliographic-form pattern. A bare name is safe here because the vault
     # has never used this work as a pointer.
-    r"|Macnamara|Memorials of the Danvers",
+    r"|Macnamara|Memorials of the Danvers"
+    # ── ARCHAEOLOGIA CANTIANA, 22 SEP 2026 — BIBLIOGRAPHIC FORM ONLY, like VCH ──
+    # A county society's journal of signed, page-cited articles: the same class as
+    # NEHGR / TAG already on this list. Found by MINTING (session #217): two entries
+    # whose only citation was a journal article, with volume, year and pages, read
+    # at the scan, came out UNCITED.
+    # ** MEASURED BEFORE WIDENING. ** Every vault line naming the journal was read:
+    # 6 entries. 3 cite it (volume + pages); 3 name it only in a "Route, untried:"
+    # sentence with NO volume or page. A bare name would have credited the route
+    # form, so the match requires a volume numeral and then a page reference. Net
+    # effect on the day: exactly the 2 UNCITED rows move, 0 route rows.
+    # ⛔ The other county/record-society journals were counted too and NOT added:
+    # none of their citers is UNCITED, so nothing measured needs them. Measure, then add.
+    r"|(?:Archaeologia Cantiana|Arch\.\s*Cant\.)\W{0,3}\s*(?:vol\.?\s*)?(?:[ivxlc]+|\d{1,3})\b"
+    r"[^\n]{0,60}?\bpp?\.?\s*\d",
     re.I,
 )
 

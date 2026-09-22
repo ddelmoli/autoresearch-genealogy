@@ -348,5 +348,38 @@ class TestNegativeControls(unittest.TestCase):
             H.is_book_collection("Scotland, Statutory Registers, Deaths"))
 
 
+
+class TestArchaeologiaCantianaBibliographicForm(unittest.TestCase):
+    """*Archaeologia Cantiana* counts only as a CITATION: volume, then pages (22 SEP 2026).
+
+    Measured before widening: 6 vault entries named the journal. 3 cite an article
+    with volume and pages; 3 name it only in a "Route, untried:" sentence with no
+    volume or page. A bare name would credit the route form, which is how a person
+    nobody has documented gets filed as finished work. The shape test credits the
+    3 citations and 0 of the 3 routes. Examples below use placeholder names.
+    """
+
+    def test_journal_article_with_volume_and_pages_counts(self):
+        for cite in ('- **Sources**: A. N. Author, "The Lords of Placeholder", *Archaeologia Cantiana* xi (1877), pp. 53-56',
+                     "Author, *Archaeologia Cantiana* xii (1878), p. 113",
+                     "Author, Arch. Cant. vol. 11, pp. 49-112"):
+            with self.subTest(cite=cite):
+                self.assertTrue(H.has_scholarly_citation(cite))
+
+    def test_journal_named_as_a_route_does_NOT_count(self):
+        # The three route shapes the vault actually uses, with placeholder names.
+        for cite in ("Route, untried: the Placeholder family of Kent in *Archaeologia Cantiana*.",
+                     "Hasted's *History of Kent*, and the Kent Archaeological Society's *Archaeologia Cantiana*, both of which are online.",
+                     "the same Hasted / *Archaeologia Cantiana* route as the Placeholders, plus a feet-of-fines search"):
+            with self.subTest(cite=cite):
+                self.assertFalse(H.has_scholarly_citation(cite))
+
+    def test_other_county_journals_were_NOT_added(self):
+        # Counted, and none of their citers was UNCITED: nothing measured needs them.
+        for cite in ("Author, *Sussex Archaeological Collections* xx (1868), pp. 1-20",
+                     "Author, *Surrey Archaeological Collections* v (1871), p. 7"):
+            with self.subTest(cite=cite):
+                self.assertFalse(H.has_scholarly_citation(cite))
+
 if __name__ == "__main__":
     unittest.main()
