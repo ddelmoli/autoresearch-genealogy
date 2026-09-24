@@ -19,9 +19,14 @@ Operations (all dry-run by default; --apply writes):
   --resolve QLABEL --status KW [--note TEXT]
         Rewrite the heading of the live block to `… — KW DD MON YYYY (note)` and
         VERIFY the result is archivable (terminal per the shared rule, no
-        provenance trap). Refuses if the block is already terminal, or if the
-        number matches more than one live block (a duplicate must be repaired,
-        not written through).
+        provenance trap, AND in the shard's `archive_statuses` in the vault's
+        .maintenance.json when it has one). Refuses if the block is already
+        terminal, or if the number matches more than one live block (a
+        duplicate must be repaired, not written through).
+  --restatus QLABEL --status KW
+        Repair a STRANDED resolution: a terminal heading whose status the
+        archive target will not archive. Changes the keyword only; date and
+        note are kept.
   --append QLABEL (--text TEXT | --body-file F) [--sub-heading H]
         Insert content at the END of the live block — the write physically
         cannot orphan itself under the wrong question.
@@ -40,6 +45,7 @@ subtitles go in parens or after a colon).
 """
 import argparse
 import datetime
+import json
 import os
 import re
 import sys
@@ -83,6 +89,39 @@ def resolve_shard(vault: str, slug: str) -> str:
         return hits[0]
     names = ", ".join(os.path.basename(p) for p in (hits or files))
     raise SystemExit(f"shard {slug!r} is {'ambiguous' if hits else 'unknown'}: {names}")
+
+
+def archive_statuses_for(vault, path):
+    """The status keywords `archive_sections.py` will actually archive for the shard at
+    `path`: the `archive_statuses` of its drop-by-status target in the vault's
+    `.maintenance.json`. None when the vault has no such config or no target for this
+    file, i.e. nothing constrains the status beyond the shared terminal list.
+
+    ⚠ WHY THIS EXISTS (24 SEP 2026): `QB.STATUS_KWS` is the list that decides whether a
+    heading is TERMINAL; this is the list that decides whether it gets ARCHIVED, and they
+    had drifted. A status in the first and not the second (plain CONFIRMED) was accepted
+    by --resolve, read as closed by every liveness check, and never moved by the archiver:
+    the question sat stranded in its live shard and --replace could no longer reach it."""
+    cfg_path = os.path.join(str(vault), ".maintenance.json")
+    if not os.path.exists(cfg_path):
+        return None
+    with open(cfg_path, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    base = os.path.basename(path)
+    for t in cfg.get("targets", []):
+        if t.get("policy") == "drop-by-status" and t.get("file") == base:
+            return list(t.get("archive_statuses", []))
+    return None
+
+
+def _check_archivable(vault, path, status):
+    """Refuse a status the archiver will not archive for this shard."""
+    allow = archive_statuses_for(vault, path)
+    if allow is not None and not QB.matches_terminal(status, allow):
+        raise SystemExit(
+            f"status {status!r} is terminal but {os.path.basename(path)}'s archive target "
+            f"will not archive it, so the question would be stranded in the live shard. "
+            f"Use one of: {', '.join(allow)}")
 
 
 def find_all(vault, num, suffix):
@@ -228,6 +267,7 @@ def op_resolve(vault, args):
         raise SystemExit(f"Q{num}{suffix} is DUPLICATED across live shards ({where}) — "
                          f"repair the duplicate first; refusing to resolve through it.")
     path, s, _e, h, lines = hits[0]
+    _check_archivable(vault, path, status)
     note = f" ({args.note.strip()})" if args.note else ""
     head_line = lines[s].rstrip()
     # An INTERIM status (PARTIALLY_RESOLVED) is provenance once the question is
@@ -256,6 +296,50 @@ def op_resolve(vault, args):
     _write(path, lines, args.apply, f"resolve Q{num}{suffix} in")
     if args.apply:
         print("  (archive it: archive_sections.py --apply, or leave for session close)")
+    return 0
+
+
+def op_restatus(vault, args):
+    """Repair a STRANDED resolution: a block whose heading is terminal (so every
+    liveness check treats it as closed and --replace refuses it) but whose status the
+    shard's archive target will not archive. Rewrites the status KEYWORD only; the
+    date and note after it are kept verbatim. Refuses anything else: a live block
+    (use --resolve), a block the archiver would already take, a tombstone."""
+    num, suffix = parse_qlabel(args.restatus)
+    status = args.status.strip().upper()
+    if status not in QB.STATUS_KWS:
+        raise SystemExit(f"status {status!r} is not terminal; one of: "
+                         f"{', '.join(QB.STATUS_KWS)}")
+    live_files = set(QB.question_files(vault))
+    hits = [(p, s, h) for p, s, _e, h in find_all(vault, num, suffix)
+            if p in live_files and h["terminal"]
+            and not (h["tombstone"] or h["struck"] or h["original"])]
+    if len(hits) != 1:
+        raise SystemExit(f"need exactly one terminal, un-archived Q{num}{suffix} block in a "
+                         f"live shard, found {len(hits)}")
+    path, s, h = hits[0]
+    allow = archive_statuses_for(vault, path)
+    if allow is None:
+        raise SystemExit(f"{os.path.basename(path)} has no archive target in "
+                         f".maintenance.json, so nothing is stranded to repair")
+    if QB.matches_terminal(h["status"], allow):
+        raise SystemExit(f"Q{num}{suffix} is not stranded: its status {h['status'][:40]!r} "
+                         f"is already archivable")
+    _check_archivable(vault, path, status)
+    old_kw = next(k for k in QB.STATUS_KWS if QB.matches_terminal(h["status"], [k]))
+    lines = open(path, encoding="utf-8").read().split("\n")
+    head_line = lines[s].rstrip()
+    cut = head_line.rfind(QB.EMDASH)
+    tail = h["status"][len(old_kw):]
+    new_head = f"{head_line[:cut].rstrip()} {QB.EMDASH} {status}{tail}"
+    check = QB.parse_heading(new_head)
+    if not check or not check["terminal"] or QB.PROVENANCE_RE.match(check["status"]):
+        raise SystemExit(f"internal: rewritten heading is not archivable: {new_head!r}")
+    print(f"Q{num}{suffix} in {os.path.basename(path)}:{s+1}")
+    print(f"  old: {lines[s][-110:]}")
+    print(f"  new: {new_head[-110:]}")
+    lines[s] = new_head
+    _write(path, lines, args.apply, f"restatus Q{num}{suffix} in")
     return 0
 
 
@@ -567,7 +651,10 @@ def main():
     ap.add_argument("--resolver", help="what would settle it (required for --new)")
     ap.add_argument("--session", help="session number for the provenance paren")
     ap.add_argument("--resolve", metavar="QLABEL", help="mark terminal, e.g. 280 / 143a")
-    ap.add_argument("--status", help="terminal keyword for --resolve")
+    ap.add_argument("--status", help="terminal keyword for --resolve / --restatus")
+    ap.add_argument("--restatus", metavar="QLABEL",
+                    help="repair a STRANDED resolution: change the status keyword of a "
+                         "terminal heading the archive target will not archive")
     ap.add_argument("--note", help="parenthetical after the status date")
     ap.add_argument("--append", metavar="QLABEL", help="append content to a live block")
     ap.add_argument("--sub-heading", help="wrap the appended text under '## <H>'")
@@ -614,6 +701,10 @@ def main():
         if not args.status:
             raise SystemExit("--resolve needs --status")
         return op_resolve(vault, args)
+    if args.restatus:
+        if not args.status:
+            raise SystemExit("--restatus needs --status")
+        return op_restatus(vault, args)
     if args.append:
         return op_append(vault, args)
     if args.move:
