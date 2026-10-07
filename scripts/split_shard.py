@@ -74,6 +74,18 @@ def meta_ids(text: str):
     return ID_RE.findall(text)
 
 
+def _master_base(src: Path, new_src_text: str) -> str:
+    """The text the File Index row is added to. When the source IS the master
+    (Family_Tree.md split from itself), that is the CARVED source text: reading
+    the master from disk would hand back the pre-split file, and its write would
+    then silently restore every moved entry (each id ending up in two files)."""
+    if MASTER is None or not MASTER.exists():
+        return ""
+    if src.resolve() == MASTER.resolve():
+        return new_src_text
+    return MASTER.read_text(encoding="utf-8")
+
+
 def carve(text: str, gen_min: int, gen_max: int):
     """Return (new_source_text, moved_text, moved_gens). Moves whole '### Generation N'
     blocks with gen_min<=N<=gen_max; a block runs to the next '### '/'## '/EOF."""
@@ -330,7 +342,7 @@ def _run_cluster(args, src, dest, text):
     print(f"  -> KEEP {len(kept)} in source: {', '.join(kept)}")
     print(f"  meta ids: {len(orig_ids)} -> source {len(meta_ids(new_src))} + dest "
           f"{len(meta_ids(dest_text))}; conserved + unique: {ok}")
-    master_text = MASTER.read_text(encoding="utf-8") if MASTER.exists() else ""
+    master_text = _master_base(src, new_src)
     new_master, man_ok = update_manifest(master_text, args.dest, args.region, args.content, args.source)
     print(f"  manifest: {'will add File Index row for ' + dest.stem if man_ok else 'NO File/Region table — add by hand'}")
 
@@ -428,7 +440,7 @@ def main():
     print(f"  dest:   {args.dest}  (region '{args.region}')")
     print(f"  meta ids: source had {len(orig_ids)} -> source {len(meta_ids(new_src_text))} "
           f"+ dest {len(meta_ids(dest_text))}; conserved + unique: {ok}")
-    master_text = MASTER.read_text(encoding="utf-8") if MASTER.exists() else ""
+    master_text = _master_base(src, new_src_text)
     new_master, man_ok = update_manifest(master_text, args.dest, args.region, args.content, args.source)
     print(f"  manifest: {'will add File Index row for ' + dest.stem if man_ok else 'NO File/Region table found — add the row by hand'}")
 
