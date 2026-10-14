@@ -31,6 +31,13 @@ headings, where the block mode above finds nothing to carve):
     `- meta:` `generation` lies in range (the meta field is the machine truth;
     an entry with no generation stays in the source).
 
+Section mode (for a shard organised by FAMILY sections, `## Sibling Collateral —
+...` / `## ... by Marriage: ...`, rather than generation blocks):
+
+  * `--section REGEX` moves every `## ` section whose heading matches the
+    (case-insensitive) regex, verbatim, with its `### ` subsections and intro
+    prose; one cross-ref stub is left where the first moved section stood.
+
   ⚠ Entry mode rebuilds each section from its entries. A prose line AFTER an
   entry is part of that entry's block and travels with it; a section INTRO
   (prose between a heading and its first entry) stays with the source's copy of
@@ -119,6 +126,29 @@ def carve(text: str, gen_min: int, gen_max: int):
     # insert ONE consolidated cross-ref stub.
     first_moved = min(stub_at)
     return lines, drop, first_moved, moved_chunks, moved_gens
+
+
+def carve_sections(text: str, pattern: str):
+    """Section mode: move every '## ' section whose heading matches `pattern`
+    (a case-insensitive regex), together with its '### ' subsections; a section
+    runs to the next '## ' heading or EOF. For a shard organised by FAMILY
+    sections rather than '### Generation N' blocks. Same return shape as carve();
+    moved_gens are read from the moved entries' meta `generation` (label only)."""
+    pat = re.compile(pattern, re.IGNORECASE)
+    lines = text.splitlines(keepends=True)
+    bounds = [i for i, ln in enumerate(lines) if ln.startswith("## ")]
+    bounds.append(len(lines))
+    moved_chunks, drop, starts = [], set(), []
+    for k in range(len(bounds) - 1):
+        i, j = bounds[k], bounds[k + 1]
+        if pat.search(lines[i][3:]):
+            moved_chunks.append("".join(lines[i:j]))
+            drop.update(range(i, j))
+            starts.append(i)
+    if not moved_chunks:
+        return None, None, []
+    gens = [int(g) for c in moved_chunks for g in META_GEN_RE.findall(c)]
+    return lines, drop, min(starts), moved_chunks, gens
 
 
 ENTRY_HDR = re.compile(r"^\*\*")           # a person-entry header starts with ** (body bullets start with "- ")
@@ -384,6 +414,9 @@ def main():
                     help="entry-level mode: with --gen-min/--gen-max, move person entries "
                          "whose meta generation is in range (for a shard with no "
                          "'### Generation N' blocks)")
+    ap.add_argument("--section",
+                    help="section mode: case-insensitive regex; move every '## ' section "
+                         "whose heading matches, with its '### ' subsections")
     ap.add_argument("--dest", required=True, help="new shard filename (in vault/)")
     ap.add_argument("--region", required=True, help="File Index Region column value")
     ap.add_argument("--content", required=True, help="File Index Content column value")
@@ -400,6 +433,9 @@ def main():
         return 1
 
     text = src.read_text(encoding="utf-8")
+    if args.section and (args.surnames or args.by_meta_gen):
+        print("ERROR: --section is its own mode; do not combine it with --surnames / --by-meta-gen.")
+        return 2
     if args.by_meta_gen:
         if args.surnames or args.gen_min is None or args.gen_max is None:
             print("ERROR: --by-meta-gen needs --gen-min and --gen-max, and not --surnames.")
@@ -407,18 +443,33 @@ def main():
         return _run_cluster(args, src, dest, text)
     if args.surnames:
         return _run_cluster(args, src, dest, text)
-    if args.gen_min is None or args.gen_max is None:
-        print("ERROR: provide --surnames (entry-level) OR --gen-min/--gen-max (generation-range).")
-        return 2
-    res = carve(text, args.gen_min, args.gen_max)
-    if res[0] is None:
-        print(f"No '### Generation N' blocks with {args.gen_min}<=N<={args.gen_max} in {args.source}.")
-        return 0
+    if args.section:
+        if args.gen_min is not None or args.gen_max is not None:
+            print("ERROR: --section takes no --gen-min/--gen-max.")
+            return 2
+        res = carve_sections(text, args.section)
+        if res[0] is None:
+            print(f"No '## ' section heading matches /{args.section}/ in {args.source}.")
+            return 0
+        if not res[4]:
+            print(f"ERROR: the sections matching /{args.section}/ hold no person entries.")
+            return 2
+    else:
+        if args.gen_min is None or args.gen_max is None:
+            print("ERROR: provide --surnames / --section (entry/section-level) OR "
+                  "--gen-min/--gen-max (generation-range).")
+            return 2
+        res = carve(text, args.gen_min, args.gen_max)
+        if res[0] is None:
+            print(f"No '### Generation N' blocks with {args.gen_min}<=N<={args.gen_max} in {args.source}.")
+            return 0
     lines, drop, first_moved, moved_chunks, moved_gens = res
 
     ts = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    stub = (f"> **{gen_range_label(moved_gens)} moved to [[{dest.stem}]]** "
-            f"(split {ts[:10]}; see that shard for these generations).\n\n")
+    what = (f"{len(moved_chunks)} section(s) ({gen_range_label(moved_gens)})"
+            if args.section else gen_range_label(moved_gens))
+    stub = (f"> **{what} moved to [[{dest.stem}]]** "
+            f"(split {ts[:10]}; see that shard for these entries).\n\n")
     new_src = []
     for idx, ln in enumerate(lines):
         if idx == first_moved:
@@ -436,7 +487,8 @@ def main():
 
     print(f"split_shard — {'APPLY' if args.apply else 'DRY-RUN'}")
     print(f"  source: {args.source}  ->  carve {gen_range_label(moved_gens)} "
-          f"({len(moved_chunks)} generation block(s), {moved_meta} person meta block(s))")
+          f"({len(moved_chunks)} {'section' if args.section else 'generation block'}(s), "
+          f"{moved_meta} person meta block(s))")
     print(f"  dest:   {args.dest}  (region '{args.region}')")
     print(f"  meta ids: source had {len(orig_ids)} -> source {len(meta_ids(new_src_text))} "
           f"+ dest {len(meta_ids(dest_text))}; conserved + unique: {ok}")
