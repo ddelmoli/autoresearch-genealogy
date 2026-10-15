@@ -49,6 +49,15 @@ ancestor]` or `[collateral]`, and the plan prints the split. A new EXPAND epoch 
 after sitting #204 (`session_plan.py --set-epoch LANE --session N --reason ...`, which zeroes
 the arm, keeps the prior in `lane_resets`, and dates the change within the day).
 
+⭐ **EXPAND DEMOTES ROWS WHOSE ONLY ROUTE IS OFFLINE (15 OCT 2026, operator, deferred 74).** A
+row whose declared `route` is in `.maintenance.json session_plan.offline_routes` (undigitised
+archives reached only in person or by letter) is placed behind every workable row, before the
+cooled ones, and is NEVER removed: the lane count is unchanged, the row's `why` says
+`[offline route …: demoted]`, and when nothing else is left it is offered as before. The
+framework default list is empty; changing the vault's list changes what EXPAND offers, so it
+takes a `lane_epochs` entry (one was set after sitting #237). Pinned:
+`scripts/test_offline_route_demotion.py`.
+
 ✅ **EXPAND's builder was WIDENED to the definition on 07 AUG 2026** (deferred 50).
 It now draws **two tiers**: the SILENT 0-parent frontier, then **`HALF_WIRED`** rows
 naming exactly one parent with no `no-second-parent` declaration (97 of them).

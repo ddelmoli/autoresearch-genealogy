@@ -300,6 +300,19 @@ IMPROVE_GAP_SHARE = 0.5
 # Override per vault with `.maintenance.json session_plan.expand_direct_share`.
 EXPAND_DIRECT_SHARE = 0.75
 
+# ** EXPAND: A ROW WHOSE ONLY ROUTE IS AN OFFLINE ARCHIVE GOES TO THE BACK (operator,
+# 15 OCT 2026, deferred 74 option 1). ** A declared `route` naming an archive that is
+# not online (an undigitised diocesan archive, a parish office, a reading room) means
+# the row cannot be advanced from a desk, yet EXPAND's three-sitting cooldown returned
+# it at its old rank: measured at the deciding sitting, 21 of 30 EXPAND keys sat behind
+# a recorded blocker and one pair had been drawn six times. Such a row is DEMOTED --
+# placed after every workable row, before the cooled ones -- and ⛔ NEVER REMOVED: it
+# stays in the lane count, and when nothing else is left it is offered as before.
+# ⚠ The slugs are per-vault (`route` is open-ended), so the list lives in
+# `.maintenance.json session_plan.offline_routes`; the framework default is empty, which
+# makes the demotion inert rather than guessing which archives a vault cannot reach.
+OFFLINE_ROUTES: tuple = ()
+
 
 # ---------------------------------------------------------------------------
 # Lane candidate-builders. Each delegates to the owning tool's own logic.
@@ -389,10 +402,25 @@ def lane_expand(vault):
                     "file": h["file"], "tier": "half_wired",
                     "why": f"HALF-WIRED: one parent only, no declared reason -- {hint}"})
     direct = direct_ancestor_ids(vault)
+    routes = {p.id: person_store.route(p) for p in person_store.iter_people(vault)}
     for r in out:
         r["direct"] = r["id"] in direct
         r["why"] += " [direct ancestor]" if r["direct"] else " [collateral]"
+        # The declared route, read through the seam; used by the offline demotion
+        # (OFFLINE_ROUTES). An annotation only: nothing is filtered here.
+        r["route"] = routes.get(r["id"])
     return out
+
+
+def offline_route_predicate(routes):
+    """A row predicate: True when the row's declared `route` is in `routes`.
+
+    Returns None for an empty list, so callers pass it straight to
+    `rotate_candidates(demote=...)` and an unconfigured vault demotes nothing."""
+    routes = {str(x).strip().lower() for x in (routes or ()) if str(x).strip()}
+    if not routes:
+        return None
+    return lambda row: (row.get("route") or "").lower() in routes
 
 
 def harvestable_pid(pid):
@@ -1773,8 +1801,13 @@ def cool_key(row):
 
 
 def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
-                      head_fraction=HEAD_FRACTION, seed_extra=""):
-    """Order one lane's candidates: priority head, seeded sample, then cooled rows.
+                      head_fraction=HEAD_FRACTION, seed_extra="", demote=None):
+    """Order one lane's candidates: priority head, seeded sample, demoted rows, then cooled.
+
+    `demote` (a row predicate, or None) marks rows that are workable in principle but
+    not from a desk (OFFLINE_ROUTES): they follow every other live row and precede the
+    cooled ones. If EVERY live row is demoted, the demotion is moot and they are
+    ordered as ordinary live rows, so a lane never presents an empty head.
 
     Returns (ordered_rows, n_cooling). Pure function of its inputs — pinned by
     scripts/test_session_plan.py. Length is always preserved: this REORDERS, it
@@ -1795,6 +1828,12 @@ def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
         # Everything is cooling. Deprioritising all of it would be meaningless, and
         # silently emptying the lane would be a lie, so hand back the plain order.
         return list(rows), len(cold)
+    demoted = []
+    if demote is not None:
+        kept = [r for r in hot if not demote(r)]
+        if kept:
+            demoted = [r for r in hot if demote(r)]
+            hot = kept
     n = max(1, int(target or 1))
     head_k = max(1, n // max(1, head_fraction))
     head, pool = hot[:head_k], hot[head_k:]
@@ -1803,7 +1842,7 @@ def rotate_candidates(rows, state, lane, target, cooldown=OFFER_COOLDOWN,
     sampled = rng.sample(pool, min(want, len(pool))) if want and pool else []
     picked = {id(r) for r in sampled}
     rest = [r for r in pool if id(r) not in picked]
-    return head + sampled + rest + cold, len(cold)
+    return head + sampled + rest + demoted + cold, len(cold)
 
 
 def draw_lane(state, lane_sizes, min_sample=MIN_SAMPLE, stale_after=STALE_AFTER):
@@ -2147,7 +2186,9 @@ def main(argv=None):
     stale_after = int(cfg.get("stale_after", STALE_AFTER))
     cooldown_sittings = int(cfg.get("offer_cooldown", OFFER_COOLDOWN))
     expand_share = float(cfg.get("expand_direct_share", EXPAND_DIRECT_SHARE))
+    offline_demote = offline_route_predicate(cfg.get("offline_routes", OFFLINE_ROUTES))
     e_dq = e_cq = e_nd = e_nc = 0
+    demoted = {}
 
     state = load_state(vault)
 
@@ -2280,10 +2321,19 @@ def main(argv=None):
             # EXPAND_DIRECT_SHARE): direct ancestors reserve their quota first.
             _dir = [r for r in lanes[_ln] if r.get("direct")]
             _col = [r for r in lanes[_ln] if not r.get("direct")]
+            # Offline-route rows go to the back of each population (deferred 74).
+            if offline_demote is not None:
+                for _r in lanes[_ln]:
+                    if offline_demote(_r):
+                        _r["why"] += (f" [offline route `{_r['route']}`: demoted, "
+                                      f"needs an archive visit or a letter]")
+                demoted[_ln] = sum(1 for _r in lanes[_ln] if offline_demote(_r))
             _dr, _ = rotate_candidates(_dir, state, _ln, _lt,
-                                       cooldown=cooldown_sittings, seed_extra="direct")
+                                       cooldown=cooldown_sittings, seed_extra="direct",
+                                       demote=offline_demote)
             _cr, _ = rotate_candidates(_col, state, _ln, _lt,
-                                       cooldown=cooldown_sittings, seed_extra="collateral")
+                                       cooldown=cooldown_sittings, seed_extra="collateral",
+                                       demote=offline_demote)
             lanes[_ln], e_dq, e_cq = compose_share(_dr, _cr, _lt, expand_share)
             e_nd, e_nc = len(_dir), len(_col)
             cooled[_ln] = count_cooling(lanes[_ln], state, _ln, cooldown_sittings)
@@ -2451,7 +2501,9 @@ def main(argv=None):
                  f"workable {sizes[ln] - blocked[ln]}]" if blocked[ln] else "")
         cool = (f"  [{cooled[ln]} cooling: offered within the last "
                 f"{cooldown_sittings} sittings, moved to the back]" if cooled.get(ln) else "")
-        print(f"\n  [{ln}] {sizes[ln]} candidates{mark}{floor}{cool}")
+        dem = (f"  [{demoted[ln]} on an offline route: demoted behind the workable rows, "
+               f"not removed]" if demoted.get(ln) else "")
+        print(f"\n  [{ln}] {sizes[ln]} candidates{mark}{floor}{cool}{dem}")
         for r in rows[:per_lane]:
             gen = f"Gen {r['gen']:>2}" if r.get("gen") not in (None, "") else "Gen  ?"
             # ⭐ The register already knows which questions name this person; print it.
