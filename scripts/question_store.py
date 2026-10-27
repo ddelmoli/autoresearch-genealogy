@@ -14,8 +14,9 @@ Operations (all dry-run by default; --apply writes):
   --new --shard SLUG --title T --resolver R [--body-file F] [--session N]
         Mint the next free GLOBAL Q number (live shards + Resolved store), write
         a canonical block at the end of the shard's questions (before the
-        Resolved index). Provenance goes in the title parens; the status slot is
-        left empty — it belongs to --resolve.
+        Resolved index). Provenance goes in the title parens, added for you
+        (from --session) unless the title already carries a "(raised ..." paren;
+        the status slot is left empty — it belongs to --resolve.
   --resolve QLABEL --status KW [--note TEXT]
         Rewrite the heading of the live block to `… — KW DD MON YYYY (note)` and
         VERIFY the result is archivable (terminal per the shared rule, no
@@ -35,6 +36,8 @@ Operations (all dry-run by default; --apply writes):
         exactly once in that block. Refuses to change the question's number or
         its terminal state, to add an em-dash to the heading, to drop a resolver
         line, or to introduce a line that would open a new question block.
+        This is also how a HEADING is retitled: pass the old title text as --old
+        (long enough to occur once in the block) and the new one as --with.
   --where QLABEL       locate a question (any state) across every file
   --show QLABEL        print ONE question block, whole, using the shared boundary
   --next-number        print the next free global Q integer
@@ -57,6 +60,9 @@ import question_block as QB
 
 MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN",
           "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+# The provenance paren --new writes: "(raised DD MON YYYY[, session #N])".
+PROVENANCE_RE = re.compile(r"\(raised \d{1,2} [A-Z]{3} \d{4}", re.IGNORECASE)
 
 
 def today_str() -> str:
@@ -160,8 +166,16 @@ def op_new(vault, args):
                          "is a complaint, not a research task). Or supply --body-file "
                          "whose text names one.")
     num = QB.next_free_number(vault)
-    prov = f"(raised {today_str()}" + (f", session #{args.session}" if args.session else "") + ")"
-    heading = f"### {num}. {title} {prov}"
+    # A title that already carries its provenance keeps it and gets no second paren
+    # (27 OCT 2026: a title written with "(raised ..., session #N)" plus --session N
+    # came out with the provenance twice).
+    if PROVENANCE_RE.search(title):
+        heading = f"### {num}. {title}"
+        print("  title already carries its provenance; none added")
+    else:
+        prov = (f"(raised {today_str()}"
+                + (f", session #{args.session}" if args.session else "") + ")")
+        heading = f"### {num}. {title} {prov}"
 
     body = []
     if args.body_file:

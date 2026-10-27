@@ -899,6 +899,12 @@ def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), tod
     if outcome not in ("hit", "miss"):
         raise SystemExit("profile_review: --outcome must be 'hit' or 'miss'")
     person_id = resolve_person_key(vault, person_id)
+    # Validate before anything is mutated, so a typo cannot leave a half-applied supersede.
+    probed = [p.strip().lower() for p in probed if p.strip()]
+    for plat in probed:
+        if plat not in PLATFORMS:
+            raise SystemExit(f"profile_review: unknown probe platform {plat!r} "
+                             f"(known: {', '.join(PLATFORMS)})")
     # A repeat WITHIN THE SAME DAY is a correction, not a fresh poll; across days it is
     # ordinary rotation and must pass through untouched.
     prior = [h for h in live_rows(state["history"])
@@ -925,18 +931,21 @@ def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), tod
             if old.get("outcome") == "hit":
                 oa["hits"] = max(0, oa.get("hits", 0) - 1)
     e = state["entries"].setdefault(person_id, {})
+    if supersede:
+        _rollback_probe_stamps(e, old, person_id, today)
     e["last_polled"] = today.isoformat()
     e["outcome"] = outcome
     if arm:
         e["arm"] = arm
     if note:
         e["note"] = note
+    # Each row remembers what it stamped and what the stamp held before, so a later
+    # --supersede can put the entry back exactly (see _rollback_probe_stamps).
+    probed_prev = {}
     for plat in probed:
-        plat = plat.strip().lower()
-        if plat not in PLATFORMS:
-            raise SystemExit(f"profile_review: unknown probe platform {plat!r} "
-                             f"(known: {', '.join(PLATFORMS)})")
-        e[f"last_probed_{plat}"] = today.isoformat()
+        key = f"last_probed_{plat}"
+        probed_prev[plat] = e.get(key)
+        e[key] = today.isoformat()
     a = state["arms"].setdefault(arm or e.get("arm") or "UNASSIGNED",
                                  {"polled": 0, "hits": 0})
     a["polled"] += 1
@@ -944,8 +953,42 @@ def record(vault, state, person_id, outcome, arm=None, note=None, probed=(), tod
         a["hits"] += 1
     state["history"].append({"date": today.isoformat(), "id": person_id,
                              "arm": arm or e.get("arm"), "outcome": outcome,
-                             "note": note or ""})
+                             "note": note or "", "probed": list(probed),
+                             "probed_prev": probed_prev})
     return state
+
+
+def _rollback_probe_stamps(entry, old_row, person_id, today):
+    """Undo the `last_probed_*` stamps a superseded row wrote.
+
+    ** WHY (27 OCT 2026). ** `--supersede` rolled the ARM counters back but not the
+    probe stamps. A row recorded `--probed fs,wt` and corrected to `--probed fs`
+    (the second platform had refused the request, so nothing was probed there) kept
+    its `last_probed_wt` stamp, and that stamp puts the platform into cooldown: the
+    entry would not be offered for that probe again for months, on a probe that
+    never happened.
+
+    Rows written since this fix carry `probed_prev` (each stamped platform -> the
+    value the stamp held before, or None), so the rollback is exact: restore the
+    earlier value, or delete the key if there was none. Rows written before the fix
+    carry no such record, so nothing is guessed: their stamps are left alone and a
+    warning names any of today's stamps the caller should check by hand.
+    """
+    prev = old_row.get("probed_prev")
+    if prev is None:
+        stale = sorted(k for k, v in entry.items()
+                       if k.startswith("last_probed_") and v == today.isoformat())
+        if stale:
+            print(f"profile_review: WARNING: the superseded row for {person_id} predates "
+                  f"probe tracking, so its stamps cannot be rolled back automatically. "
+                  f"Check by hand: {', '.join(stale)}.", file=sys.stderr)
+        return
+    for plat, value in prev.items():
+        key = f"last_probed_{plat}"
+        if value is None:
+            entry.pop(key, None)
+        else:
+            entry[key] = value
 
 
 # ---------------------------------------------------------------------------

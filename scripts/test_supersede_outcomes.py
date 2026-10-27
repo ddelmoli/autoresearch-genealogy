@@ -127,9 +127,81 @@ def test_profile_review_arm_rollback():
         PR.resolve_person_key = orig
 
 
+def test_profile_review_probe_rollback():
+    """--supersede rolls the PROBE STAMPS back too (27 OCT 2026).
+
+    A row recorded `--probed fs,wt` and corrected to `--probed fs` (the second
+    platform refused the request) used to keep its wt stamp, which puts that probe
+    into cooldown on a probe that never happened.
+    """
+    print("profile_review --supersede rolls the PROBE STAMPS back")
+    today = date(2026, 10, 26)
+    earlier = (today - timedelta(days=200)).isoformat()
+    orig = PR.resolve_person_key
+    PR.resolve_person_key = lambda vault, pid: pid
+    try:
+        state = {"entries": {}, "arms": {}, "history": []}
+        PR.record(None, state, "P-CCCCCC", "hit", arm="EXISTENCE_PROBE",
+                  probed=["fs", "wt"], today=today)
+        e = state["entries"]["P-CCCCCC"]
+        check(e.get("last_probed_wt") == today.isoformat(), "first record stamps wt")
+        PR.record(None, state, "P-CCCCCC", "hit", arm="EXISTENCE_PROBE",
+                  probed=["fs"], today=today, supersede=True)
+        check("last_probed_wt" not in e,
+              "a wt stamp the correction does not repeat is REMOVED")
+        check(e.get("last_probed_fs") == today.isoformat(),
+              "the stamp the correction repeats is kept")
+
+        # an earlier stamp is RESTORED, not deleted
+        state = {"entries": {"P-DDDDDD": {"last_probed_wt": earlier}},
+                 "arms": {}, "history": []}
+        PR.record(None, state, "P-DDDDDD", "miss", arm="EXISTENCE_PROBE",
+                  probed=["wt"], today=today)
+        PR.record(None, state, "P-DDDDDD", "miss", arm="EXISTENCE_PROBE",
+                  probed=[], today=today, supersede=True)
+        check(state["entries"]["P-DDDDDD"].get("last_probed_wt") == earlier,
+              "a stamp that existed before the wrong record is restored to its old date")
+
+        # a chain of two corrections ends where the last one says
+        state = {"entries": {}, "arms": {}, "history": []}
+        PR.record(None, state, "P-EEEEEE", "hit", probed=["fs", "wt", "anc"], today=today)
+        PR.record(None, state, "P-EEEEEE", "hit", probed=["fs"], today=today, supersede=True)
+        PR.record(None, state, "P-EEEEEE", "hit", probed=["fs", "anc"], today=today,
+                  supersede=True)
+        e = state["entries"]["P-EEEEEE"]
+        check(("last_probed_wt" not in e) and e.get("last_probed_anc") == today.isoformat(),
+              "two corrections in a row leave exactly the last one's stamps")
+
+        # negative control: a LEGACY row (no probed_prev) is not guessed at
+        state = {"entries": {"P-FFFFFF": {"last_probed_wt": today.isoformat()}},
+                 "arms": {}, "history": [{"date": today.isoformat(), "id": "P-FFFFFF",
+                                          "arm": "EXISTENCE_PROBE", "outcome": "hit",
+                                          "note": ""}]}
+        PR.record(None, state, "P-FFFFFF", "hit", arm="EXISTENCE_PROBE", probed=["fs"],
+                  today=today, supersede=True)
+        check(state["entries"]["P-FFFFFF"].get("last_probed_wt") == today.isoformat(),
+              "negative control: a pre-fix row's stamps are left alone (warned, not guessed)")
+
+        # an unknown platform is refused BEFORE anything is mutated
+        state = {"entries": {}, "arms": {}, "history": []}
+        PR.record(None, state, "P-GGGGGG", "hit", arm="EXISTENCE_PROBE", probed=["fs"],
+                  today=today)
+        try:
+            PR.record(None, state, "P-GGGGGG", "miss", arm="EXISTENCE_PROBE",
+                      probed=["nope"], today=today, supersede=True)
+            check(False, "an unknown platform is refused")
+        except SystemExit:
+            check(len(PR.live_rows(state["history"])) == 1
+                  and not state["history"][0].get("superseded"),
+                  "an unknown platform is refused before the prior row is touched")
+    finally:
+        PR.resolve_person_key = orig
+
+
 if __name__ == "__main__":
     test_question_drain()
     test_profile_review_arm_rollback()
+    test_profile_review_probe_rollback()
     print()
     if FAILS:
         print(f"FAILED {len(FAILS)}:")

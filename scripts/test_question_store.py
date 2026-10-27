@@ -250,6 +250,31 @@ def main():
         except SystemExit:
             pass
 
+    # --new does not double a provenance paren the title already carries
+    # (27 OCT 2026), and still adds one when the title has none
+    with tempfile.TemporaryDirectory() as d:
+        build(d)
+        shard = os.path.join(d, "Open_Questions_Testland.md")
+        QS.op_new(d, Namespace(shard="testland",
+                               title="A titled question (raised 05 OCT 2026, session #7)",
+                               resolver="r", body_file=None, session="7", apply=True))
+        QS.op_new(d, Namespace(shard="testland", title="A bare title",
+                               resolver="r", body_file=None, session="7", apply=True))
+        heads = [ln for ln in open(shard, encoding="utf-8").read().split("\n")
+                 if ln.startswith("### 91.") or ln.startswith("### 92.")]
+        check("provenance in title not doubled",
+              len(heads) == 2 and heads[0].count("(raised ") == 1
+              and heads[0].endswith("(raised 05 OCT 2026, session #7)"))
+        check("bare title still gets provenance",
+              heads[1].count("(raised ") == 1 and heads[1].endswith(", session #7)"))
+
+        # a heading can be retitled through --replace (no separate retitle op)
+        QS.op_replace(d, Namespace(replace="92", old=["A bare title"],
+                                   with_text=["A better title"], apply=True))
+        lines = open(shard, encoding="utf-8").read().split("\n")
+        check("heading retitled via --replace",
+              any(ln.startswith("### 92. A better title (raised ") for ln in lines))
+
     if bad:
         print("QUESTION_STORE test FAIL: " + ", ".join(bad))
         return 1
