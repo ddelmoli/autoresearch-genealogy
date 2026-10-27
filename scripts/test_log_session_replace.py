@@ -69,6 +69,13 @@ class ReplaceTests(unittest.TestCase):
             f.write(VAULT_TREE)
         with open(os.path.join(self.vault, ".autoresearch.json"), "w", encoding="utf-8") as f:
             json.dump({"person_model": "narrative"}, f)
+        # The biography-slice close gate (added 22 SEP 2026, after this test) FAILs a
+        # close whose sitting drew no slice, and a failed close never stamps
+        # `last_close`, so the re-close path below was never reached. This test is
+        # about the Research_Log row, not that gate: switch the slice off here with
+        # its own documented setting, rather than weakening the gate.
+        with open(os.path.join(self.vault, ".maintenance.json"), "w", encoding="utf-8") as f:
+            json.dump({"bio_slice": {"per_session": 0}}, f)
 
     def tearDown(self):
         shutil.rmtree(self.vault, ignore_errors=True)
@@ -149,8 +156,17 @@ class ReplaceTests(unittest.TestCase):
         self.assertEqual(len(self.rows_for(LINK)), 1)
 
     # ---------------------------------------------------------------- session_close
+    def first_close(self):
+        """The first close must PASS, or it never stamps `last_close` and every
+        re-close assertion below tests nothing. Fail HERE, naming the step, if a
+        new close gate starts failing on this fixture."""
+        r = self.run_script("session_close.py", "--session", "900")
+        self.assertEqual(r.returncode, 0,
+                         "the fixture's FIRST close failed, so the re-close path is "
+                         "unreachable:\n" + r.stdout + r.stderr)
+
     def test_reclose_log_replaces_the_row(self):
-        self.run_script("session_close.py", "--session", "900")          # first close
+        self.first_close()
         r = self.run_script("session_close.py", "--session", "900",
                             "--log", LOG, "--summary", "RE-CLOSE summary: census moved.")
         self.assertIn("RE-CLOSE", r.stdout)
@@ -160,7 +176,7 @@ class ReplaceTests(unittest.TestCase):
         self.assertNotIn("\n  log          BLOCK", r.stdout)
 
     def test_reclose_still_refuses_a_second_observation(self):
-        self.run_script("session_close.py", "--session", "900")
+        self.first_close()
         r = self.run_script("session_close.py", "--session", "900",
                             "--lane", "EXPAND", "--outcome", "hit")
         self.assertNotEqual(r.returncode, 0, "a double-record must still FAIL")
