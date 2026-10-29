@@ -450,6 +450,36 @@ def _one_live(vault, label):
     return (num, suffix) + hits[0]
 
 
+def _one_replaceable(vault, label):
+    """The block --replace may correct: the one LIVE block if there is one, else
+    the one RESOLVED block still sitting in a live shard (resolved, not yet archived).
+
+    ⭐ WHY (29 OCT 2026). A resolution write-up can carry an error found minutes
+    later, before the archiver has moved it out. --append and --replace refused
+    it as not live, and the guard (rightly) refused a hand edit, so the wrong row
+    could only stand. A resolved-but-unarchived block is still a working draft in
+    a live shard; correcting it is a write like any other.
+    ⛔ Archived text in the Resolved store stays out of reach (it is history), and
+    tombstones, struck and `(original)` blocks are never targets. op_replace's own
+    checks still forbid changing the number or the terminal state.
+    """
+    num, suffix = parse_qlabel(label)
+    if QB.find_live_blocks(vault, num, suffix):
+        return _one_live(vault, label)
+    hits = []
+    for p in QB.question_files(vault):
+        for s, e, h, lines in QB.iter_questions(p):
+            if (h["num"] == num and h["suffix"] == suffix and h["terminal"]
+                    and not (h["tombstone"] or h["struck"] or h["original"])):
+                hits.append((p, s, e, h, lines))
+    if len(hits) != 1:
+        where = "; ".join(f"{os.path.basename(p)}:{s+1}" for p, s, e, h, _l in hits)
+        raise SystemExit(f"need exactly one LIVE or resolved-unarchived Q{num}{suffix} "
+                         f"block in a live shard, found {len(hits)}"
+                         f"{' (' + where + ')' if hits else ''}")
+    return (num, suffix) + hits[0]
+
+
 def op_sections(vault, args):
     """List a block's trimmable sub-sections, largest first."""
     num, suffix, path, s, e, h, lines = _one_live(vault, args.sections)
@@ -561,7 +591,8 @@ def op_trim(vault, args):
 
 
 def op_replace(vault, args):
-    """Exact-substring replacement inside ONE live block.
+    """Exact-substring replacement inside ONE live block, or (since 29 OCT 2026)
+    one resolved block not yet archived out of its live shard (`_one_replaceable`).
 
     ⭐ WHY THIS EXISTS (16 SEP 2026). The writers could create, grow, resolve,
     move and trim a block, but not correct a token inside one. A question filed
@@ -576,7 +607,7 @@ def op_replace(vault, args):
     terminal state (archiving), the em-dash (the status slot), the resolver line
     (RESOLVERLESS), and the block boundary (a new `### N.` line would split it).
     """
-    num, suffix, path, s, e, h, lines = _one_live(vault, args.replace)
+    num, suffix, path, s, e, h, lines = _one_replaceable(vault, args.replace)
     if not args.old or len(args.old) != len(args.with_text):
         raise SystemExit("--replace needs matching --old/--with pairs")
     block = "\n".join(lines[s:e])
