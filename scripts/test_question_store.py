@@ -240,6 +240,27 @@ def main():
             except SystemExit:
                 pass
 
+        # --replace reaches a RESOLVED block still in a live shard (29 OCT 2026),
+        # but never archived text in the Resolved store, and never its status
+        QS.op_replace(d, Namespace(replace="14", old=["resolution text"],
+                                   with_text=["resolution text, corrected"], apply=True))
+        txt = open(shard, encoding="utf-8").read()
+        check("replace corrects a resolved-unarchived block",
+              "resolution text, corrected" in txt
+              and "### 14. Done already — RESOLVED 04 AUG 2026 (worked)" in txt)
+        for why, kw in (("replace refuses archived text in the Resolved store",
+                         dict(replace="90", old=["archived body"], with_text=["x"])),
+                        ("replace refuses un-resolving a resolved block",
+                         dict(replace="14", old=[" — RESOLVED 04 AUG 2026 (worked)"],
+                              with_text=[""]))):
+            try:
+                QS.op_replace(d, Namespace(apply=True, **kw))
+                check(why, False)
+            except SystemExit:
+                pass
+        check("archived text untouched", "archived body" in open(
+            os.path.join(d, "Open_Questions_Resolved.md"), encoding="utf-8").read())
+
         # --resolve refuses a DUPLICATED live number instead of writing through it
         with open(shard, "a", encoding="utf-8") as fh:
             fh.write("\n### 10. A duplicate of Q10 (raised twice by mistake)\n\ndup body\n")
