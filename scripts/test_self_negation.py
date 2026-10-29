@@ -97,6 +97,20 @@ def main():
     check(tiers("- **Sources**\n  - a — fs:1:1:AAAA-BBB\n  - b — fs:1:1:CCCC-DDD\n") == {},
           "two ordinary citations stay clean")
 
+    print("SELF_NEGATION — Named-in bullets are claims too (limb (g), counted since 16 SEP 2026)")
+    NAMED = "- **Named-in** (counted, rule 8 limb (g)):\n  - daughter's death, 1876 — fs:3:1:GGGG-HHH\n"
+    t = tiers(NAMED + "- the profile's one source is `~3:1:GGGG-HHH`, the same act\n")
+    check(t.get("fs:3:1:GGGG-HHH") == "LOST",
+          "a prose `~` cancels a Named-in citation on an entry with NO Sources bullet")
+    t = tiers(CITED + NAMED + "- note — ~fs:3:1:GGGG-HHH\n")
+    check(t.get("fs:3:1:GGGG-HHH") == "LOST" and "fs:1:1:AAAA-BBB" not in t,
+          "with both bullets, only the cancelled Named-in token is reported")
+    check(tiers(NAMED) == {},
+          "positive control: an ordinary Named-in citation is clean")
+    check(tiers("- **Named-in and excluded**:\n  - son's death — fs:3:1:GGGG-HHH\n"
+                "  - a namesake's death — ~fs:3:1:JJJJ-KKK\n") == {},
+          "a token negated INSIDE its own Named-in bullet is not claimed")
+
     print("SELF_NEGATION — the DEDUP tier: one record, several locators")
     t = tiers("- **Sources**\n"
               "  - her christening — index + register image — fs:1:1:AAAA-BBB, fs:3:1:EEEE-FFFF\n"
