@@ -823,6 +823,58 @@ class ExpandDirectShareTests(unittest.TestCase):
                          {"date": "2026-09-18", "after_session": 204})
         self.assertEqual(st["lane_resets"][-1]["prior"], {"wins": 3, "iterations": 105})
 
+    def _stale_improve(self):
+        """IMPROVE's epoch moved by hand, its arm left holding pre-epoch rows: the
+        29 OCT 2026 shape (a 0/n EXPAND out-drawing an IMPROVE that hits)."""
+        old = [{"date": "2026-08-10", "lane": "IMPROVE", "outcome": "miss", "session": 150}
+               for _ in range(40)]
+        # two sittings, so the bootstrap floor is clear and the EXPLOIT branch decides
+        new = [{"date": "2026-09-20", "lane": "IMPROVE", "outcome": o, "session": s}
+               for o, s in (("hit", 210), ("hit", 210), ("miss", 212), ("miss", 212))]
+        exp = [{"date": "2026-10-20", "lane": "EXPAND", "outcome": "miss", "session": s}
+               for s in (230, 231, 232)]
+        sup = {"date": "2026-09-21", "lane": "IMPROVE", "outcome": "hit", "session": 211,
+               "superseded": True}
+        return {"arms": {"IMPROVE": {"wins": 2, "iterations": 44},
+                         "EXPAND": {"wins": 0, "iterations": 3}},
+                "history": old + new + [sup] + exp,
+                "lane_epochs": {"IMPROVE": "2026-09-17",
+                                "EXPAND": {"date": "2026-10-15", "after_session": 229}},
+                "pending": None}
+
+    def test_arm_from_history_reads_the_epoch_and_skips_superseded(self):
+        st = self._stale_improve()
+        self.assertEqual(sp.arm_from_history(st, "IMPROVE"), {"wins": 2, "iterations": 4})
+        self.assertEqual(sp.arm_drift(st, sp.BANDIT_LANES),
+                         {"IMPROVE": ({"wins": 2, "iterations": 44},
+                                      {"wins": 2, "iterations": 4})})
+
+    def test_a_stale_arm_draws_the_wrong_lane_and_rebase_fixes_it(self):
+        st = self._stale_improve()
+        sizes = {"EXPAND": 5, "IMPROVE": 5}
+        self.assertEqual(sp.draw_lane(st, sizes, stale_after=99)[0], "EXPAND")
+        st, changed = sp.rebase_arm(st, "IMPROVE", "epoch moved by hand", today="2026-10-29")
+        self.assertTrue(changed)
+        self.assertEqual(st["arms"]["IMPROVE"], {"wins": 2, "iterations": 4})
+        self.assertEqual(st["lane_epochs"]["IMPROVE"], "2026-09-17", "epoch untouched")
+        r = st["lane_resets"][-1]
+        self.assertEqual((r["kind"], r["prior"], r["rebased_to"]),
+                         ("rebase", {"wins": 2, "iterations": 44}, {"wins": 2, "iterations": 4}))
+        self.assertEqual(sp.arm_drift(st, sp.BANDIT_LANES), {})
+        self.assertEqual(sp.draw_lane(st, sizes, stale_after=99)[0], "IMPROVE")
+
+    def test_rebase_is_a_noop_when_the_arm_already_matches(self):
+        st = self._stale_improve()
+        n = len(st["history"])
+        _, changed = sp.rebase_arm(st, "EXPAND", "check")
+        self.assertFalse(changed)
+        self.assertNotIn("lane_resets", st)
+        self.assertEqual(len(st["history"]), n, "history is never touched")
+
+    def test_rebase_needs_a_reason(self):
+        with self.assertRaises(SystemExit):
+            sp.rebase_arm(self._stale_improve(), "IMPROVE", "  ")
+
 
 if __name__ == "__main__":
     unittest.main()
