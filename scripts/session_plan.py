@@ -1691,6 +1691,57 @@ def set_lane_epoch(state, lane, session, reason, today=None):
     return state
 
 
+def arm_from_history(state, lane):
+    """{wins, iterations} for `lane` re-derived from the observations its current
+    epoch admits (`since_epoch`, which already drops superseded rows).
+
+    The stored arm is a running tally that `record` increments, and only
+    `set_lane_epoch` zeroes it. An epoch set any other way (by hand, before that
+    function existed) moves the floors' window and leaves the tally behind, and the
+    exploit branch reads the tally. Measured 29 OCT 2026: IMPROVE's epoch was moved to
+    17 SEP by hand while its arm kept every observation since 01 AUG, 9/129 against an
+    in-epoch 4/14, so a 0/6 EXPAND won every draw on a rate IMPROVE was not being
+    judged on."""
+    rows = [h for h in since_epoch(state) if h.get("lane") == lane]
+    return {"wins": sum(1 for h in rows if h.get("outcome") == "hit"),
+            "iterations": len(rows)}
+
+
+def arm_drift(state, lanes=None):
+    """{lane: (stored, derived)} for every lane whose stored arm disagrees with its
+    in-epoch history. Empty means the tally the exploit branch reads is the one the
+    floors see."""
+    out = {}
+    for ln in lanes or LANES:
+        stored, derived = arm_of(state, ln), arm_from_history(state, ln)
+        if stored != derived:
+            out[ln] = (stored, derived)
+    return out
+
+
+def rebase_arm(state, lane, reason, today=None):
+    """Set `lane`'s arm to its in-epoch tally WITHOUT moving its epoch (29 OCT 2026).
+
+    The counterpart to `set_lane_epoch` for the case where the epoch is right and the
+    tally is stale: zeroing would also discard the valid in-epoch observations, which
+    the floors already count. The prior tally is kept in `lane_resets` (`kind:
+    rebase`) so the change stays auditable; `history` is never touched."""
+    if lane not in LANES:
+        raise SystemExit(f"unknown lane {lane!r}; one of {', '.join(LANES)}")
+    if not (reason or "").strip():
+        raise SystemExit("a rebase needs a reason")
+    today = today or date.today().isoformat()
+    prior, derived = arm_of(state, lane), arm_from_history(state, lane)
+    if prior == derived:
+        return state, False
+    state.setdefault("arms", {})[lane] = derived
+    state.setdefault("lane_resets", []).append(
+        {"lane": lane, "date": today, "kind": "rebase",
+         "epoch": (state.get("lane_epochs") or {}).get(lane),
+         "prior": prior, "rebased_to": derived, "reason": reason})
+    return state, True
+
+
 def sittings_in_order(history):
     """Distinct sittings, oldest first, de-duplicated but order-preserving."""
     seen, out = set(), []
@@ -2158,7 +2209,12 @@ def main(argv=None):
                     help="start a new per-lane epoch after sitting --session: zero the "
                          "lane's arm (prior kept in lane_resets) and retire its earlier "
                          "observations from the floors. Needs --reason.")
-    ap.add_argument("--reason", default="", help="with --set-epoch: why the lane changed")
+    ap.add_argument("--rebase-arm", dest="rebase_arm", metavar="LANE",
+                    help="set LANE's arm to the tally of its in-epoch history, keeping "
+                         "the epoch (prior kept in lane_resets). For a stale tally, not a "
+                         "redefined lane. Needs --reason.")
+    ap.add_argument("--reason", default="",
+                    help="with --set-epoch or --rebase-arm: why")
     ap.add_argument("--supersede", action="store_true",
                     help="with --record: CORRECT the most recent outcome already recorded "
                          "for this --lane and --session. The prior row is marked "
@@ -2199,6 +2255,19 @@ def main(argv=None):
         save_state(vault, set_lane_epoch(state, a.set_epoch.upper(), a.session, a.reason))
         print(f"PLAN: {a.set_epoch.upper()} epoch set after sitting #{a.session} "
               f"({date.today().isoformat()}); arm zeroed, prior kept in lane_resets")
+        return 0
+
+    if a.rebase_arm:
+        ln = a.rebase_arm.upper()
+        prior = arm_of(state, ln)
+        state, changed = rebase_arm(state, ln, a.reason)
+        if not changed:
+            print(f"PLAN: {ln} arm already matches its in-epoch history {prior}; "
+                  f"nothing written")
+            return 0
+        save_state(vault, state)
+        print(f"PLAN: {ln} arm rebased {prior} -> {state['arms'][ln]} "
+              f"(in-epoch history); prior kept in lane_resets")
         return 0
 
     if a.heartbeat:
@@ -2387,6 +2456,10 @@ def main(argv=None):
     print(f"  RECOMMENDED LANE: {pick}  ({reason})")
     if pend_note:
         print(pend_note)
+    for _ln, (_st, _dv) in arm_drift(state, BANDIT_LANES).items():
+        print(f"  ⚠ ARM DRIFT: {_ln} tally {_st['wins']}/{_st['iterations']} but its "
+              f"in-epoch history is {_dv['wins']}/{_dv['iterations']}; the exploit branch "
+              f"reads the tally. Fix: --rebase-arm {_ln} --reason '...'")
     if lane_target:
         shown, is_dry = target_and_dryness(lane_target, sizes.get(pick, 0) if pick else lane_target)
         # "at least" is the operator's word (01 AUG 2026): the target is a FLOOR,
