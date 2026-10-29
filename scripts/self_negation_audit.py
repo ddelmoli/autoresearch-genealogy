@@ -59,6 +59,7 @@ the interaction the gate exists to catch. The whole-entry scan is the only sound
 """
 import argparse
 import os
+import re
 import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -66,6 +67,38 @@ sys.path.insert(0, SCRIPT_DIR)
 
 import harvest_sources as H
 import vault_config
+
+# A `- **Named-in …**` bullet (any suffix: "/ family records", "and excluded", …).
+NAMED_IN_BULLET_RE = re.compile(r"^\s*-\s+\*\*Named[- ]in", re.I)
+
+
+def named_in_bullet_text(body):
+    """The `- **Named-in**` bullet(s) of an entry body, with their indented sub-bullets.
+
+    ⭐ WHY THIS GATE READS THEM (29 OCT 2026). Since the 16 SEP 2026 ruling a relative's
+    record that names the person COUNTS (rule 8 limb (g)), and it is cited in a Named-in
+    bullet, not a Sources bullet. The gate only compared Sources bullets, so an entry whose
+    Named-in citation was cancelled by a `~` elsewhere looked clean -- and an entry with no
+    Sources bullet at all was skipped before any comparison. Measured on the reference
+    vault the day this was added: two entries read SOURCE_GAP / 0 on exactly that, and nine
+    more had a Named-in citation cancelled, all invisible to the old check."""
+    out, inside = [], False
+    for ln in body.splitlines():
+        if NAMED_IN_BULLET_RE.search(ln):
+            inside = True
+            out.append(ln)
+            continue
+        if inside:
+            if ln.strip() == "" or re.match(r"^\s{2,}", ln):
+                out.append(ln)
+                continue
+            inside = False
+    return "\n".join(out)
+
+
+def claimed_text(body):
+    """Every bullet that ASSERTS a counted citation: Sources, then Named-in."""
+    return "\n".join(t for t in (H.sources_bullet_text(body), named_in_bullet_text(body)) if t)
 
 
 def findings(vault=None):
@@ -109,8 +142,11 @@ def findings(vault=None):
     out = []
     for path, entries in H.entry_blocks_with_ids(vault).items():
         for vid, name, _hline, body in entries:
-            src = H.sources_bullet_text(body)
-            claimed = set(H.record_locators(src))
+            src = claimed_text(body)
+            # Negation inside each bullet is resolved over that bullet alone, so a token a
+            # "Named-in and excluded" bullet negates itself is never counted as claimed.
+            claimed = set(H.record_locators(H.sources_bullet_text(body))) | \
+                set(H.record_locators(named_in_bullet_text(body)))
             if not claimed:
                 continue
             survives = set(H.record_locators(body))
