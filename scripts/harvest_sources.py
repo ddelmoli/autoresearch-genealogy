@@ -297,7 +297,22 @@ def _negated_tokens(spans: "List[str]") -> "set":
         for pat in ARK_PATTERNS:
             for m in pat.finditer(s):
                 toks.add(m.group(1))
+        # ⭐ An `id`-kind host has no ARK shape, so the patterns above yield nothing for
+        # `~irishgen:cibi-…` or `~nycdoris:D-M-…`, and the same token written un-negated
+        # on another line of the entry kept counting (measured 03 NOV 2026: a write-back
+        # `— evidence` slot re-credited a held register locator). Yield the WHOLE
+        # `host:id` string: matching the bare tail instead would blank an unrelated id
+        # that happens to share it on another host.
+        m = _NEGATED_HOST_TOKEN_RE.match(s)
+        if m:
+            tok = strip_trailing_markup(m.group(1))
+            if is_record_locator(tok):
+                toks.add(tok)
     return toks
+
+
+_NEGATED_HOST_TOKEN_RE = re.compile(
+    r"~\s*((?:" + "|".join(EMITTED_HOST_IDS) + r"):[^\s,;)\]]+)", re.IGNORECASE)
 
 
 # ── Q274: a closing markdown backtick is part of the token ─────────────────────
