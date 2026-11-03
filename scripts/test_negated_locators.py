@@ -74,6 +74,26 @@ def main():
     check(H.strip_negated_locators("") == "", "empty input is safe")
     check(H.strip_negated_locators(None) == "", "None is safe")
 
+    print("negated locators — an id-kind host token is negated ENTRY-WIDE too (03 NOV 2026)")
+    # A held register id negated on its Sources line, then restated un-negated in a
+    # write-back `— evidence` slot, kept counting: the second-spelling pass only knew
+    # ARK shapes. Each case carries its positive control.
+    body = ("- birth register entry — ~nycdoris:B-M-1900-0000001\n"
+            "- write-back — evidence nycdoris:B-M-1900-0000001 — life_status: deceased")
+    check(H.count_records(body) == 0, "negated id-kind token drops on its OTHER line")
+    body = ("- will — ~anc:5111:1234567\n"
+            "- the same will quoted — anc:5111:1234567.")
+    check(H.count_records(body) == 0, "trailing sentence mark does not shield the other spelling")
+    body = ("- held — ~nycdoris:B-M-1900-0000001\n"
+            "- live census — anc:6224:7654321")
+    check(H.count_records(body) == 1, "a DIFFERENT host record on another line still counts")
+    body = ("- held — ~anc:5111:1234567\n"
+            "- live — anc:5111:12345678")
+    check(H.count_records(body) == 1, "a longer id sharing the prefix is not blanked")
+    body = ("- held — ~anc:5111:1234567\n"
+            "- live — fs:1:1:AAAA-BBB")
+    check(H.count_records(body) == 1, "an unrelated FS record still counts")
+
     print("negated locators — per-host breakdown honours it too")
     check(H.per_host_locators("~fs:1:1:AAAA-BBB").get("familysearch", 0) == 0,
           "per_host_locators does not count a negated locator")
