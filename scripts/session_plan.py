@@ -1338,8 +1338,19 @@ def dedupe_by_person(rows, seen=None):
     return out
 
 
-def compose_share(primary, secondary, target, share):
+def compose_share(primary, secondary, target, share, primary_hot=None, secondary_hot=None):
     """Interleave two populations of a lane, reserving a share for the PRIMARY one.
+
+    ⭐ **A RESERVATION HOLDS ONLY AS MANY SLOTS AS THE PRIMARY HAS FRESH ROWS
+    (04 NOV 2026, deferred 75, operator ruling).** `primary_hot` / `secondary_hot` are
+    the counts of rows NOT cooling in each (rotated) population, which sit at its
+    head. When both are given and the secondary has fresh rows, the primary quota is
+    capped at `primary_hot`, so the unused slots pass to the secondary instead of
+    being filled with rows already offered this sitting. Measured in #249: IMPROVE's
+    "no source" group held three people, its share reserved three slots, and the same
+    three were offered in four successive draws. Cooled rows are still never removed;
+    they follow in the tails. With the counts omitted, or a secondary with nothing
+    fresh either, the share is unchanged.
 
     ** WHY A SHARE AND NOT A MERGE (measured 01 AUG 2026). ** On the reference vault
     the stale-PID population is ~1,131 rows against ~34 `?`-edge rows. Merged into one
@@ -1372,6 +1383,8 @@ def compose_share(primary, secondary, target, share):
     secondary = dedupe_by_person(secondary)
     n = max(1, int(target or 1))
     p_want = min(len(primary), max(1, int(n * share)))
+    if primary_hot is not None and secondary_hot:
+        p_want = min(p_want, max(0, int(primary_hot)))
 
     out, placed = [], {}
 
@@ -2370,9 +2383,15 @@ def main(argv=None):
             _c, _cc = rotate_candidates(i_corrob, state, _ln, _lt,
                                         cooldown=cooldown_sittings, seed_extra="corrob")
             # Defects reserve their share FIRST; sourcing rows split what is left.
-            _src, _gq, _cq = compose_share(_g, _c, _lt, IMPROVE_GAP_SHARE)
+            # A group with no fresh rows passes its slots on (deferred 75).
+            _hot = lambda rows: sum(1 for r in rows
+                                    if not row_cooling(state, _ln, r, cooldown_sittings))
+            _src, _gq, _cq = compose_share(_g, _c, _lt, IMPROVE_GAP_SHARE,
+                                           primary_hot=_hot(_g), secondary_hot=_hot(_c))
             lanes[_ln], i_dq, _srcq = compose_share(_d, _src, _lt,
-                                                    IMPROVE_DEFECT_SHARE)
+                                                    IMPROVE_DEFECT_SHARE,
+                                                    primary_hot=_hot(_d),
+                                                    secondary_hot=_hot(_src))
             # ⚠ REPORT WHAT IS ACTUALLY TAKEN, NOT THE INNER SPLIT. The inner
             # compose sizes gaps/corrob against the FULL target; the outer one then
             # takes only `_srcq` of that ordering. Printing the inner quotas made
