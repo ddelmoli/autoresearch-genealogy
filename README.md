@@ -189,10 +189,9 @@ python3 scripts/gen_person_index.py --integrity
 
 - **Do not `pip install` globally.** The env is managed entirely through `uv sync` /
   `uv.lock`. Add a dependency with `uv add <pkg>` (commit the updated lockfile).
-- **OneDrive:** `.venv/` is git-ignored because this repo lives in OneDrive — a synced venv
-  would upload thousands of interpreter files with machine-specific paths. Each machine runs
-  its own `uv sync`. To keep the venv out of OneDrive entirely, point it elsewhere:
-  `export UV_PROJECT_ENVIRONMENT=$HOME/.venvs/autoresearch-genealogy` before `uv sync`.
+- **`.venv/` is git-ignored.** It holds thousands of interpreter files with machine-specific
+  paths, so each machine runs its own `uv sync`. Keep the checkout out of synced folders
+  (OneDrive, iCloud): git and GitHub are how it moves between machines.
 
 ## Philosophy
 
