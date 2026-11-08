@@ -38,6 +38,7 @@ Usage:
     python3 scripts/gen_question_index.py --heartbeat     # one line for the banner
 """
 import os
+import pathlib
 import re
 import sys
 import glob
@@ -100,7 +101,7 @@ def parse(vault):
     and hand-struck headings are skipped."""
     rows = []
     for path in question_files(vault):
-        lines = open(path, encoding="utf-8").read().split("\n")
+        lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
         for a, b in QB.split_blocks(lines):
             head = lines[a]
             h = QB.parse_heading(head)
@@ -196,7 +197,7 @@ def update_router(vault, rows, write=False):
     counts = {}
     for r in rows:
         counts[r["file"][:-3]] = counts.get(r["file"][:-3], 0) + 1
-    lines = open(path, encoding="utf-8").read().split("\n")
+    lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
     seen, n_upd, warnings = set(), 0, []
     for i, ln in enumerate(lines):
         m = ROUTER_ROW.match(ln)

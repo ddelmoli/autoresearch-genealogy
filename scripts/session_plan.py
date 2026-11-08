@@ -97,6 +97,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import random
 import re
 import subprocess
@@ -1055,7 +1056,7 @@ def _scan_register(vault):
     ids, labels = set(), {}
     for path in QB.question_files(vault):
         try:
-            lines = open(path, encoding="utf-8").read().split("\n")
+            lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
         except OSError:
             continue          # no register -> nothing is tracked; never a hard failure
         ids |= set(PID_RE.findall("\n".join(lines)))

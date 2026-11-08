@@ -20,8 +20,8 @@ ordinary dates with no meta key beside them; classifying before validating put
 human is asked to read.
 """
 import os
-import sys
 import pathlib
+import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -42,10 +42,8 @@ def vault_with(entry):
     """A scratch narrative vault holding one entry. See test_manifest_audit for why
     the person_model declaration is not optional."""
     d = tempfile.mkdtemp()
-    open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8").write(
-        '{"person_model": "narrative"}')
-    open(os.path.join(d, "Family_Tree_Scratch.md"), "w", encoding="utf-8").write(
-        "### Generation 9: Placeholder\n\n" + entry)
+    pathlib.Path(os.path.join(d, ".autoresearch.json")).write_text('{"person_model": "narrative"}', encoding="utf-8")
+    pathlib.Path(os.path.join(d, "Family_Tree_Scratch.md")).write_text("### Generation 9: Placeholder\n\n" + entry, encoding="utf-8")
     return d
 
 

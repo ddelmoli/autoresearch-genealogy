@@ -68,6 +68,7 @@ import argparse
 import datetime as _dt
 import glob as _glob
 import os
+import pathlib
 import re
 import sys
 from collections import Counter
@@ -166,7 +167,7 @@ def scan(vault):
     """Yield one dict per write-back item, from every Family_Tree shard."""
     items = []
     for path in sorted(_glob.glob(os.path.join(vault, "Family_Tree*.md"))):
-        lines = open(path, encoding="utf-8").read().splitlines()
+        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
         for i, line in enumerate(lines):
             for m in MARKER_RE.finditer(line):
                 body = _body(lines, i, m.start())

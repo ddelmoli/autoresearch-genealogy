@@ -49,6 +49,7 @@ Dry-run by default, like every other migrator here. `--apply` writes.
 
 import argparse
 import os
+import pathlib
 import re
 import subprocess
 import sys
@@ -230,7 +231,7 @@ def main(argv=None):
         if not os.path.exists(path):
             print(f"  [skip] {fname}: not found", file=sys.stderr)
             continue
-        lines = open(path, encoding="utf-8").read().split("\n")
+        lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
         want = {p["id"]: p["to"] for p in items}
         hits = 0
         for i, ln in enumerate(lines):
@@ -245,7 +246,7 @@ def main(argv=None):
                 lines[i] = new
                 hits += 1
         if hits:
-            open(path, "w", encoding="utf-8").write("\n".join(lines))
+            pathlib.Path(path).write_text("\n".join(lines), encoding="utf-8")
             files += 1
             changed += hits
         if hits != len(items):

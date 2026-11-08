@@ -40,6 +40,7 @@ After --apply, re-run the gates:
     python3 scripts/build_edges.py --validate     # structural must stay 0
     python3 scripts/gen_person_index.py --integrity
 """
+import pathlib
 import re, os, sys, glob, json, argparse
 from collections import defaultdict
 
@@ -111,7 +112,8 @@ def main():
     ap.add_argument("--apply", action="store_true", help="write (per-file .bak); default is preview")
     args = ap.parse_args()
 
-    spec = json.load(open(args.spec, encoding="utf-8"))
+    with open(args.spec, encoding="utf-8") as fh:
+        spec = json.load(fh)
 
     rows = G.parse_narrative()
     id2name = {r["id"]: r["name"] for r in rows if r["id"]}
@@ -143,7 +145,7 @@ def main():
     changes, residuals, files_touched = [], [], defaultdict(int)
     seen_ids = set()
     for path in sorted(glob.glob(os.path.join(VAULT, "Family_Tree*.md"))):
-        lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
+        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines(keepends=True)
         changed = False
         for i, line in enumerate(lines):
             if not G.META.match(line):
@@ -172,7 +174,7 @@ def main():
                 files_touched[os.path.basename(path)] += 1
         if changed and args.apply:
             with open(path + ".bak", "w", encoding="utf-8") as b:
-                b.write("".join(open(path, encoding="utf-8").read()))
+                b.write("".join(pathlib.Path(path).read_text(encoding="utf-8")))
             with open(path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
 

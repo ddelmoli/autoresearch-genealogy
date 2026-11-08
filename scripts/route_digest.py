@@ -60,6 +60,7 @@ import argparse
 import collections
 import glob
 import os
+import pathlib
 import re
 import sys
 
@@ -133,7 +134,7 @@ def harvest(paths):
     found = []
     for path in paths:
         base = os.path.basename(path)[: -len(".md")]
-        raw = open(path, encoding="utf-8").read()
+        raw = pathlib.Path(path).read_text(encoding="utf-8")
         raw = BLOCK_RE.sub("", raw)          # never re-harvest our own output
         lines = raw.split("\n")
         starts = [i for i, l in enumerate(lines) if BOLD_HEADER_RE.match(l)]
@@ -220,15 +221,16 @@ def load_register(vault):
     if not os.path.exists(path):
         return {}
     out, cur = {}, None
-    for line in open(path, encoding="utf-8"):
-        if line.startswith("## "):
-            cur = line[3:].strip()
-            out.setdefault(cur, [])
-        elif cur is not None:
-            m = REG_ROW.match(line.strip())
-            if m:
-                kind = "closure" if m.group(1) == "⊘" else "route"
-                out[cur].append((kind, m.group(2).strip()))
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith("## "):
+                cur = line[3:].strip()
+                out.setdefault(cur, [])
+            elif cur is not None:
+                m = REG_ROW.match(line.strip())
+                if m:
+                    kind = "closure" if m.group(1) == "⊘" else "route"
+                    out[cur].append((kind, m.group(2).strip()))
     return out
 
 
@@ -311,7 +313,7 @@ def render(root, paths, items, cap):
 
 
 def insert(path, block):
-    text = open(path, encoding="utf-8").read()
+    text = pathlib.Path(path).read_text(encoding="utf-8")
     text = BLOCK_RE.sub("", text)
     if text.startswith("---"):
         end = text.find("\n---", 3)
@@ -319,7 +321,7 @@ def insert(path, block):
     else:
         cut = 0
     new = text[:cut] + ("\n" if cut and not text[cut:].startswith("\n") else "") + block + text[cut:]
-    open(path, "w", encoding="utf-8").write(new)
+    pathlib.Path(path).write_text(new, encoding="utf-8")
 
 
 def main(argv=None):

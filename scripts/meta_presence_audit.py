@@ -65,6 +65,7 @@ suites.
 """
 import glob
 import os
+import pathlib
 import re
 import sys
 
@@ -132,7 +133,7 @@ def audit_orphaned(vault=VAULT):
     """Meta blocks whose preceding non-blank line is not a bold-name header."""
     issues = []
     for path in sorted(glob.glob(os.path.join(vault, "Family_Tree*.md"))):
-        lines = open(path, encoding="utf-8").read().splitlines()
+        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
         for i, line in enumerate(lines):
             if not META.match(line):
                 continue
@@ -195,7 +196,7 @@ def _is_crossref_bullet(raw_line, name):
 def audit(vault=VAULT):
     issues = []
     for path in sorted(glob.glob(os.path.join(vault, "Family_Tree*.md"))):
-        lines = open(path, encoding="utf-8").read().splitlines()
+        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
         # Block boundaries must use the SAME entry shape as HDR_LENIENT above,
         # or a bullet-style entry's block would run on to the next line-start
         # header and swallow that neighbour's meta line — reporting 0 for exactly

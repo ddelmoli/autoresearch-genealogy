@@ -18,6 +18,7 @@ source of truth. Silent-safe: no config => prints an all-clear and exits 0.
 """
 import glob
 import os
+import pathlib
 import sys
 
 import archive_sections as A  # same dir on sys.path[0] when run as a script
@@ -54,7 +55,7 @@ def due_actions():
     if shard_cfg:
         thr = shard_cfg.get("threshold_tokens", 10 ** 12)
         for p in sorted(glob.glob(str(A.VAULT / shard_cfg["glob"]))):
-            tk = A.est_tokens(open(p, encoding="utf-8").read())
+            tk = A.est_tokens(pathlib.Path(p).read_text(encoding="utf-8"))
             if tk >= thr:
                 shards.append((os.path.basename(p), tk))
     return actions, shards, shard_cfg

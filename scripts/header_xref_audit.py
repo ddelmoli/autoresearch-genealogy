@@ -35,6 +35,7 @@ ARK fragments (1:1:/3:1:) are excluded so source bullets are never matched. Advi
 exit 0 always; --strict exits 1 when violations exist. --file scopes to one file.
 """
 import argparse, glob, re, sys, os
+import pathlib
 
 PID = re.compile(r'(?<![:/A-Z0-9])([A-Z0-9]{4}-[A-Z0-9]{3})(?![A-Z0-9])')
 ARK = re.compile(r'[13]:1:[A-Z0-9-]+')
@@ -84,7 +85,7 @@ def _meta_within(lines, i, lookahead=3):
 
 def audit_file(path):
     """Return (header_xref, anchorless) lists of (lineno, own, foreign, snippet)."""
-    lines = open(path, encoding='utf-8').read().split('\n')
+    lines = pathlib.Path(path).read_text(encoding='utf-8').split('\n')
     header_xref, anchorless = [], []
     for i, l in enumerate(lines):
         if not l.lstrip().startswith('**'):

@@ -12,6 +12,7 @@ parents' FS PIDs. Well-formed markdown, real header, wrong person —
 `entry_boundary_audit` read 0 for it, correctly, because that is not its question.
 """
 import os
+import pathlib
 import sys
 import tempfile
 
@@ -44,8 +45,8 @@ VAULT = """# Family_Tree_Test
 
 def build():
     d = tempfile.mkdtemp()
-    open(os.path.join(d, "Family_Tree_Test.md"), "w").write(VAULT)
-    open(os.path.join(d, ".autoresearch.json"), "w").write('{"person_model": "narrative"}')
+    pathlib.Path(os.path.join(d, "Family_Tree_Test.md")).write_text(VAULT)
+    pathlib.Path(os.path.join(d, ".autoresearch.json")).write_text('{"person_model": "narrative"}')
     return d
 
 fails = []
@@ -79,8 +80,8 @@ BLIND = VAULT + """
 - MISFILED-BLIND: a bullet about the spouse, citing only SSSS-999, the owner's own pid.
 """
 d2 = tempfile.mkdtemp()
-open(os.path.join(d2, "Family_Tree_Test.md"), "w").write(BLIND)
-open(os.path.join(d2, ".autoresearch.json"), "w").write('{"person_model": "narrative"}')
+pathlib.Path(os.path.join(d2, "Family_Tree_Test.md")).write_text(BLIND)
+pathlib.Path(os.path.join(d2, ".autoresearch.json")).write_text('{"person_model": "narrative"}')
 blind = eaa.scan(d2)
 check("a bullet naming ONLY the owner's own identifier is NOT caught "
       "(the incident's hardest case: a note landed on the SPOUSE and cited the spouse's "
@@ -94,13 +95,12 @@ print("the SILENT-ZERO regression, pinned hardest of all:")
 # 37-file validation commit hid it; a one-file commit exposed it immediately.
 import shutil
 staged = tempfile.mkdtemp()          # pretend only the Stranger's file was staged
-open(os.path.join(staged, "Family_Tree_Test.md"), "w").write(
-    "\n".join(VAULT.split("**Parent One**")[0].splitlines()) + """
+pathlib.Path(os.path.join(staged, "Family_Tree_Test.md")).write_text("\n".join(VAULT.split("**Parent One**")[0].splitlines()) + """
 **Stranger** (b. 1900)
 - meta: {id: P-STR999, generation: 3, fs: SSSS-999}
 - MISFILED: a bullet about Child A's parents, naming PPPP-111 and QQQQ-222.
 """)
-open(os.path.join(staged, ".autoresearch.json"), "w").write('{"person_model": "narrative"}')
+pathlib.Path(os.path.join(staged, ".autoresearch.json")).write_text('{"person_model": "narrative"}')
 only = {"Family_Tree_Test.md": set(range(1, 40))}
 
 blind_index = eaa.scan(staged, only=only)                       # index from the staged dir

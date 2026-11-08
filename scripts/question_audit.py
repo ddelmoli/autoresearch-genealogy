@@ -80,7 +80,7 @@ def collect(vault):
     live_by_label = {}
     for path in QB.question_files(vault):
         rel = os.path.basename(path)
-        lines = open(path, encoding="utf-8").read().split("\n")
+        lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
         index_at = next((i for i, ln in enumerate(lines)
                          if QB.RESOLVED_INDEX.match(ln)), None)
         for i, ln in enumerate(lines):

@@ -25,6 +25,7 @@ Other vault files keep their diacritics untouched; this guard is Handoff-only.
 
 Usage from another file: import ascii_handoff; n = ascii_handoff.count()
 """
+import pathlib
 import sys, os, re, unicodedata
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -65,7 +66,7 @@ def find(t: str):
 def count() -> int:
     if not os.path.exists(PATH):
         return 0
-    return len(find(open(PATH, encoding="utf-8").read()))
+    return len(find(pathlib.Path(PATH).read_text(encoding="utf-8")))
 
 def transliterate(t: str) -> str:
     t = _nfc(t)
@@ -83,12 +84,12 @@ def main():
     vault_config.require_vault(VAULT)
     if not os.path.exists(PATH):
         print("Handoff.md missing"); return 0
-    t = open(PATH, encoding="utf-8").read()
+    t = pathlib.Path(PATH).read_text(encoding="utf-8")
     if "--count" in sys.argv:
         print(count()); return 0
     if "--fix" in sys.argv:
         new = transliterate(t)
-        open(PATH, "w", encoding="utf-8").write(new)
+        pathlib.Path(PATH).write_text(new, encoding="utf-8")
         residual = find(new)
         print(f"[ascii_handoff] fixed; {'0' if not residual else len(residual)} flagged chars remain")
         for ln, c in residual:

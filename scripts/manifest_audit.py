@@ -132,6 +132,7 @@ from __future__ import annotations
 import argparse
 import glob as _glob
 import os
+import pathlib
 import re
 import sys
 from collections import defaultdict
@@ -175,7 +176,7 @@ def scan(vault):
 
     rows = []
     for path in sorted(_glob.glob(os.path.join(vault, "Family_Tree*.md"))):
-        lines = open(path, encoding="utf-8").read().splitlines()
+        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
         headings = [(i, len(m.group(1)))
                     for i, ln in enumerate(lines)
                     for m in [ANY_HEADING_RE.match(ln)] if m]
@@ -233,29 +234,30 @@ def scan_gen_range(vault):
     if not os.path.exists(path):
         return []
     rows = []
-    for line in open(path, encoding="utf-8"):
-        if not line.strip().startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3:
-            continue
-        # Reuse the manifest loader's own File-cell normaliser: wikilinks, backticks,
-        # markdown links and a trailing `.md` all reduce to a bare shard basename.
-        name = shard_manifest._normalize_file(cells[0])
-        if not name.startswith(shard_manifest.TREE_PREFIX):
-            continue
-        actual = spans.get(name + ".md")
-        claims = _range_claims(line)
-        if actual is None:
-            verdict = "no_entries"
-        elif not claims:
-            verdict = "no_claim"
-        elif any(c == actual for c in claims):
-            verdict = "ok"
-        else:
-            verdict = "mismatch"
-        rows.append({"file": name, "claims": claims, "actual": actual,
-                     "verdict": verdict})
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip().startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 3:
+                continue
+            # Reuse the manifest loader's own File-cell normaliser: wikilinks, backticks,
+            # markdown links and a trailing `.md` all reduce to a bare shard basename.
+            name = shard_manifest._normalize_file(cells[0])
+            if not name.startswith(shard_manifest.TREE_PREFIX):
+                continue
+            actual = spans.get(name + ".md")
+            claims = _range_claims(line)
+            if actual is None:
+                verdict = "no_entries"
+            elif not claims:
+                verdict = "no_claim"
+            elif any(c == actual for c in claims):
+                verdict = "ok"
+            else:
+                verdict = "mismatch"
+            rows.append({"file": name, "claims": claims, "actual": actual,
+                         "verdict": verdict})
     return rows
 
 
@@ -299,45 +301,46 @@ def scan_surname_absent(vault, tier2=False):
     out = []
     if not os.path.exists(path):
         return out, ladder
-    for line in open(path, encoding="utf-8"):
-        if not line.strip().startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3:
-            continue
-        name = shard_manifest._normalize_file(cells[0])
-        if not name.startswith(shard_manifest.TREE_PREFIX):
-            continue
-        here = per_file.get(name + ".md")
-        if not here:
-            continue
-        content = "|".join(cells[2:])
-        linked = [shard_manifest._normalize_file(x) + ".md"
-                  for x in WIKILINK_TARGET_RE.findall(content)]
-        own = {w.lower() for w in re.findall(r"[A-Za-z]+", name)}
-        for tok in sorted(set(ROW_TOKEN_RE.findall(WIKILINK_RE.sub(" ", content)))):
-            low = tok.lower()
-            if low in here:
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip().startswith("|"):
                 continue
-            ladder["1 absent from this file"] += 1
-            is_surname = low in surnames
-            if tier2 and not is_surname:
-                out.append({"file": name, "token": tok, "tier": 2})
-            if not is_surname:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if len(cells) < 3:
                 continue
-            ladder["2 is a surname in this vault"] += 1
-            # The row LINKS to a file that holds them: it is correctly saying where
-            # the family went. This is the pointer rule that actually works here.
-            if any(low in per_file.get(dest, set()) for dest in linked):
+            name = shard_manifest._normalize_file(cells[0])
+            if not name.startswith(shard_manifest.TREE_PREFIX):
                 continue
-            ladder["3 not in a file this row links to"] += 1
-            if low in places:
+            here = per_file.get(name + ".md")
+            if not here:
                 continue
-            ladder["4 not a place in this vault"] += 1
-            if low in own:
-                continue
-            ladder["5 not in the row's own file name"] += 1
-            out.append({"file": name, "token": tok, "tier": 1})
+            content = "|".join(cells[2:])
+            linked = [shard_manifest._normalize_file(x) + ".md"
+                      for x in WIKILINK_TARGET_RE.findall(content)]
+            own = {w.lower() for w in re.findall(r"[A-Za-z]+", name)}
+            for tok in sorted(set(ROW_TOKEN_RE.findall(WIKILINK_RE.sub(" ", content)))):
+                low = tok.lower()
+                if low in here:
+                    continue
+                ladder["1 absent from this file"] += 1
+                is_surname = low in surnames
+                if tier2 and not is_surname:
+                    out.append({"file": name, "token": tok, "tier": 2})
+                if not is_surname:
+                    continue
+                ladder["2 is a surname in this vault"] += 1
+                # The row LINKS to a file that holds them: it is correctly saying where
+                # the family went. This is the pointer rule that actually works here.
+                if any(low in per_file.get(dest, set()) for dest in linked):
+                    continue
+                ladder["3 not in a file this row links to"] += 1
+                if low in places:
+                    continue
+                ladder["4 not a place in this vault"] += 1
+                if low in own:
+                    continue
+                ladder["5 not in the row's own file name"] += 1
+                out.append({"file": name, "token": tok, "tier": 1})
     return out, ladder
 
 

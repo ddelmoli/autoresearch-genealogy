@@ -50,6 +50,7 @@ import argparse
 import datetime
 import json
 import os
+import pathlib
 import re
 import sys
 from pathlib import Path
@@ -341,7 +342,7 @@ def op_restatus(vault, args):
                          f"is already archivable")
     _check_archivable(vault, path, status)
     old_kw = next(k for k in QB.STATUS_KWS if QB.matches_terminal(h["status"], [k]))
-    lines = open(path, encoding="utf-8").read().split("\n")
+    lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
     head_line = lines[s].rstrip()
     cut = head_line.rfind(QB.EMDASH)
     tail = h["status"][len(old_kw):]

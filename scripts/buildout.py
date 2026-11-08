@@ -89,7 +89,8 @@ def cmd_worklist(args):
         byfile[id2[i]["file"]].append(r["pid"])
     for f, pids in byfile.items():
         short = f.replace("Family_Tree_", "").replace("Family_Tree", "main").replace(".md", "")
-        json.dump(pids, open(os.path.join(args.out, short + ".json"), "w"))
+        with open(os.path.join(args.out, short + ".json"), "w") as fh:
+            json.dump(pids, fh)
     print(f"worklist -> {args.out}/  ({sum(len(v) for v in byfile.values())} nodes, "
           f"{len(byfile)} files)")
     for f, pids in sorted(byfile.items(), key=lambda x: -len(x[1])):
@@ -104,7 +105,8 @@ def cmd_extractor(args):
 def cmd_match(args):
     rows, id2, fs2id, haspar = load_vault()
     m = lambda pid: OVR.get(pid) or fs2id.get(pid)
-    data = json.load(open(args.data))
+    with open(args.data) as fh:
+        data = json.load(fh)
     spec = defaultdict(lambda: {"parents": set(), "spouse": set()})
     for rec in data:
         aid = m(rec["a"])
@@ -135,7 +137,8 @@ def cmd_match(args):
             e["spouse"] = sorted(d["spouse"])
         if e:
             out[i] = e
-    json.dump(out, open(args.spec, "w"), indent=1)
+    with open(args.spec, "w") as fh:
+        json.dump(out, fh, indent=1)
     np = sum(1 for e in out.values() if "parents" in e)
     ns = sum(1 for e in out.values() if "spouse" in e)
     print(f"records: {len(data)}  -> spec {args.spec}: {len(out)} nodes "

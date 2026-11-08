@@ -14,6 +14,7 @@
 """
 import json
 import os
+import pathlib
 import sys
 import tempfile
 
@@ -117,11 +118,11 @@ def main():
         check("nothing-to-add accepted with a note",
               BS.record(d, 1, offered[1], "nothing-to-add", "read its one record") == 0)
         path = os.path.join(d, "Family_Tree_Test.md")
-        s = open(path, encoding="utf-8").read()
+        s = pathlib.Path(path).read_text(encoding="utf-8")
         s = s.replace("**Direct Sourced Example** (b. unknown)\n"
                       "- meta: {id: P-BBBBBB, generation: 2, life_status: deceased}\n"
                       "- A short note.\n- **Sources**", WRITTEN)
-        open(path, "w", encoding="utf-8").write(s)
+        pathlib.Path(path).write_text(s, encoding="utf-8")
         code, _ = BS.check(d, 1)
         check("gate still FAILS with one entry unrecorded", code == 1)
         check("written accepted once the life is written",
