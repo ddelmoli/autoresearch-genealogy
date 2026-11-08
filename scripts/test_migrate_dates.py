@@ -15,6 +15,7 @@ caught it; this test is so it can never come back.
 """
 import json
 import os
+import pathlib
 import shutil
 import sys
 import tempfile
@@ -89,9 +90,10 @@ def make_vault():
 
 
 def meta_of(vault, pid):
-    for line in open(os.path.join(vault, FNAME), encoding="utf-8"):
-        if pid in line:
-            return line
+    with open(os.path.join(vault, FNAME), encoding="utf-8") as fh:
+        for line in fh:
+            if pid in line:
+                return line
     return ""
 
 
@@ -99,7 +101,7 @@ def main():
     v = make_vault()
     try:
         before_headers = M.header_lines(v)
-        before_text = open(os.path.join(v, FNAME), encoding="utf-8").read()
+        before_text = pathlib.Path(os.path.join(v, FNAME)).read_text(encoding="utf-8")
 
         # ---- classification, one case per residue class ------------------ #
         for value, want in [("unknown", "absence"), ("Deceased", "absence"),
@@ -143,24 +145,24 @@ def main():
               "apply: values written single-quoted into the meta block")
         check("born:" not in meta_of(v, "P-ABSEN1"),
               "apply: an absence marker leaves the key ABSENT (absence = unknown)")
-        check("phrase" not in open(os.path.join(v, FNAME), encoding="utf-8").read(),
+        check("phrase" not in pathlib.Path(os.path.join(v, FNAME)).read_text(encoding="utf-8"),
               "apply: NO *_phrase is ever written by a default run")
 
         # ---- the invariants ------------------------------------------------ #
         after_headers = M.header_lines(v)
         check(before_headers == after_headers, "apply: every header line byte-identical")
         body_before = [ln for ln in before_text.split("\n") if not ln.lstrip().startswith("- meta:")]
-        body_after = [ln for ln in open(os.path.join(v, FNAME), encoding="utf-8").read().split("\n")
+        body_after = [ln for ln in pathlib.Path(os.path.join(v, FNAME)).read_text(encoding="utf-8").split("\n")
                       if not ln.lstrip().startswith("- meta:")]
         check(body_before == body_after, "apply: ONLY meta lines changed; all other text untouched")
 
         # ---- idempotence ---------------------------------------------------- #
-        text1 = open(os.path.join(v, FNAME), encoding="utf-8").read()
+        text1 = pathlib.Path(os.path.join(v, FNAME)).read_text(encoding="utf-8")
         plan2 = M.build_plan(v)
         check(not plan2.converted and plan2.skipped_existing > 0,
               f"second run converts nothing ({plan2.skipped_existing} keys already present)")
         M.apply_plan(v, plan2)
-        check(open(os.path.join(v, FNAME), encoding="utf-8").read() == text1,
+        check(pathlib.Path(os.path.join(v, FNAME)).read_text(encoding="utf-8") == text1,
               "second --apply is BYTE-IDENTICAL (idempotent)")
 
         # ---- --include-living still honours the Spec 01 screen -------------- #

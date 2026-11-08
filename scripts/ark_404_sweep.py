@@ -155,7 +155,8 @@ def main():
     if args.flagged:
         arks = load_flagged(args.vault)
     elif args.list:
-        arks = [l.strip() for l in open(args.list) if l.strip()]
+        with open(args.list) as fh:
+            arks = [l.strip() for l in fh if l.strip()]
     else:
         ap.error("give --list or --flagged")
     arks = [a if a.startswith("1:1:") else "1:1:" + a for a in arks]

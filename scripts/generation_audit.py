@@ -123,7 +123,8 @@ def load(vault):
     cfg = {}
     cfgp = os.path.join(vault, ".autoresearch.json")
     if os.path.exists(cfgp):
-        cfg = json.load(open(cfgp, encoding="utf-8"))
+        with open(cfgp, encoding="utf-8") as fh:
+            cfg = json.load(fh)
     raw = (cfg.get("anchor") or {}).get("people") or []
     anchors = [p["id"] if isinstance(p, dict) else p for p in raw]
     declared = {e["parent"] for e in cfg.get("known_gen_collapse", []) if e.get("parent")}

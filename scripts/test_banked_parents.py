@@ -28,6 +28,7 @@ The tests below are the failure modes that were actually possible here:
 Run: python3 scripts/test_banked_parents.py
 """
 import os, sys, tempfile
+import pathlib
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
@@ -156,7 +157,7 @@ for _line, _want, _label in [
 import os as _os
 _here = _os.path.dirname(_os.path.abspath(__file__))
 for _f in ("build_edges.py", "session_plan.py"):
-    _src = open(_os.path.join(_here, _f), encoding="utf-8").read()
+    _src = pathlib.Path(_os.path.join(_here, _f)).read_text(encoding="utf-8")
     check(f"{_f} calls the shared predicate", "banked_parents_settled" in _src, True)
 
 print()

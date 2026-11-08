@@ -24,6 +24,7 @@
 """
 import json
 import os
+import pathlib
 import sys
 import tempfile
 from datetime import date
@@ -126,9 +127,9 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         build(d)
         # (d) WARN: raised this sitting, no closure today -> remove Q25's closure
-        s = open(os.path.join(d, "Open_Questions_Testland.md"), encoding="utf-8").read()
+        s = pathlib.Path(os.path.join(d, "Open_Questions_Testland.md")).read_text(encoding="utf-8")
         s = s.replace(f"— RESOLVED {T} (done)", "— RESOLVED 06 AUG 2026 (done)")
-        open(os.path.join(d, "Open_Questions_Testland.md"), "w", encoding="utf-8").write(s)
+        pathlib.Path(os.path.join(d, "Open_Questions_Testland.md")).write_text(s, encoding="utf-8")
         for q in drawn(d, 9):
             QD.record(d, 9, q, "untouched", "")
         code, _ = QD.check(d, 9)

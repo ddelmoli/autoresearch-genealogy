@@ -23,8 +23,8 @@ The three mistakes are pinned below because each is a different KIND of parser e
      findings, all of them ordinary English in a correctly-formed action clause.
 """
 import os
-import sys
 import pathlib
+import sys
 import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -42,7 +42,7 @@ def check(label, got, want):
 
 def scan(body):
     d = tempfile.mkdtemp()
-    open(os.path.join(d, "Family_Tree_Scratch.md"), "w", encoding="utf-8").write(body)
+    pathlib.Path(os.path.join(d, "Family_Tree_Scratch.md")).write_text(body, encoding="utf-8")
     return WB.scan(d)
 
 

@@ -13,6 +13,7 @@
       a duplicate, and physically cannot append outside the target block.
 """
 import os
+import pathlib
 import sys
 import tempfile
 from argparse import Namespace
@@ -89,7 +90,7 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         build(d)
         shard = os.path.join(d, "Open_Questions_Testland.md")
-        lines = open(shard, encoding="utf-8").read().split("\n")
+        lines = pathlib.Path(shard).read_text(encoding="utf-8").split("\n")
 
         # (a) boundaries: exactly the numbered headings, nothing else
         heads = [lines[s] for s, _e in QB.split_blocks(lines)]
@@ -123,7 +124,7 @@ def main():
         QS.op_new(d, Namespace(shard="testland", title="A fresh question",
                                resolver="open the record", body_file=None,
                                session="9", apply=True))
-        lines2 = open(shard, encoding="utf-8").read().split("\n")
+        lines2 = pathlib.Path(shard).read_text(encoding="utf-8").split("\n")
         h91 = [QB.parse_heading(lines2[s]) for s, _e in QB.split_blocks(lines2)]
         check("new block minted 91", any(h["num"] == 91 for h in h91))
         i91 = next(i for i, ln in enumerate(lines2) if ln.startswith("### 91."))
@@ -136,7 +137,7 @@ def main():
         QS.op_append(d, Namespace(append="91", text="appended evidence line",
                                   body_file=None, sub_heading="WORKED 15 AUG 2026",
                                   apply=True))
-        lines3 = open(shard, encoding="utf-8").read().split("\n")
+        lines3 = pathlib.Path(shard).read_text(encoding="utf-8").split("\n")
         s91, e91 = next((s, e) for s, e in QB.split_blocks(lines3)
                         if QB.parse_heading(lines3[s])["num"] == 91)
         blk = "\n".join(lines3[s91:e91])
@@ -148,7 +149,7 @@ def main():
         # --resolve writes an archivable heading and verifies it
         QS.op_resolve(d, Namespace(resolve="91", status="RESOLVED",
                                    note="one record read", apply=True))
-        lines4 = open(shard, encoding="utf-8").read().split("\n")
+        lines4 = pathlib.Path(shard).read_text(encoding="utf-8").split("\n")
         h = QB.parse_heading(next(ln for ln in lines4 if ln.startswith("### 91.")))
         check("resolved heading terminal", h["terminal"]
               and not QB.PROVENANCE_RE.match(h["status"]))
@@ -197,7 +198,8 @@ def main():
                  "spaced spelling folded VERBATIM, own parens and all")):
             QS.op_resolve(d, Namespace(resolve=num, status="RESOLVED NEGATIVE",
                                        note="closed", apply=True))
-            head = [l for l in open(fold, encoding="utf-8") if l.startswith(f"### {num}.")][0]
+            with open(fold, encoding="utf-8") as fh:
+                head = [l for l in fh if l.startswith(f"### {num}.")][0]
             h = QB.parse_heading(head)
             check(f"Q{num} {why}", want_in_title in h["title"])
             check(f"Q{num} exactly one status segment", h["status"].startswith("RESOLVED NEGATIVE"))
@@ -205,7 +207,8 @@ def main():
             check(f"Q{num} no stacked interim left in the slot",
                   "PARTIALLY" not in h["status"])
         QS.op_resolve(d, Namespace(resolve="72", status="RESOLVED", note=None, apply=True))
-        head72 = [l for l in open(fold, encoding="utf-8") if l.startswith("### 72.")][0]
+        with open(fold, encoding="utf-8") as fh:
+            head72 = [l for l in fh if l.startswith("### 72.")][0]
         h72 = QB.parse_heading(head72)
         check("a SUBTITLE is never folded into parens",
               "(whose status slot is a SUBTITLE" not in h72["title"])
@@ -216,7 +219,7 @@ def main():
         # that would break another consumer (16 SEP 2026).
         QS.op_replace(d, Namespace(replace="12a", old=["sub-question body"],
                                    with_text=["sub-question body, corrected"], apply=True))
-        txt = open(shard, encoding="utf-8").read()
+        txt = pathlib.Path(shard).read_text(encoding="utf-8")
         check("replace lands inside the block", "sub-question body, corrected" in txt)
         for why, kw in (
                 ("replace refuses a zero-match --old",
@@ -244,7 +247,7 @@ def main():
         # but never archived text in the Resolved store, and never its status
         QS.op_replace(d, Namespace(replace="14", old=["resolution text"],
                                    with_text=["resolution text, corrected"], apply=True))
-        txt = open(shard, encoding="utf-8").read()
+        txt = pathlib.Path(shard).read_text(encoding="utf-8")
         check("replace corrects a resolved-unarchived block",
               "resolution text, corrected" in txt
               and "### 14. Done already — RESOLVED 04 AUG 2026 (worked)" in txt)
@@ -258,8 +261,7 @@ def main():
                 check(why, False)
             except SystemExit:
                 pass
-        check("archived text untouched", "archived body" in open(
-            os.path.join(d, "Open_Questions_Resolved.md"), encoding="utf-8").read())
+        check("archived text untouched", "archived body" in pathlib.Path(os.path.join(d, "Open_Questions_Resolved.md")).read_text(encoding="utf-8"))
 
         # --resolve refuses a DUPLICATED live number instead of writing through it
         with open(shard, "a", encoding="utf-8") as fh:
@@ -281,7 +283,7 @@ def main():
                                resolver="r", body_file=None, session="7", apply=True))
         QS.op_new(d, Namespace(shard="testland", title="A bare title",
                                resolver="r", body_file=None, session="7", apply=True))
-        heads = [ln for ln in open(shard, encoding="utf-8").read().split("\n")
+        heads = [ln for ln in pathlib.Path(shard).read_text(encoding="utf-8").split("\n")
                  if ln.startswith("### 91.") or ln.startswith("### 92.")]
         check("provenance in title not doubled",
               len(heads) == 2 and heads[0].count("(raised ") == 1
@@ -292,7 +294,7 @@ def main():
         # a heading can be retitled through --replace (no separate retitle op)
         QS.op_replace(d, Namespace(replace="92", old=["A bare title"],
                                    with_text=["A better title"], apply=True))
-        lines = open(shard, encoding="utf-8").read().split("\n")
+        lines = pathlib.Path(shard).read_text(encoding="utf-8").split("\n")
         check("heading retitled via --replace",
               any(ln.startswith("### 92. A better title (raised ") for ln in lines))
 

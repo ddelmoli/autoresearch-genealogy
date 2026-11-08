@@ -23,6 +23,7 @@ vault people are absent from the GEDCOM, and the ambiguous FS-PID->2-id cases.
 NO vault mutation until the numbers are reviewed (--apply is intentionally not yet
 implemented in this dry-run build).
 """
+import pathlib
 import re, os, sys, glob, argparse
 from collections import defaultdict, Counter
 
@@ -576,7 +577,7 @@ def main():
     preview = []
     files_touched = defaultdict(int)
     for path in sorted(glob.glob(os.path.join(VAULT, "Family_Tree*.md"))):
-        lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
+        lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines(keepends=True)
         changed = False
         for i, line in enumerate(lines):
             if not G.META.match(line):
@@ -593,7 +594,7 @@ def main():
                 files_touched[os.path.basename(path)] += 1
         if changed and args.apply:
             with open(path + ".bak", "w", encoding="utf-8") as b:
-                b.write(open(path, encoding="utf-8").read())
+                b.write(pathlib.Path(path).read_text(encoding="utf-8"))
             with open(path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
 

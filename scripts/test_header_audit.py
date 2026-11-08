@@ -13,6 +13,7 @@ guard. If either ever starts being reported, the validator has begun scavenging
 again and the whole premise has regressed.
 """
 import os
+import pathlib
 import subprocess
 import sys
 import tempfile
@@ -188,7 +189,7 @@ def changed_only_tests():
     print("\n=== --changed-only against a real staged diff ===")
     with tempfile.TemporaryDirectory(prefix="ha_fixture_") as tmp:
         path = _fixture_repo(tmp)
-        base = open(path).read()
+        base = pathlib.Path(path).read_text()
 
         _f, s = H.audit_changed(tmp)
         check(s["entries"] == 0 and s["nonconforming"] == 0,

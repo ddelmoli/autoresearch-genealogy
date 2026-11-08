@@ -50,6 +50,7 @@ Usage:
 """
 import argparse
 import os
+import pathlib
 import re
 import sys
 
@@ -384,7 +385,7 @@ def main():
     for rel, rec, props in plans:
         path = os.path.join(vault, rel)
         lineno = rec.raw.get("header_line")
-        lines = edits.setdefault(path, open(path, encoding="utf-8").read().splitlines())
+        lines = edits.setdefault(path, pathlib.Path(path).read_text(encoding="utf-8").splitlines())
         old_line = lines[lineno]
         new_line = migrate_line(old_line, props)
         if new_line is None:
@@ -606,7 +607,7 @@ def main_r4(vault, args):
     for rel, rec, old_paren, new_paren in plans:
         path = os.path.join(vault, rel)
         lineno = rec.raw.get("header_line")
-        lines = edits.setdefault(path, open(path, encoding="utf-8").read().splitlines())
+        lines = edits.setdefault(path, pathlib.Path(path).read_text(encoding="utf-8").splitlines())
         old_line = lines[lineno]
         if old_line.count(old_paren) != 1:
             failed.append((rel, rec.id, "parenthetical not uniquely located"))

@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import glob as _glob
 import os
+import pathlib
 import re
 import sys
 from collections import defaultdict
@@ -61,41 +62,43 @@ def scan(vault):
     gen_of = {}
     files = sorted(_glob.glob(os.path.join(vault, "Family_Tree*.md")))
     for path in files:
-        for ln in open(path, encoding="utf-8"):
-            m = META_RE.match(ln)
-            if m:
-                gid = ID_FIELD_RE.search(m.group(1))
-                g = GEN_FIELD_RE.search(m.group(1))
-                if gid and g:
-                    gen_of[gid.group(1)] = int(g.group(1))
+        with open(path, encoding="utf-8") as fh:
+            for ln in fh:
+                m = META_RE.match(ln)
+                if m:
+                    gid = ID_FIELD_RE.search(m.group(1))
+                    g = GEN_FIELD_RE.search(m.group(1))
+                    if gid and g:
+                        gen_of[gid.group(1)] = int(g.group(1))
 
     rows = []
     for path in files:
         heading_gen = None
         heading_text = ""
         entry_block = []  # lines since the current entry's meta, for the KEPT marker
-        for ln in open(path, encoding="utf-8"):
-            hm = HEADING_RE.match(ln)
-            if hm:
-                gm = GEN_HEADING_RE.match(hm.group(2).strip())
-                heading_gen = int(gm.group(1)) if gm else None
-                heading_text = hm.group(2).strip()
-                continue
-            mm = META_RE.match(ln)
-            if mm and heading_gen is not None:
-                meta = mm.group(1)
-                g = GEN_FIELD_RE.search(meta)
-                gid = ID_FIELD_RE.search(meta)
-                spouses = PID_TOKEN_RE.findall(
-                    SPOUSE_RE.search(meta).group(1)) if SPOUSE_RE.search(meta) else []
-                rows.append({
-                    "file": os.path.basename(path),
-                    "section": heading_text,
-                    "heading_gen": heading_gen,
-                    "id": gid.group(1) if gid else "?",
-                    "gen": int(g.group(1)) if g else None,
-                    "spouse_gens": sorted({gen_of[s] for s in spouses if s in gen_of}),
-                })
+        with open(path, encoding="utf-8") as fh:
+            for ln in fh:
+                hm = HEADING_RE.match(ln)
+                if hm:
+                    gm = GEN_HEADING_RE.match(hm.group(2).strip())
+                    heading_gen = int(gm.group(1)) if gm else None
+                    heading_text = hm.group(2).strip()
+                    continue
+                mm = META_RE.match(ln)
+                if mm and heading_gen is not None:
+                    meta = mm.group(1)
+                    g = GEN_FIELD_RE.search(meta)
+                    gid = ID_FIELD_RE.search(meta)
+                    spouses = PID_TOKEN_RE.findall(
+                        SPOUSE_RE.search(meta).group(1)) if SPOUSE_RE.search(meta) else []
+                    rows.append({
+                        "file": os.path.basename(path),
+                        "section": heading_text,
+                        "heading_gen": heading_gen,
+                        "id": gid.group(1) if gid else "?",
+                        "gen": int(g.group(1)) if g else None,
+                        "spouse_gens": sorted({gen_of[s] for s in spouses if s in gen_of}),
+                    })
     return rows, gen_of
 
 
@@ -110,7 +113,7 @@ def body_has_kept_marker(vault, file, entry_id):
     found on the very first burn-down, corrected 29 JUL 2026).
     """
     path = os.path.join(vault, file)
-    text = open(path, encoding="utf-8").read()
+    text = pathlib.Path(path).read_text(encoding="utf-8")
     i = text.find(f"id: {entry_id}")
     if i < 0:
         return False

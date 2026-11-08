@@ -20,10 +20,10 @@ destroys text, so each pin below is a way it could destroy the wrong text:
   - a delete with no pointer is indistinguishable from a section nobody wrote.
 """
 import os
+import pathlib
 import re
 import subprocess
 import sys
-import pathlib
 import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -67,8 +67,8 @@ More chronology. Line one.
 
 def vault(text=BLOCK):
     d = tempfile.mkdtemp()
-    open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8").write("{}")
-    open(os.path.join(d, "Open_Questions_Scratch.md"), "w", encoding="utf-8").write(text)
+    pathlib.Path(os.path.join(d, ".autoresearch.json")).write_text("{}", encoding="utf-8")
+    pathlib.Path(os.path.join(d, "Open_Questions_Scratch.md")).write_text(text, encoding="utf-8")
     return d
 
 
@@ -113,7 +113,7 @@ rc, out = run(d, "--trim", "10", "--drop-section", "FIRST DATED", "--pointer", "
 check("exit 0", rc, 0)
 check("says dry-run", "[dry-run]" in out, True)
 check("file untouched", "FIRST DATED PASS" in
-      open(os.path.join(d, "Open_Questions_Scratch.md"), encoding="utf-8").read(), True)
+      pathlib.Path(os.path.join(d, "Open_Questions_Scratch.md")).read_text(encoding="utf-8"), True)
 
 print("\n⛔ REFUSALS — each is a way the trim could destroy the wrong text:")
 rc, out = run(d, "--trim", "10", "--drop-section", "DATED", "--pointer", "logs/x")
@@ -142,7 +142,7 @@ check("⛔ trimming away the LAST resolver is refused",
 print("\nThe apply path — one section out, everything else intact:")
 rc, out = run(d, "--trim", "10", "--drop-section", "FIRST DATED", "--pointer",
               "logs/2026-01-02-session-2", "--apply")
-text = open(os.path.join(d, "Open_Questions_Scratch.md"), encoding="utf-8").read()
+text = pathlib.Path(os.path.join(d, "Open_Questions_Scratch.md")).read_text(encoding="utf-8")
 check("exit 0", rc, 0)
 # ⚠ Test for the HEADING LINE, not the string: the pointer deliberately QUOTES the
 # dropped heading, so a bare substring test fails on the very feature below.
@@ -207,7 +207,7 @@ A later `##` section that must survive a trim of the one above it.
 
 
 def read(dd):
-    return open(os.path.join(dd, "Open_Questions_Scratch.md"), encoding="utf-8").read()
+    return pathlib.Path(os.path.join(dd, "Open_Questions_Scratch.md")).read_text(encoding="utf-8")
 
 
 d3 = vault(NESTED)

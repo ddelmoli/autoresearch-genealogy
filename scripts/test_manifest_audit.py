@@ -50,9 +50,8 @@ def run(body):
     everything.
     """
     with tempfile.TemporaryDirectory() as d:
-        open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8").write(
-            '{"person_model": "narrative"}')
-        open(os.path.join(d, "Family_Tree_Scratch.md"), "w", encoding="utf-8").write(body)
+        pathlib.Path(os.path.join(d, ".autoresearch.json")).write_text('{"person_model": "narrative"}', encoding="utf-8")
+        pathlib.Path(os.path.join(d, "Family_Tree_Scratch.md")).write_text(body, encoding="utf-8")
         rows = MA.scan(d)
         return [(r["line"], r["pointered"]) for r in rows]
 
@@ -113,16 +112,15 @@ def gen_vault(row_content, shard_entries):
     Family_Tree_Shard.md, so the file's real span is min/max of that list.
     """
     d = tempfile.mkdtemp()
-    open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8").write(
-        '{"person_model": "narrative"}')
+    pathlib.Path(os.path.join(d, ".autoresearch.json")).write_text('{"person_model": "narrative"}', encoding="utf-8")
     body = "## File Index\n\n| File | Region | Content |\n|---|---|---|\n"
     body += f"| [[Family_Tree_Shard]] | Test | {row_content} |\n"
-    open(os.path.join(d, "Family_Tree.md"), "w", encoding="utf-8").write(body)
+    pathlib.Path(os.path.join(d, "Family_Tree.md")).write_text(body, encoding="utf-8")
     shard = "### Generation 1: Placeholder\n\n"
     for i, g in enumerate(shard_entries):
         shard += (f"**Placeholder {i}** (b. 1700; d. 1750)\n"
                   f"- meta: {{id: P-TST{i:03d}, generation: {g}, life_status: deceased}}\n\n")
-    open(os.path.join(d, "Family_Tree_Shard.md"), "w", encoding="utf-8").write(shard)
+    pathlib.Path(os.path.join(d, "Family_Tree_Shard.md")).write_text(shard, encoding="utf-8")
     return d
 
 
@@ -184,11 +182,9 @@ def sa_vault(row_content, shard_people, other_people=None, shard="Family_Tree_Sh
     `shard_people` / `other_people` are lists of (name, header_paren_place).
     """
     d = tempfile.mkdtemp()
-    open(os.path.join(d, ".autoresearch.json"), "w", encoding="utf-8").write(
-        '{"person_model": "narrative"}')
-    open(os.path.join(d, "Family_Tree.md"), "w", encoding="utf-8").write(
-        "## File Index\n\n| File | Region | Content |\n|---|---|---|\n"
-        f"| [[{shard}]] | Test | {row_content} |\n")
+    pathlib.Path(os.path.join(d, ".autoresearch.json")).write_text('{"person_model": "narrative"}', encoding="utf-8")
+    pathlib.Path(os.path.join(d, "Family_Tree.md")).write_text("## File Index\n\n| File | Region | Content |\n|---|---|---|\n"
+        f"| [[{shard}]] | Test | {row_content} |\n", encoding="utf-8")
 
     def write(fname, people):
         body = "### Generation 9: Placeholder\n\n"
@@ -196,7 +192,7 @@ def sa_vault(row_content, shard_people, other_people=None, shard="Family_Tree_Sh
             paren = f"b. 1700{', ' + place if place else ''}; d. 1750"
             body += (f"**{nm}** ({paren})\n"
                      f"- meta: {{id: P-SA{i:04d}, generation: 9, life_status: deceased}}\n\n")
-        open(os.path.join(d, fname + ".md"), "w", encoding="utf-8").write(body)
+        pathlib.Path(os.path.join(d, fname + ".md")).write_text(body, encoding="utf-8")
     write(shard, shard_people)
     if other_people is not None:
         write("Family_Tree_Other", other_people)
@@ -259,8 +255,8 @@ check("tier 2 is excluded from the default scan",
 
 print("\n⛔ Presence means an ENTRY, never a prose mention (the self-crediting trap):")
 _d = sa_vault("Holds Marchwood and Ashgrove.", ONE, [("Ann Ashgrove", "")])
-open(os.path.join(_d, "Family_Tree_Shard.md"), "a", encoding="utf-8").write(
-    "\nThe Ashgrove family is discussed at length here but has no entry.\n")
+with open(os.path.join(_d, "Family_Tree_Shard.md"), "a", encoding="utf-8") as fh:
+    fh.write("\nThe Ashgrove family is discussed at length here but has no entry.\n")
 check("a prose mention in the shard does not count as presence",
       sorted(r["token"] for r in MA.scan_surname_absent(_d)[0] if r["tier"] == 1),
       ["Ashgrove"])

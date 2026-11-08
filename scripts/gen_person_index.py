@@ -28,6 +28,7 @@ Modes:
 Read-only by default. Reuses harvest_pids (name matching) + tree_locator
 (_is_person filter). Does NOT build parent edges — that is Phase 2 (FS walk).
 """
+import pathlib
 import re, glob, os, sys, argparse
 from collections import defaultdict, Counter
 
@@ -324,18 +325,19 @@ def parse_index():
     if not os.path.exists(path):
         return []
     rows = []
-    for lineno, line in enumerate(open(path), 1):
-        if line.startswith("## Appendix"):
-            break
-        if not line.startswith("|"):
-            continue
-        c = [x.strip() for x in line.split("|")[1:-1]]
-        if len(c) < 6 or c[0] in ("Name", "") or set(c[0]) <= set("-: "):
-            continue
-        name, gen, born, died, pid, notes = c[:6]
-        rows.append(dict(name=name, gen=gen, born=born, died=died,
-                         pid=pid if PID_RE.fullmatch(pid) else None,
-                         notes=notes, tier=tier_from_notes(notes), lineno=lineno))
+    with open(path) as fh:
+        for lineno, line in enumerate(fh, 1):
+            if line.startswith("## Appendix"):
+                break
+            if not line.startswith("|"):
+                continue
+            c = [x.strip() for x in line.split("|")[1:-1]]
+            if len(c) < 6 or c[0] in ("Name", "") or set(c[0]) <= set("-: "):
+                continue
+            name, gen, born, died, pid, notes = c[:6]
+            rows.append(dict(name=name, gen=gen, born=born, died=died,
+                             pid=pid if PID_RE.fullmatch(pid) else None,
+                             notes=notes, tier=tier_from_notes(notes), lineno=lineno))
     return rows
 
 
@@ -644,7 +646,7 @@ def write_table(entries, index_rows, args):
                        f"| {e['born'] or '—'} | {e['died'] or '—'} "
                        f"| {e['pid'] or 'TBD'} | {e['tier'] or '—'} "
                        f"| {e.get('profile_status') or '—'} | {e.get('life_status') or '—'} |")
-    open(args.write, "w").write("\n".join(out) + "\n")
+    pathlib.Path(args.write).write_text("\n".join(out) + "\n")
     print(f"\nwrote generated table ({len(entries)} rows) to {args.write}")
 
 

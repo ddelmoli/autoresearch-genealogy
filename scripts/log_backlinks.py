@@ -54,6 +54,7 @@ import argparse
 import collections
 import glob
 import os
+import pathlib
 import re
 import sys
 
@@ -102,7 +103,7 @@ def logs_mentioning(vault, ident):
     out = collections.defaultdict(set)
     for path in glob.glob(os.path.join(vault, "logs", "*.md")):
         try:
-            text = open(path, encoding="utf-8", errors="replace").read()
+            text = pathlib.Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         slug = "logs/" + os.path.basename(path)[: -len(".md")]
@@ -119,7 +120,7 @@ def iter_entry_blocks(vault):
     Entry boundaries follow the vault's own rule: a bold name AT LINE START opens
     an entry (spec/entry-boundary). Identity is the meta `id:`, never the name."""
     for path in sorted(glob.glob(os.path.join(vault, "Family_Tree*.md"))):
-        lines = open(path, encoding="utf-8").read().split("\n")
+        lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
         starts = [i for i, l in enumerate(lines) if BOLD_HEADER_RE.match(l)]
         for n, i in enumerate(starts):
             end = starts[n + 1] if n + 1 < len(starts) else len(lines)
@@ -208,7 +209,7 @@ def main(argv=None):
         by_file[path].append((start, end, vid, want))
     written = 0
     for path, items in by_file.items():
-        lines = open(path, encoding="utf-8").read().split("\n")
+        lines = pathlib.Path(path).read_text(encoding="utf-8").split("\n")
         for start, end, vid, want in sorted(items, key=lambda t: -t[0]):
             block_lines = lines[start:end]
             # Drop any previous bullet so this is a regeneration, not an append.
@@ -222,7 +223,7 @@ def main(argv=None):
             block_lines.insert(pos + 1, render_bullet(want))
             lines[start:end] = block_lines
             written += 1
-        open(path, "w", encoding="utf-8").write("\n".join(lines))
+        pathlib.Path(path).write_text("\n".join(lines), encoding="utf-8")
     print(f"\n  APPLIED: {written} entries given a `{BULLET_MARK}` pointer bullet.")
     return 0
 

@@ -14,6 +14,7 @@ Both exist because of session #175 (20 AUG 2026):
     well formed — just attached to the wrong person.
 """
 import os
+import pathlib
 import sys
 import tempfile
 
@@ -40,12 +41,12 @@ ENTRY = """# Family_Tree_Test
 
 def vault():
     d = tempfile.mkdtemp()
-    open(os.path.join(d, "Family_Tree_Test.md"), "w").write(ENTRY)
-    open(os.path.join(d, ".autoresearch.json"), "w").write('{"person_model": "narrative"}')
+    pathlib.Path(os.path.join(d, "Family_Tree_Test.md")).write_text(ENTRY)
+    pathlib.Path(os.path.join(d, ".autoresearch.json")).write_text('{"person_model": "narrative"}')
     return d
 
 def body(v):
-    return open(os.path.join(v, "Family_Tree_Test.md")).read()
+    return pathlib.Path(os.path.join(v, "Family_Tree_Test.md")).read_text()
 
 def owner_of(v, needle):
     """Which entry does a line belong to? Uses the SEAM's own scan, not a regex —

@@ -8,6 +8,7 @@ NarrativeBackend stub, and PersonRecord equality rules.
 """
 import json
 import os
+import pathlib
 import shutil
 import tempfile
 
@@ -292,18 +293,18 @@ def main():
     check(ps.get_person(v, "P-NOPE") is None, "get_person missing -> None")
 
     # ---- 3. no-op write is BYTE-IDENTICAL -------------------------------- #
-    before_jane = open(os.path.join(v, "Jane_Example.md")).read()
-    before_chris = open(os.path.join(v, "Chris_Living.md")).read()
+    before_jane = pathlib.Path(os.path.join(v, "Jane_Example.md")).read_text()
+    before_chris = pathlib.Path(os.path.join(v, "Chris_Living.md")).read_text()
     ps.write_person(v, jane)  # unchanged record
-    after_jane = open(os.path.join(v, "Jane_Example.md")).read()
-    after_chris = open(os.path.join(v, "Chris_Living.md")).read()
+    after_jane = pathlib.Path(os.path.join(v, "Jane_Example.md")).read_text()
+    after_chris = pathlib.Path(os.path.join(v, "Chris_Living.md")).read_text()
     check(after_jane == before_jane, "no-op write_person: target file byte-identical")
     check(after_chris == before_chris, "no-op write_person: OTHER files untouched")
 
     # ---- 4. surgical single-field write; body preserved ------------------ #
     jane.profile_status = "partial"
     ps.write_person(v, jane)
-    txt = open(os.path.join(v, "Jane_Example.md")).read()
+    txt = pathlib.Path(os.path.join(v, "Jane_Example.md")).read_text()
     check("profile_status: partial" in txt, "changed field written")
     check("evidence_tier: strong_signal" in txt, "sibling field untouched")
     check("Narrative body that must survive writes verbatim" in txt
@@ -333,13 +334,13 @@ def main():
 
     # ---- 5b. NarrativeBackend.write_person (Spec 04b) --------------------- #
     nf = os.path.join(vn, "Family_Tree_Example.md")
-    before = open(nf).read()
+    before = pathlib.Path(nf).read_text()
     ps.write_person(vn, nj)  # unchanged record
-    check(open(nf).read() == before, "narrative no-op write: file byte-identical")
+    check(pathlib.Path(nf).read_text() == before, "narrative no-op write: file byte-identical")
 
     nj.profile_status = "partial"
     ps.write_person(vn, nj)
-    after = open(nf).read()
+    after = pathlib.Path(nf).read_text()
     check("profile_status: partial" in after, "narrative: changed meta field written")
     check("**Jane Example Ancestor** (b. 1840; d. 1873; FS PID XXXX-XXX)" in after,
           "narrative: bold-name header preserved verbatim")
@@ -395,7 +396,7 @@ def main():
     conv.write_file_model(d2, recs, apply=True)
     f1 = sorted(os.listdir(d1))
     same = f1 == sorted(os.listdir(d2)) and all(
-        open(os.path.join(d1, f)).read() == open(os.path.join(d2, f)).read() for f in f1)
+        pathlib.Path(os.path.join(d1, f)).read_text() == pathlib.Path(os.path.join(d2, f)).read_text() for f in f1)
     check(same and len(f1) == 2, "converter: --apply is idempotent (byte-identical)")
 
     # ---- 8. narrative privacy validator (Spec 04d) ----------------------- #
@@ -422,7 +423,7 @@ def main():
     ordr = people["P-ORD001"]
     ordr.profile_status = "partial"          # change ONE unrelated field
     ps.write_person(vs, ordr)
-    txt = open(sf).read()
+    txt = pathlib.Path(sf).read_text()
     check("spouse: '[P-SP0001]', parents: '[P-PA0001, P-PA0002]'" in txt,
           "surgical: out-of-order spouse-before-parents NOT reformatted")
     check("profile_status: partial" in txt and "evidence_tier: strong_signal" in txt,
@@ -433,7 +434,7 @@ def main():
     noid = [r for r in ps.iter_people(vs) if r.id is None][0]
     noid.id = "P-NEW999"
     ps.write_person(vs, noid)
-    txt2 = open(sf).read()
+    txt2 = pathlib.Path(sf).read_text()
     check("- meta: {id: P-NEW999, profile_status: stub, life_status: deceased, generation: 3}" in txt2,
           "surgical: new id inserted as FIRST meta key, rest byte-preserved")
 
@@ -441,7 +442,7 @@ def main():
     ordr2 = {r.id: r for r in ps.iter_people(vs)}["P-ORD001"]
     ordr2.flags = ["Q9"]
     ps.write_person(vs, ordr2)
-    txt3 = open(sf).read()
+    txt3 = pathlib.Path(sf).read_text()
     check("parents: '[P-PA0001, P-PA0002]', flags: '[Q9]'}" in txt3,
           "surgical: new key inserted at canonical slot (flags last)")
 
@@ -507,7 +508,7 @@ def main():
     # ---- 10. structured date keys (spec/structured-dates Spec 03) --------- #
     vd = make_dates_vault()
     df = os.path.join(vd, "Family_Tree_Dates.md")
-    before = open(df).read()
+    before = pathlib.Path(df).read_text()
     dpeople = {r.id: r for r in ps.iter_people(vd)}
 
     # read: the meta FIELD is authoritative; the header is the fallback and stays
@@ -527,7 +528,7 @@ def main():
     # no-op write is byte-identical, for entries with AND without date keys
     for r in dpeople.values():
         ps.write_person(vd, r)
-    check(open(df).read() == before, "date keys: no-op write is BYTE-IDENTICAL")
+    check(pathlib.Path(df).read_text() == before, "date keys: no-op write is BYTE-IDENTICAL")
 
     # THE regression this rule exists for: an unrelated write must NOT promote a
     # header-derived value into a meta date key. Otherwise one `mint_ids --apply`
@@ -535,7 +536,7 @@ def main():
     legacy2 = {r.id: r for r in ps.iter_people(vd)}["P-DATE03"]
     legacy2.profile_status = "partial"
     ps.write_person(vd, legacy2)
-    line = [ln for ln in open(df).read().split("\n") if "P-DATE03" in ln][0]
+    line = [ln for ln in pathlib.Path(df).read_text().split("\n") if "P-DATE03" in ln][0]
     check("born:" not in line and "profile_status: partial" in line,
           "date keys: an unrelated write does NOT promote the header into a meta field")
 
@@ -543,7 +544,7 @@ def main():
     legacy3 = {r.id: r for r in ps.iter_people(vd)}["P-DATE03"]
     legacy3.born = "ABT 1969"
     ps.write_person(vd, legacy3)
-    line = [ln for ln in open(df).read().split("\n") if "P-DATE03" in ln][0]
+    line = [ln for ln in pathlib.Path(df).read_text().split("\n") if "P-DATE03" in ln][0]
     check("born: 'ABT 1969'" in line, "date keys: a deliberate set is written, single-quoted")
     check(line.index("born:") > line.index("generation:"),
           "date keys: born lands at its canonical slot (after generation/fs)")
@@ -561,21 +562,21 @@ def main():
     okp = {r.id: r for r in ps.iter_people(vd)}["P-DATE01"]
     okp.died_phrase = "sometime after the fire"
     ps.write_person(vd, okp)
-    check("died_phrase: 'sometime after the fire'" in open(df).read(),
+    check("died_phrase: 'sometime after the fire'" in pathlib.Path(df).read_text(),
           "date keys: *_phrase is free text (a PHRASE is exactly that) and is not grammar-checked")
 
     # file model: the same four keys, surgically
     vdf = make_dates_file_vault()
     pf = os.path.join(vdf, "Dated.md")
-    fbefore = open(pf).read()
+    fbefore = pathlib.Path(pf).read_text()
     frec = {r.id: r for r in ps.iter_people(vdf)}["P-FILE01"]
     check((frec.born, frec.born_phrase) == ("JULIAN 30 JAN 1649", "30 January 1648/49"),
           "file model: born/born_phrase read from frontmatter")
     ps.write_person(vdf, frec)
-    check(open(pf).read() == fbefore, "file model: no-op write with date keys is BYTE-IDENTICAL")
+    check(pathlib.Path(pf).read_text() == fbefore, "file model: no-op write with date keys is BYTE-IDENTICAL")
     frec.died = "ABT 1700"
     ps.write_person(vdf, frec)
-    check("died: ABT 1700" in open(pf).read(), "file model: changed date key written")
+    check("died: ABT 1700" in pathlib.Path(pf).read_text(), "file model: changed date key written")
     frec2 = {r.id: r for r in ps.iter_people(vdf)}["P-FILE01"]
     frec2.born = "not a date at all"
     try:
@@ -598,7 +599,7 @@ def main():
           "narrative -> file: all four date keys survive")
     d_n = tempfile.mkdtemp()
     CPM.write_narrative_model(d_n, list(back.values()), apply=True)
-    ntext = open(os.path.join(d_n, "Family_Tree_Converted.md")).read()
+    ntext = pathlib.Path(os.path.join(d_n, "Family_Tree_Converted.md")).read_text()
     check("born: 'JULIAN 30 JAN 1649'" in ntext and "born_phrase: '30 January 1648/49'" in ntext,
           "narrative -> file -> narrative: the date FIELD round-trips into the meta block")
     check("born: '1969, Somewhereton, MA'" not in ntext,
