@@ -45,7 +45,7 @@ The hook does nothing while the visualizer is off, so it can stay wired.
    person is, walked from the vault's parent edges (never from the generation
    number: in a couple-anchored vault most people are on only one line). To add a
    line for a watcher who is an anchor's parent, pass their vault id:
-   `?viewer=P-XXXXXX&viewer_label=Dad`. Someone off that line reads "Not on Dad's line".
+   `?viewer=P-XXXXXX&viewer_label=Dad`; the line appears only for people on that watcher's line.
 
 2. Start the session in Claude Code with a prompt along these lines:
 

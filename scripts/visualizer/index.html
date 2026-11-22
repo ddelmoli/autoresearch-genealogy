@@ -179,7 +179,7 @@ function showPerson(ev) {
     if (!anchors.length) lines.push("No parent links join this person to either anchor yet (a collateral, or a line not yet wired)");
     if (viewerId && viewerLabel) {
       const v = ev.kin.find(k => k.id === viewerId);
-      lines.push(v ? `${esc(viewerLabel)}'s ${relation(v.steps)}` : `Not on ${esc(viewerLabel)}'s line`);
+      if (v) lines.push(`${esc(viewerLabel)}'s ${relation(v.steps)}`);
     }
   }
   const rel = lines.join("<br>");
