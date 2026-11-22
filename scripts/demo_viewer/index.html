@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Research sitting, live</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel2: #23272f; --line: #30353f;
+    --text: #e8e6e1; --muted: #9aa0aa; --accent: #d8b46a;
+    --good: #6cc08b; --bad: #e07a6a; --cand: #8fb3e8; --neg: #b49ad8;
+    --fs: 17px;
+  }
+  body.big { --fs: 21px; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: var(--fs)/1.45 -apple-system, "Segoe UI", system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 20px; display: grid; grid-template-columns: 1fr auto; gap: 8px 24px; }
+  h1 { font-size: 1.2em; margin: 0; font-weight: 600; }
+  .sub { color: var(--muted); font-size: .85em; }
+  .live { display: inline-block; width: .6em; height: .6em; border-radius: 50%; background: var(--muted); margin-right: .4em; vertical-align: middle; }
+  .live.on { background: var(--good); box-shadow: 0 0 8px var(--good); }
+  .stats { display: flex; gap: 18px; align-items: center; }
+  .stat { text-align: center; } .stat b { display: block; font-size: 1.3em; }
+  .stat span { color: var(--muted); font-size: .75em; text-transform: uppercase; letter-spacing: .05em; }
+  .controls { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; font-size: .8em; }
+  button, label.chk { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
+  button.on { border-color: var(--accent); color: var(--accent); }
+  body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { flex: none; }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 16px; padding: 16px 20px; }
+  main > div { overflow-y: auto; min-height: 0; padding-right: 4px; }
+  @media (max-width: 1000px) { body { height: auto; overflow: auto; } main { grid-template-columns: 1fr; } main > div { overflow: visible; } }
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  section.card h2 { margin: 0 0 10px; font-size: .8em; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  #timeline { list-style: none; margin: 0; padding: 0; }
+  #timeline li { border-left: 3px solid var(--line); padding: 6px 0 6px 14px; margin: 0 0 4px; }
+  #timeline li .t { color: var(--muted); font-size: .72em; margin-right: .6em; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-block; font-size: .7em; padding: 1px 7px; border-radius: 10px; background: var(--panel2); color: var(--muted); margin-right: .5em; vertical-align: 1px; }
+  li.say { border-color: var(--accent) !important; font-size: 1.08em; }
+  li.phase { border-color: var(--accent) !important; background: var(--panel2); border-radius: 0 8px 8px 0; font-weight: 600; }
+  li.prompt { border-color: var(--cand) !important; font-style: italic; }
+  li.person { border-color: var(--accent) !important; }
+  li.evidence.counted { border-color: var(--good) !important; }
+  li.evidence.excluded { border-color: var(--bad) !important; }
+  li.evidence.candidate { border-color: var(--cand) !important; }
+  li.negative { border-color: var(--neg) !important; }
+  li.finding { border-color: var(--good) !important; font-weight: 600; }
+  li.tool { font-size: .85em; color: #c9c6c0; }
+  li.tool.failed { border-color: var(--bad) !important; }
+  li.turn_end { font-size: .75em; color: var(--muted); }
+  body.quiet li.tool.read, body.quiet li.tool.other { display: none; }
+  details { margin-top: 4px; } summary { cursor: pointer; color: var(--muted); font-size: .8em; }
+  pre { background: #0f1114; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow: auto; max-height: 340px; font: .78em/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; margin: 6px 0 0; }
+  .diff .add { color: var(--good); } .diff .del { color: var(--bad); } .diff .hunk { color: var(--muted); }
+  .verdict { font-weight: 700; text-transform: uppercase; font-size: .72em; letter-spacing: .06em; margin-right: .5em; }
+  .counted .verdict { color: var(--good); } .excluded .verdict { color: var(--bad); } .candidate .verdict { color: var(--cand); }
+  .why { color: var(--muted); }
+  #person .name { font-size: 1.35em; font-weight: 600; }
+  #person .rel { color: var(--accent); }
+  #person dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 8px 0 0; font-size: .9em; }
+  #person dt { color: var(--muted); }
+  #ledger { list-style: none; margin: 0; padding: 0; }
+  #ledger li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  #terms dt { font-weight: 600; } #terms dd { margin: 0 0 8px; color: var(--muted); }
+  .empty { color: var(--muted); font-style: italic; }
+  #phasebar { font-size: .95em; }
+  #phasebar .lane { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span id="live" class="live"></span><span id="title">Research sitting</span></h1>
+    <div id="phasebar" class="sub">Waiting for the sitting to start.</div>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="n-actions">0</b><span>actions</span></div>
+    <div class="stat"><b id="n-counted" style="color:var(--good)">0</b><span>records counted</span></div>
+    <div class="stat"><b id="n-excluded" style="color:var(--bad)">0</b><span>set aside</span></div>
+    <div class="stat"><b id="n-negative" style="color:var(--neg)">0</b><span>empty searches</span></div>
+    <div class="stat"><b id="n-edits">0</b><span>tree edits</span></div>
+  </div>
+  <div class="controls">
+    <button id="b-follow" class="on">Follow live</button>
+    <button id="b-quiet">Hide file reads</button>
+    <button id="b-big">Large text</button>
+  </div>
+</header>
+<main>
+  <div>
+    <section class="card"><h2>What is happening</h2><ul id="timeline"><li class="empty">Nothing yet.</li></ul></section>
+  </div>
+  <div>
+    <section class="card" id="person"><h2>Person being researched</h2><div class="empty">None drawn yet.</div></section>
+    <section class="card"><h2>Evidence ledger</h2>
+      <p class="sub" style="margin-top:0">Every record looked at, and whether it counts as evidence for this person. A family tree, an unphotographed memorial page or an obituary is set aside; a dated record naming the person counts.</p>
+      <ul id="ledger"><li class="empty">No records judged yet.</li></ul></section>
+    <section class="card"><h2>Latest change to the tree</h2><div id="lastdiff" class="empty">No edits yet.</div></section>
+    <section class="card"><h2>Terms</h2><dl id="terms">
+      <dt>Lane</dt><dd>The kind of work this round: EXPAND finds new parents, IMPROVE adds records to people already in the tree, ROTATE re-reads a profile for anything new.</dd>
+      <dt>Generation</dt><dd>Counted from the couple the tree starts at (Gen 1). Gen 2 are their parents, Gen 3 grandparents, and so on.</dd>
+      <dt>PID</dt><dd>A person's id on FamilySearch. The tree uses its own ids (P-XXXXXX) and treats FamilySearch as one place to compare against.</dd>
+      <dt>ARK</dt><dd>A permanent link to one record (a census line, a baptism) on FamilySearch.</dd>
+      <dt>Tier</dt><dd>How sure a claim is: strong signal, moderate signal, or speculative.</dd>
+    </dl></section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const viewerGen = parseInt(params.get("viewer_gen") || "0", 10);
+const viewerLabel = params.get("viewer_label") || "";
+let follow = true, counts, person;
+
+function reset() {
+  counts = { actions: 0, counted: 0, excluded: 0, negative: 0, edits: 0 };
+  person = null;
+  $("timeline").innerHTML = '<li class="empty">Nothing yet.</li>';
+  $("ledger").innerHTML = '<li class="empty">No records judged yet.</li>';
+  $("lastdiff").className = "empty"; $("lastdiff").textContent = "No edits yet.";
+  $("person").innerHTML = '<h2>Person being researched</h2><div class="empty">None drawn yet.</div>';
+  $("phasebar").textContent = "Waiting for the sitting to start.";
+  renderCounts();
+}
+function renderCounts() { for (const k in counts) $("n-" + k).textContent = counts[k]; }
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+function hhmm(ts) { return ts ? ts.slice(11, 16) : ""; }
+function ordinal(n) { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
+
+// Gen 1 is the anchor; for a watcher at Gen g the person is (gen - g) steps up.
+function relation(steps) {
+  if (steps === 1) return "parent";
+  if (steps === 2) return "grandparent";
+  if (steps === 3) return "great-grandparent";
+  if (steps > 3) return ordinal(steps - 2) + " great-grandparent";
+  return null;
+}
+
+function diffHtml(text) {
+  return text.split("\n").map(l => {
+    const c = l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "";
+    return `<span class="${c}">${esc(l)}</span>`;
+  }).join("\n");
+}
+
+function add(cls, html, ts) {
+  const tl = $("timeline");
+  if (tl.firstElementChild && tl.firstElementChild.classList.contains("empty")) tl.innerHTML = "";
+  const li = document.createElement("li");
+  li.className = cls;
+  li.innerHTML = `<span class="t">${hhmm(ts)}</span>` + html;
+  tl.appendChild(li);
+  if (follow) li.scrollIntoView({ block: "end", behavior: "smooth" });
+}
+
+function ledger(ev) {
+  const ul = $("ledger");
+  if (ul.firstElementChild && ul.firstElementChild.classList.contains("empty")) ul.innerHTML = "";
+  const li = document.createElement("li");
+  li.className = ev.verdict;
+  li.innerHTML = `<span class="verdict">${esc(ev.verdict === "excluded" ? "set aside" : ev.verdict)}</span>${esc(ev.record)}<div class="why">${esc(ev.why)}</div>`;
+  ul.prepend(li);
+}
+
+function showPerson(ev) {
+  person = ev;
+  let rel = "";
+  if (ev.gen) {
+    const r1 = relation(ev.gen - 1);
+    rel = `Generation ${ev.gen}` + (r1 ? `, the anchor couple's ${r1}` : "");
+    if (viewerGen && viewerLabel) { const r2 = relation(ev.gen - viewerGen); if (r2) rel += `; ${esc(viewerLabel)}'s ${r2}`; }
+  }
+  const rows = [["Born", ev.born], ["Died", ev.died], ["Place", ev.place], ["Vault id", ev.id], ["Why now", ev.why]]
+    .filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join("");
+  $("person").innerHTML = `<h2>Person being researched</h2><div class="name">${esc(ev.name)}</div><div class="rel">${rel}</div><dl>${rows}</dl>`;
+  $("ledger").innerHTML = '<li class="empty">No records judged yet for this person.</li>';
+}
+
+function handle(ev) {
+  const ts = ev.ts;
+  switch (ev.type) {
+    case "start": reset(); $("title").textContent = ev.title; add("phase", "Sitting started", ts); break;
+    case "stop": add("phase", "Sitting ended", ts); break;
+    case "prompt": add("prompt", `<span class="chip">operator</span>${esc(ev.text)}`, ts); break;
+    case "say": add("say", esc(ev.text), ts); break;
+    case "phase":
+      $("phasebar").innerHTML = esc(ev.name) + (ev.lane ? ` &middot; lane <span class="lane">${esc(ev.lane)}</span>` : "");
+      add("phase", esc(ev.name) + (ev.lane ? ` &middot; ${esc(ev.lane)}` : "") + (ev.detail ? `<div class="why">${esc(ev.detail)}</div>` : ""), ts);
+      break;
+    case "person": showPerson(ev); add("person", `<span class="chip">person</span>Now researching <b>${esc(ev.name)}</b>` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts); break;
+    case "evidence":
+      if (ev.verdict in counts) counts[ev.verdict]++;
+      ledger(ev);
+      add(`evidence ${ev.verdict}`, `<span class="verdict">${esc(ev.verdict === "excluded" ? "set aside" : ev.verdict)}</span>${esc(ev.record)}<div class="why">${esc(ev.why)}</div>`, ts);
+      break;
+    case "negative": counts.negative++; add("negative", `<span class="chip">nothing found</span>${esc(ev.text)}` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts); break;
+    case "finding": add("finding", `<span class="chip">finding${ev.tier ? ", " + esc(ev.tier) + " signal" : ""}</span>${esc(ev.text)}`, ts); break;
+    case "term": {
+      const dl = $("terms"); dl.insertAdjacentHTML("afterbegin", `<dt>${esc(ev.term)}</dt><dd>${esc(ev.meaning)}</dd>`); break;
+    }
+    case "turn_end": add("turn_end", "Claude paused for the operator", ts); break;
+    case "tool": {
+      counts.actions++;
+      let body = `<span class="chip">${esc(ev.label || ev.tool)}</span>${esc(ev.title)}`;
+      if (ev.failed) body += ` <span class="chip" style="color:var(--bad)">failed</span>`;
+      if (ev.diff) body += `<details><summary>${esc(ev.file)}</summary><pre class="diff">${diffHtml(ev.diff)}</pre></details>`;
+      if (ev.diff && ev.category === "vault-edit") {
+        counts.edits++;
+        $("lastdiff").className = ""; $("lastdiff").innerHTML = `<div class="sub">${esc(ev.file)} at ${hhmm(ts)}</div><pre class="diff">${diffHtml(ev.diff)}</pre>`;
+      }
+      if (ev.output) body += `<details><summary>output</summary><pre>${esc(ev.output)}</pre></details>`;
+      else if (ev.detail) body += `<details><summary>details</summary><pre>${esc(ev.detail)}</pre></details>`;
+      add(`tool ${ev.category || ""}${ev.failed ? " failed" : ""}`, body, ts);
+      break;
+    }
+    case "error": add("tool failed", `<span class="chip">viewer</span>${esc(ev.text)}`, ts); break;
+  }
+  renderCounts();
+}
+
+reset();
+const es = new EventSource("/events");
+es.onmessage = m => { try { handle(JSON.parse(m.data)); } catch (e) { console.error(e, m.data); } };
+es.addEventListener("reset", reset);
+es.addEventListener("status", m => $("live").classList.toggle("on", JSON.parse(m.data).active));
+es.onerror = () => $("live").classList.remove("on");
+
+$("b-follow").onclick = e => { follow = !follow; e.target.classList.toggle("on", follow); };
+$("b-quiet").onclick = e => e.target.classList.toggle("on", document.body.classList.toggle("quiet"));
+$("b-big").onclick = e => e.target.classList.toggle("on", document.body.classList.toggle("big"));
+</script>
+</body>
+</html>
