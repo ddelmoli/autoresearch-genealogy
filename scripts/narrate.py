@@ -48,6 +48,68 @@ def cmd_stop(_a):
     print("visualizer stopped")
 
 
+def kinship(person_id):
+    """Who this person is actually an ancestor OF, read from the vault's parent edges.
+
+    Returns a list of {id, name, role, steps} for each anchor (Gen 1) and each
+    anchor's parent the person descends to, steps being the shortest number of
+    parent links between them. An empty list means no edge path joins the person
+    to any anchor (a collateral, or a line not yet wired). None means the vault
+    could not be read, and the page then makes no relationship claim at all.
+
+    WHY FROM EDGES. The first version took a watcher's generation number and
+    subtracted. In a couple-anchored vault, and for any one parent of an anchor,
+    most of the tree is on somebody else's line: a generation number says how far
+    up a person is, never whose ancestor they are.
+    """
+    if not person_id:
+        return None
+    try:
+        import person_store as ps
+        import vault_config as vc
+        vault = vc.resolve_vault(None)
+        people = {r.id: r for r in ps.iter_people(vault)}
+        anchors = [a["id"] for a in (vc.get_anchor(vault) or {}).get("people", [])]
+    except Exception:
+        return None
+    if person_id not in people:
+        return None
+
+    def parent_ids(r):
+        return [str(p).rstrip("?") for p in (r.parents or [])]
+
+    children = {}
+    for r in people.values():
+        for p in parent_ids(r):
+            children.setdefault(p, []).append(r.id)
+
+    watchers = {}
+    for aid in anchors:
+        if aid in people:
+            watchers[aid] = "anchor"
+            for pid in parent_ids(people[aid]):
+                if pid in people:
+                    watchers.setdefault(pid, "anchor parent")
+
+    # Breadth-first DOWN from the person: the first time a watcher is reached is
+    # the shortest descent path to them.
+    dist, frontier = {person_id: 0}, [person_id]
+    while frontier:
+        nxt = []
+        for n in frontier:
+            for c in children.get(n, []):
+                if c not in dist:
+                    dist[c] = dist[n] + 1
+                    nxt.append(c)
+        frontier = nxt
+
+    def display(r):
+        return (r.name or r.id).split(" [", 1)[0].strip()
+
+    return [{"id": w, "name": display(people[w]), "role": role, "steps": dist[w]}
+            for w, role in watchers.items() if w in dist and dist[w] > 0]
+
+
 def emit(ev):
     if not ve.is_active():
         print("visualizer not active; nothing recorded (run: narrate.py start)", file=sys.stderr)
@@ -84,7 +146,7 @@ def main(argv=None):
         emit({"type": "phase", "name": a.name, "lane": a.lane, "detail": a.detail})
     elif a.cmd == "person":
         emit({"type": "person", "name": a.name, "id": a.id, "gen": a.gen, "born": a.born,
-              "died": a.died, "place": a.place, "why": a.why})
+              "died": a.died, "place": a.place, "why": a.why, "kin": kinship(a.id)})
     elif a.cmd == "evidence":
         emit({"type": "evidence", "record": a.record, "verdict": a.verdict, "why": a.why,
               "host": a.host})

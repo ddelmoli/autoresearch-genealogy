@@ -41,8 +41,11 @@ The hook does nothing while the visualizer is off, so it can stay wired.
    python3 scripts/visualizer.py
    ```
 
-   Then open `http://127.0.0.1:8765/`. To show each person's relationship to a
-   watcher who is not Gen 1, add `?viewer_gen=2&viewer_label=Dad` (any label).
+   Then open `http://127.0.0.1:8765/`. Each person card names whose ancestor the
+   person is, walked from the vault's parent edges (never from the generation
+   number: in a couple-anchored vault most people are on only one line). To add a
+   line for a watcher who is an anchor's parent, pass their vault id:
+   `?viewer=P-XXXXXX&viewer_label=Dad`. Someone off that line reads "Not on Dad's line".
 
 2. Start the session in Claude Code with a prompt along these lines:
 

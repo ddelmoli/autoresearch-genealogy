@@ -108,7 +108,9 @@
 <script>
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
-const viewerGen = parseInt(params.get("viewer_gen") || "0", 10);
+// ?viewer=<vault id of the watcher>&viewer_label=Dad. The watcher must be an anchor
+// or an anchor's parent: those are the people narrate.py measures descent to.
+const viewerId = params.get("viewer") || "";
 const viewerLabel = params.get("viewer_label") || "";
 let follow = true, counts, person;
 
@@ -127,7 +129,6 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;"
 function hhmm(ts) { return ts ? ts.slice(11, 16) : ""; }
 function ordinal(n) { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
 
-// Gen 1 is the anchor; for a watcher at Gen g the person is (gen - g) steps up.
 function relation(steps) {
   if (steps === 1) return "parent";
   if (steps === 2) return "grandparent";
@@ -164,12 +165,24 @@ function ledger(ev) {
 
 function showPerson(ev) {
   person = ev;
-  let rel = "";
-  if (ev.gen) {
-    const r1 = relation(ev.gen - 1);
-    rel = `Generation ${ev.gen}` + (r1 ? `, the anchor couple's ${r1}` : "");
-    if (viewerGen && viewerLabel) { const r2 = relation(ev.gen - viewerGen); if (r2) rel += `; ${esc(viewerLabel)}'s ${r2}`; }
+  const lines = [];
+  if (ev.gen) lines.push(`Generation ${ev.gen}`);
+  // Relationships come only from narrate.py's walk of the parent edges (ev.kin).
+  // A generation number alone never says whose ancestor someone is.
+  if (Array.isArray(ev.kin)) {
+    const anchors = ev.kin.filter(k => k.role === "anchor");
+    const parents = ev.kin.filter(k => k.role === "anchor parent");
+    for (const a of anchors) {
+      const via = parents.find(p => p.steps === a.steps - 1);
+      lines.push(`${relation(a.steps)} of ${esc(a.name)}` + (via ? `, through ${esc(via.name)}` : ""));
+    }
+    if (!anchors.length) lines.push("No parent links join this person to either anchor yet (a collateral, or a line not yet wired)");
+    if (viewerId && viewerLabel) {
+      const v = ev.kin.find(k => k.id === viewerId);
+      lines.push(v ? `${esc(viewerLabel)}'s ${relation(v.steps)}` : `Not on ${esc(viewerLabel)}'s line`);
+    }
   }
+  const rel = lines.join("<br>");
   const rows = [["Born", ev.born], ["Died", ev.died], ["Place", ev.place], ["Vault id", ev.id], ["Why now", ev.why]]
     .filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join("");
   $("person").innerHTML = `<h2>Person being researched</h2><div class="name">${esc(ev.name)}</div><div class="rel">${rel}</div><dl>${rows}</dl>`;
