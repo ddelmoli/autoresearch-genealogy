@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""demo_viewer.py -- serve the live session viewer on localhost.
+"""visualizer.py -- serve the session visualizer on localhost.
 
-    python3 scripts/demo_viewer.py [--port 8765]
+    python3 scripts/visualizer.py [--port 8765]
 
 then open http://127.0.0.1:8765/ (for a second screen or a TV, put that window
 there). The page replays the current event stream and then follows it live over
@@ -20,9 +20,9 @@ import sys
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import demo_events as de  # noqa: E402
+import visualizer_events as ve  # noqa: E402
 
-PAGE = pathlib.Path(__file__).resolve().parent / "demo_viewer" / "index.html"
+PAGE = pathlib.Path(__file__).resolve().parent / "visualizer" / "index.html"
 POLL = 0.4
 
 
@@ -54,18 +54,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             while True:
                 try:
-                    st = de.EVENTS.stat()
+                    st = ve.EVENTS.stat()
                 except FileNotFoundError:
                     st = None
                 if st is not None:
                     # `narrate.py start` moves the old file aside: a new inode or a
-                    # shorter file means a new demo, so tell the page to clear.
+                    # shorter file means a new sitting, so tell the page to clear.
                     if inode is not None and (st.st_ino != inode or st.st_size < offset):
                         self.send("reset", {})
                         offset = 0
                     inode = st.st_ino
                     if st.st_size > offset:
-                        with open(de.EVENTS, "rb") as fh:
+                        with open(ve.EVENTS, "rb") as fh:
                             fh.seek(offset)
                             chunk = fh.read()
                         complete = chunk.rfind(b"\n") + 1   # only whole lines
@@ -75,7 +75,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         offset += complete
                         self.wfile.flush()
                 if time.time() - last_ping > 5:      # keepalive + on/off state
-                    self.send("status", {"active": de.is_active()})
+                    self.send("status", {"active": ve.is_active()})
                     last_ping = time.time()
                 time.sleep(POLL)
         except (BrokenPipeError, ConnectionResetError):
@@ -92,7 +92,7 @@ def main():
     a = ap.parse_args()
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     srv.daemon_threads = True
-    print(f"session viewer: http://127.0.0.1:{a.port}/  (stream: {de.EVENTS})", flush=True)
+    print(f"session visualizer: http://127.0.0.1:{a.port}/  (stream: {ve.EVENTS})", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

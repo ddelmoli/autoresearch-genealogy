@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""demo_events.py -- the event stream behind the live session viewer.
+"""visualizer_events.py -- the event stream behind the session visualizer.
 
 WHY THIS EXISTS. A research sitting is legible to the operator, who reads the
 transcript, and to nobody else in the room. For a sitting someone is WATCHING,
 the interesting part is not the raw tool calls but the decisions: which person
 was drawn, which records were counted, which were thrown out and why. This module
 writes those moments to one append-only JSON Lines file that
-`scripts/demo_viewer.py` streams to a browser page.
+`scripts/visualizer.py` streams to a browser page.
 
 TWO WRITERS, ONE FILE.
   * The Claude Code hooks (PostToolUse, UserPromptSubmit, Stop) call
-    `python3 scripts/demo_events.py --hook`. That records WHAT ran.
+    `python3 scripts/visualizer_events.py --hook`. That records WHAT ran.
   * `scripts/narrate.py` records WHY: plain-English narration, the phase and
     lane, the person being worked, and each evidence verdict.
 
-OFF UNLESS A DEMO IS RUNNING. The hook is a no-op unless the ACTIVE flag file
+OFF UNLESS THE VISUALIZER IS RUNNING. The hook is a no-op unless the ACTIVE flag file
 exists (`narrate.py start` creates it, `narrate.py stop` removes it), so the
 hooks can stay wired permanently at no cost to ordinary sittings.
 
 PRIVACY. Events carry vault text (edit diffs, command output), so the stream
-lives under `.claude/demo/`, which the framework `.gitignore` already excludes,
+lives under `.claude/visualizer/`, which the framework `.gitignore` already excludes,
 and the viewer binds to 127.0.0.1 only. Never publish the page or the file.
 
 The hook ALWAYS exits 0: a viewer must never be able to block or fail a tool call.
@@ -33,9 +33,9 @@ import re
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-DEMO_DIR = pathlib.Path(os.environ.get("AUTORESEARCH_DEMO_DIR", REPO / ".claude" / "demo"))
-EVENTS = DEMO_DIR / "events.jsonl"
-ACTIVE = DEMO_DIR / "ACTIVE"
+VIS_DIR = pathlib.Path(os.environ.get("AUTORESEARCH_VISUALIZER_DIR", REPO / ".claude" / "visualizer"))
+EVENTS = VIS_DIR / "events.jsonl"
+ACTIVE = VIS_DIR / "ACTIVE"
 
 MAX_TEXT = 4000      # per text field
 MAX_OUTPUT_LINES = 40
@@ -92,8 +92,8 @@ def rel(path):
 
 
 def append(event):
-    """Append one event. Safe to call whether or not a demo is active."""
-    DEMO_DIR.mkdir(parents=True, exist_ok=True)
+    """Append one event. Safe to call whether or not the visualizer is active."""
+    VIS_DIR.mkdir(parents=True, exist_ok=True)
     event.setdefault("ts", now())
     with open(EVENTS, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -249,7 +249,7 @@ def hook_main():
             append(ev)
     except Exception as exc:  # never fail a tool call because of the viewer
         try:
-            append({"type": "error", "text": f"demo hook: {exc!r}"})
+            append({"type": "error", "text": f"visualizer hook: {exc!r}"})
         except Exception:
             pass
 

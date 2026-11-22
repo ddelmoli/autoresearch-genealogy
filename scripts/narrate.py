@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""narrate.py -- say WHY, for the live session viewer.
+"""narrate.py -- say WHY, for the session visualizer.
 
 The hooks record what ran; this records the reasoning a watcher needs. Every
-subcommand appends one event to the stream `scripts/demo_viewer.py` serves (see
-`scripts/demo_events.py` for where it lives and why it is private).
+subcommand appends one event to the stream `scripts/visualizer.py` serves (see
+`scripts/visualizer_events.py` for where it lives and why it is private).
 
-  narrate.py start --title "Demo sitting"     begin a demo: archive the old stream,
+  narrate.py start --title "Research sitting" begin a visualized sitting: archive the old stream,
                                               turn the hooks on
   narrate.py stop                             turn the hooks off
   narrate.py say "Plain English sentence"     a narration line
@@ -18,7 +18,7 @@ subcommand appends one event to the stream `scripts/demo_viewer.py` serves (see
   narrate.py finding "Her father is named in the 1805 deed" [--tier strong|moderate|speculative]
   narrate.py term "ARK" "a permanent link to one record on FamilySearch"
 
-Anything but start and stop is recorded only while a demo is active, so a stray
+Anything but start and stop is recorded only while the visualizer is active, so a stray
 narration in an ordinary sitting writes nothing.
 """
 import argparse
@@ -28,31 +28,31 @@ import shutil
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import demo_events as de  # noqa: E402
+import visualizer_events as ve  # noqa: E402
 
 
 def cmd_start(a):
-    de.DEMO_DIR.mkdir(parents=True, exist_ok=True)
-    if de.EVENTS.exists() and de.EVENTS.stat().st_size:
+    ve.VIS_DIR.mkdir(parents=True, exist_ok=True)
+    if ve.EVENTS.exists() and ve.EVENTS.stat().st_size:
         stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        shutil.move(str(de.EVENTS), str(de.DEMO_DIR / f"events-{stamp}.jsonl"))
-    de.ACTIVE.write_text(a.title + "\n", encoding="utf-8")
-    de.append({"type": "start", "title": a.title})
-    print(f"demo active: {de.EVENTS}")
+        shutil.move(str(ve.EVENTS), str(ve.VIS_DIR / f"events-{stamp}.jsonl"))
+    ve.ACTIVE.write_text(a.title + "\n", encoding="utf-8")
+    ve.append({"type": "start", "title": a.title})
+    print(f"visualizer active: {ve.EVENTS}")
 
 
 def cmd_stop(_a):
-    if de.ACTIVE.exists():
-        de.append({"type": "stop"})
-        de.ACTIVE.unlink()
-    print("demo stopped")
+    if ve.ACTIVE.exists():
+        ve.append({"type": "stop"})
+        ve.ACTIVE.unlink()
+    print("visualizer stopped")
 
 
 def emit(ev):
-    if not de.is_active():
-        print("demo not active; nothing recorded (run: narrate.py start)", file=sys.stderr)
+    if not ve.is_active():
+        print("visualizer not active; nothing recorded (run: narrate.py start)", file=sys.stderr)
         return
-    de.append({k: v for k, v in ev.items() if v not in (None, "")})
+    ve.append({k: v for k, v in ev.items() if v not in (None, "")})
 
 
 def main(argv=None):
