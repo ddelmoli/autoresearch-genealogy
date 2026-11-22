@@ -44,6 +44,15 @@
   li.evidence.excluded { border-color: var(--bad) !important; }
   li.evidence.candidate { border-color: var(--cand) !important; }
   li.negative { border-color: var(--neg) !important; }
+  li.question { border-color: var(--accent) !important; }
+  li.q_outcome.resolved { border-color: var(--good) !important; }
+  li.q_outcome.blocked, li.q_outcome.untouched { border-color: var(--bad) !important; }
+  li.q_outcome.advanced, li.q_outcome.swapped { border-color: var(--cand) !important; }
+  #qbody .qtitle { font-size: 1.15em; font-weight: 600; }
+  #qbody .qlabel { color: var(--accent); font-weight: 600; margin-right: .4em; }
+  #qbody p { margin: 8px 0 0; font-size: .9em; }
+  #qbody b.k { color: var(--muted); font-weight: 600; }
+  #qbody .qout { margin-top: 10px; padding: 6px 10px; border-radius: 6px; background: var(--panel2); }
   li.finding { border-color: var(--good) !important; font-weight: 600; }
   li.tool { font-size: .85em; color: #c9c6c0; }
   li.tool.failed { border-color: var(--bad) !important; }
@@ -77,6 +86,7 @@
     <div class="stat"><b id="n-actions">0</b><span>actions</span></div>
     <div class="stat"><b id="n-counted" style="color:var(--good)">0</b><span>records counted</span></div>
     <div class="stat"><b id="n-excluded" style="color:var(--bad)">0</b><span>set aside</span></div>
+    <div class="stat"><b id="n-qclosed" style="color:var(--accent)">0</b><span>questions closed</span></div>
     <div class="stat"><b id="n-negative" style="color:var(--neg)">0</b><span>empty searches</span></div>
     <div class="stat"><b id="n-edits">0</b><span>tree edits</span></div>
   </div>
@@ -91,6 +101,7 @@
     <section class="card"><h2>What is happening</h2><ul id="timeline"><li class="empty">Nothing yet.</li></ul></section>
   </div>
   <div>
+    <section class="card" id="question" hidden><h2>Open question being worked</h2><div id="qbody"></div></section>
     <section class="card" id="person"><h2>Person being researched</h2><div class="empty">None drawn yet.</div></section>
     <section class="card"><h2>Evidence ledger</h2>
       <p class="sub" style="margin-top:0">Every record looked at, and whether it counts as evidence for this person. A family tree, an unphotographed memorial page or an obituary is set aside; a dated record naming the person counts.</p>
@@ -112,11 +123,12 @@ const params = new URLSearchParams(location.search);
 // or an anchor's parent: those are the people narrate.py measures descent to.
 const viewerId = params.get("viewer") || "";
 const viewerLabel = params.get("viewer_label") || "";
-let follow = true, counts, person;
+let follow = true, counts, person, question;
 
 function reset() {
-  counts = { actions: 0, counted: 0, excluded: 0, negative: 0, edits: 0 };
-  person = null;
+  counts = { actions: 0, counted: 0, excluded: 0, qclosed: 0, negative: 0, edits: 0 };
+  person = null; question = null;
+  $("question").hidden = true; $("qbody").innerHTML = "";
   $("timeline").innerHTML = '<li class="empty">Nothing yet.</li>';
   $("ledger").innerHTML = '<li class="empty">No records judged yet.</li>';
   $("lastdiff").className = "empty"; $("lastdiff").textContent = "No edits yet.";
@@ -163,6 +175,22 @@ function ledger(ev) {
   ul.prepend(li);
 }
 
+// GEDCOM date qualifiers, spelled out for a reader.
+function readableDate(d) {
+  if (!d) return d;
+  return String(d)
+    .replace(/^BET (.+) AND (.+)$/, "between $1 and $2")
+    .replace(/^FROM (.+) TO (.+)$/, "from $1 to $2")
+    .replace(/^(ABT|EST|CAL|BEF|AFT|JULIAN) /, m => ({ "ABT ": "about ", "EST ": "estimated ",
+      "CAL ": "calculated ", "BEF ": "before ", "AFT ": "after ", "JULIAN ": "" })[m]);
+}
+
+function clearPerson(msg) {
+  person = null;
+  $("person").innerHTML = `<h2>Person being researched</h2><div class="empty">${esc(msg)}</div>`;
+  $("ledger").innerHTML = '<li class="empty">No records judged yet.</li>';
+}
+
 function showPerson(ev) {
   person = ev;
   const lines = [];
@@ -183,10 +211,31 @@ function showPerson(ev) {
     }
   }
   const rel = lines.join("<br>");
-  const rows = [["Born", ev.born], ["Died", ev.died], ["Place", ev.place], ["Vault id", ev.id], ["Why now", ev.why]]
+  const rows = [["Born", readableDate(ev.born)], ["Died", readableDate(ev.died)], ["Place", ev.place], ["Vault id", ev.id], ["Why now", ev.why]]
     .filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join("");
   $("person").innerHTML = `<h2>Person being researched</h2><div class="name">${esc(ev.name)}</div><div class="rel">${rel}</div><dl>${rows}</dl>`;
   $("ledger").innerHTML = '<li class="empty">No records judged yet for this person.</li>';
+}
+
+const OUTCOME_WORDS = { resolved: "closed", advanced: "moved forward, still open", blocked: "blocked",
+  untouched: "not worked", swapped: "swapped for another question" };
+
+// One card for the question in hand. Narrated events carry pos/why; the hook adds
+// an automatic one whenever the register is read, so a question is never shown as
+// a bare number even if narration was skipped.
+function showQuestion(ev) {
+  const same = question && question.label === ev.label;
+  question = same ? { ...question, ...Object.fromEntries(Object.entries(ev).filter(([k, v]) => v)) } : { ...ev };
+  const q = question;
+  const meta = [q.pos, q.raised && `raised ${q.raised}`, q.status].filter(Boolean).map(esc).join(" &middot; ");
+  $("qbody").innerHTML = `<div><span class="qlabel">${esc(q.label)}</span><span class="qtitle">${esc(q.title)}</span></div>`
+    + (meta ? `<div class="sub">${meta}</div>` : "")
+    + (q.gist ? `<p>${esc(q.gist)}</p>` : "")
+    + (q.settle ? `<p><b class="k">What would settle it:</b> ${esc(q.settle)}</p>` : "")
+    + (q.why ? `<p><b class="k">Why now:</b> ${esc(q.why)}</p>` : "")
+    + (q.outcome ? `<div class="qout ${esc(q.outcome.status)}"><b>${esc(OUTCOME_WORDS[q.outcome.status] || q.outcome.status)}</b>: ${esc(q.outcome.why)}</div>` : "");
+  $("question").hidden = false;
+  return same;
 }
 
 function handle(ev) {
@@ -202,12 +251,36 @@ function handle(ev) {
       break;
     case "person": showPerson(ev); add("person", `<span class="chip">person</span>Now researching <b>${esc(ev.name)}</b>` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts); break;
     case "evidence":
+      // Evidence names whose record it is: if that is not the person on the card,
+      // switch the card first so the ledger never sits under the wrong name.
+      if (ev.subject && ev.subject.id && (!person || person.id !== ev.subject.id)) {
+        showPerson(ev.subject);
+        add("person", `<span class="chip">person</span>Now looking at records for <b>${esc(ev.subject.name)}</b>`, ts);
+      }
       if (ev.verdict in counts) counts[ev.verdict]++;
       ledger(ev);
       add(`evidence ${ev.verdict}`, `<span class="verdict">${esc(ev.verdict === "excluded" ? "set aside" : ev.verdict)}</span>${esc(ev.record)}<div class="why">${esc(ev.why)}</div>`, ts);
       break;
     case "negative": counts.negative++; add("negative", `<span class="chip">nothing found</span>${esc(ev.text)}` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts); break;
     case "finding": add("finding", `<span class="chip">finding${ev.tier ? ", " + esc(ev.tier) + " signal" : ""}</span>${esc(ev.text)}`, ts); break;
+    case "question": {
+      if (!question || question.label !== ev.label) clearPerson("No one drawn yet for this question.");
+      // One timeline line per question: a later event for the same question
+      // (narration after the automatic read, or the reverse) rewrites that line.
+      const same = showQuestion(ev);
+      const q = question;
+      const html = `<span class="t">${hhmm(q.ts || ts)}</span><span class="chip">question ${esc(q.label)}${q.pos ? " &middot; " + esc(q.pos) : ""}</span><b>${esc(q.title)}</b>`
+        + (q.settle ? `<div class="why">What would settle it: ${esc(q.settle)}</div>` : "")
+        + (q.why ? `<div class="why">Why now: ${esc(q.why)}</div>` : "");
+      if (same && q.li) q.li.innerHTML = html;
+      else { add("question", "", ts); q.li = $("timeline").lastElementChild; q.li.innerHTML = html; }
+      break;
+    }
+    case "q_outcome":
+      if (ev.status === "resolved") counts.qclosed++;
+      if (question && question.label === ev.label) { question.outcome = ev; showQuestion({ label: ev.label }); }
+      add(`q_outcome ${esc(ev.status)}`, `<span class="chip">${esc(ev.label)} ${esc(OUTCOME_WORDS[ev.status] || ev.status)}</span>${esc(ev.why)}`, ts);
+      break;
     case "term": {
       const dl = $("terms"); dl.insertAdjacentHTML("afterbegin", `<dt>${esc(ev.term)}</dt><dd>${esc(ev.meaning)}</dd>`); break;
     }

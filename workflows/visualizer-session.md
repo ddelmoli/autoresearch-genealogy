@@ -20,6 +20,7 @@ and each change written to the tree.
 | `scripts/narrate.py` | Records WHY: narration, phase, person, evidence verdicts, negatives, findings. |
 | `scripts/visualizer.py` | Serves the page on `127.0.0.1` and streams the events live. |
 | `.claude/visualizer/events.jsonl` | The stream. Gitignored. Holds vault text, so it is private. |
+| `.claude/visualizer/ACTIVE` | On/off flag. Its `session:` line names the one Claude session whose hooks may write; set by `narrate.py start`, so a second session in the same repo never leaks onto the page. |
 
 ## One-time setup
 
@@ -62,10 +63,11 @@ this vault's tooling: plain words, no script names, no internal jargon (say
 "a record naming her" rather than "limb (g)").
 
 - **Every phase and lane draw**: `narrate.py phase "Research iterations" --lane EXPAND --detail "why this lane"`.
-- **Every person drawn**: `narrate.py person "<name>" --id P-XXXXXX --gen N --born ... --died ... --place ... --why "<why this person now>"`.
+- **Every person drawn**: `narrate.py person --id P-XXXXXX --place ... --why "<why this person now>"`. Name, generation and dates are filled from the vault; pass them only to override.
 - **Before a search**: one `say` line naming what is about to be searched and what it would show.
-- **Every record judged**: `narrate.py evidence "<record, in words>" --verdict counted|excluded|candidate --why "<the reason>"`. This is the heart of the visualizer. Say the reason the method gives (a user tree is not evidence; an image-less memorial page is a contributor's assertion; a sibling's baptism does not name her; a hint is a candidate until its identifiers match).
+- **Every record judged**: `narrate.py evidence "<record, in words>" --verdict counted|excluded|candidate --why "<the reason>" --person P-XXXXXX`. Always pass `--person` (the vault id the record is evidence FOR): the page switches its person card to match, so the ledger never sits under the previous person's name. This matters most in the question slice, where no `person` narration precedes the records. This is the heart of the visualizer. Say the reason the method gives (a user tree is not evidence; an image-less memorial page is a contributor's assertion; a sibling's baptism does not name her; a hint is a candidate until its identifiers match).
 - **Every empty search**: `narrate.py negative "<what was searched, which years>"`. A negative is data; show it.
+- **Every question in the question slice**: `narrate.py question Q### --pos "3 of 10" --why "<why it might close today>"` before working it, and `narrate.py outcome Q### --status resolved|advanced|blocked|untouched|swapped --why "<what was found, or what stopped it>"` when you record it. The page reads the question's title, age and settle condition from the register itself, so say only what the register does not: why this one, and how it ended. (Reading a question with `question_store.py --show` also puts its card on the page, as a fallback.)
 - **Every conclusion**: `narrate.py finding "<claim>" --tier strong|moderate|speculative`.
 - **A term the watcher will not know**: `narrate.py term "<term>" "<one-line meaning>"`, once.
 

@@ -231,14 +231,108 @@ def tool_event(payload):
     return ev
 
 
+# --- Which session owns the stream ------------------------------------------
+# The hooks fire for EVERY Claude Code session in this repo. Without an owner, a
+# second session (the operator asking a side question) wrote its prompts and edits
+# into the watched page. The ACTIVE file is "title" then an optional
+# "session: <id>" line; the session that ran `narrate.py start` claims it, through
+# the PostToolUse event of that very Bash call, and every other session is ignored.
+
+def owner():
+    try:
+        for line in ACTIVE.read_text(encoding="utf-8").splitlines()[1:]:
+            if line.startswith("session: "):
+                return line[len("session: "):].strip()
+    except OSError:
+        pass
+    return None
+
+
+def claim(session_id):
+    try:
+        title = ACTIVE.read_text(encoding="utf-8").splitlines()[:1]
+        ACTIVE.write_text("\n".join(title + [f"session: {session_id}"]) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+# --- Open questions ----------------------------------------------------------
+QSHOW_RE = re.compile(r"question_store\.py\b[^|;&\n]*--show\s+(Q?\d+[a-z]?)")
+MD_NOISE = re.compile(r"[⭐⛔⚠⏭️✅❌]")
+
+
+def _plain(md):
+    """Markdown to the plain sentence a watcher reads."""
+    t = re.sub(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]", lambda m: m.group(2) or m.group(1), md)
+    t = MD_NOISE.sub("", t).replace("**", "").replace("`", "")
+    t = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", r"\1", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def question_context(label):
+    """Title, provenance, gist and settle-condition of one question, read through
+    question_store (the register's one reader). None if it cannot be read."""
+    try:
+        import question_store as qs
+        import vault_config as vc
+        vault = vc.resolve_vault(None)
+        num, suffix = qs.parse_qlabel(label)
+        rows = qs.find_all(vault, num, suffix)
+        if not rows:
+            return None
+        live = [r for r in rows if qs.QB.is_live(r[3])]
+        path, s, e, _h = (live or rows)[0]
+        with open(path, encoding="utf-8") as fh:
+            lines = fh.read().split("\n")[s:e]
+    except Exception:
+        return None
+    heading = re.sub(r"^#+\s*\d+[a-z]?\.\s*", "", lines[0]) if lines else ""
+    raised = re.search(r"\(raised ([^)]*)\)", heading)
+    title = _plain(re.sub(r"\s*\(raised [^)]*\)", "", heading))
+    status = ""
+    head, sep, tail = title.rpartition(" \u2014 ")
+    if sep and re.match(r"(RESOLVED|RULED OUT|CLOSED|CONFIRMED FAIL|FULLY RESOLVED)\b", tail):
+        title, status = head, tail
+    paras, cur = [], []
+    for ln in lines[1:]:
+        if ln.strip():
+            cur.append(ln.strip())
+        elif cur:
+            paras.append(" ".join(cur)); cur = []
+    if cur:
+        paras.append(" ".join(cur))
+    settle_raw = next((p for p in paras if re.search(r"would settle|to settle|settles it", p, re.I)), "")
+    settle = re.sub(r"^.*?(?:would settle it|to settle it|settles it)\s*[:.]?\s*", "",
+                    _plain(settle_raw), flags=re.I) if settle_raw else ""
+    gist = next((_plain(p) for p in paras
+                 if not p.startswith(("#", "|", "-")) and p is not settle_raw), "")
+    return {"label": f"Q{num}{suffix}", "title": title, "status": status,
+            "raised": _plain(raised.group(1)) if raised else "",
+            "file": pathlib.Path(path).stem, "live": bool(live),
+            "gist": clip(gist, 500), "settle": clip(settle, 500)}
+
+
 def hook_main():
     try:
         if not is_active():
             return
         payload = json.load(sys.stdin)
         kind = payload.get("hook_event_name", "")
+        sid = payload.get("session_id")
+        cmd = (payload.get("tool_input") or {}).get("command", "") if kind == "PostToolUse" else ""
+        if owner() is None and sid and "narrate.py start" in cmd:
+            claim(sid)
+        own = owner()
+        if own and sid and sid != own:
+            return
+        extra = None
         if kind == "PostToolUse":
             ev = tool_event(payload)
+            m = QSHOW_RE.search(cmd)
+            if ev and m and not ev.get("failed"):
+                q = question_context(m.group(1))
+                if q:
+                    extra = {"type": "question", "auto": True, **q}
         elif kind == "UserPromptSubmit":
             ev = {"type": "prompt", "text": clip(payload.get("prompt", ""), 1500)}
         elif kind == "Stop":
@@ -247,6 +341,8 @@ def hook_main():
             ev = None
         if ev:
             append(ev)
+        if extra:
+            append(extra)
     except Exception as exc:  # never fail a tool call because of the viewer
         try:
             append({"type": "error", "text": f"visualizer hook: {exc!r}"})
