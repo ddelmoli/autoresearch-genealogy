@@ -37,6 +37,8 @@ The hook does nothing while the visualizer is off, so it can stay wired. (`PreTo
 
 **The cards move at the START of the work.** Before each tool runs, the `PreToolUse` hook reads its input. Reading a question (`question_store.py --show`) puts that question on the card. An input naming exactly ONE person, by vault id or by an FS PID the vault holds (a grep for `P-XXXXXX`, a FamilySearch person URL), puts that person on the card. Inputs naming two or more people (an audit, a roster grep) change nothing. A background command finishing (which the harness delivers as a `<task-notification>` prompt) is recorded as a command, never as the operator speaking; other harness messages are dropped.
 
+**A finished question leaves the card.** Once a question's outcome is recorded, its card stays only until the work moves on (a new phase, a person, a record judged, a search, a finding), then clears; the outcome stays in the timeline.
+
 **The page lists research actions, not plumbing.** Shell commands (including finished background ones) and app or connector calls (tab bookkeeping, password-manager steps) are kept in the stream but not shown: the narration says what they were for. Edits to the tree, file reads and browser work still show. Narration still adds the why; it no longer has to come first for the cards to be right.
 
 ## Running a visualized sitting

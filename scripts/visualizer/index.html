@@ -240,8 +240,18 @@ function showQuestion(ev) {
   return same;
 }
 
+// A question stays on its card until its outcome is recorded AND the work moves on
+// (a new phase, a person, a record judged, a search, a finding). Then the card
+// clears, so a finished question never sits above unrelated work. (Operator,
+// 23 NOV 2026.) The next question replaces the card directly in any case.
+function clearQuestionIfDone() {
+  if (question && question.outcome) { question = null; $("question").hidden = true; $("qbody").innerHTML = ""; }
+}
+const MOVES_ON = new Set(["phase", "person", "evidence", "negative", "finding"]);
+
 function handle(ev) {
   const ts = ev.ts;
+  if (MOVES_ON.has(ev.type)) clearQuestionIfDone();
   switch (ev.type) {
     case "start": reset(); $("title").textContent = ev.title; add("phase", "Sitting started", ts); break;
     case "stop": add("phase", "Sitting ended", ts); break;
