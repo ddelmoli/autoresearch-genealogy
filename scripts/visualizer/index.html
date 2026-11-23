@@ -269,6 +269,12 @@ function handle(ev) {
     case "prompt": add("prompt", `<span class="chip">operator</span>${esc(ev.text)}`, ts); break;
     case "say": add("say", esc(ev.text), ts); break;
     case "phase":
+      // Review and close are about the whole sitting, not one person or question:
+      // both cards clear when either starts. (Operator, 23 NOV 2026.)
+      if (/review|close/i.test(ev.name || "")) {
+        question = null; $("question").hidden = true; $("qbody").innerHTML = "";
+        clearPerson("Reviewing the whole sitting; no one is being researched.");
+      }
       $("phasebar").innerHTML = esc(ev.name) + (ev.lane ? ` &middot; lane <span class="lane">${esc(ev.lane)}</span>` : "");
       add("phase", esc(ev.name) + (ev.lane ? ` &middot; ${esc(ev.lane)}` : "") + (ev.detail ? `<div class="why">${esc(ev.detail)}</div>` : ""), ts);
       break;

@@ -37,6 +37,8 @@ The hook does nothing while the visualizer is off, so it can stay wired. (`PreTo
 
 **The cards move at the START of the work.** Before each tool runs, the `PreToolUse` hook reads its input. Reading a question (`question_store.py --show`) puts that question on the card. An input naming exactly ONE person, by vault id or by an FS PID the vault holds (a grep for `P-XXXXXX`, a FamilySearch person URL), puts that person on the card. Inputs naming two or more people (an audit, a roster grep) change nothing. A background command finishing (which the harness delivers as a `<task-notification>` prompt) is recorded as a command, never as the operator speaking; other harness messages are dropped.
 
+**Review and close clear the cards.** A phase whose name contains *review* or *close* empties both the question card and the person card.
+
 **Claude's chat text reaches the page on its own.** Before each tool runs and at the end of each turn, the hook reads the session transcript and adds any chat message written since the sitting started as a narration line (operator, 23 NOV 2026: the running commentary to the operator was missing from the page). Narration through `narrate.py` is still how records, outcomes, people and findings get their structure; plain `say` lines are now mostly redundant with the chat.
 
 **A finished question leaves the card.** Once a question's outcome is recorded, its card stays only until the work moves on (a new phase, a person, a record judged, a search, a finding), then clears; the outcome stays in the timeline. A question that was only read along the way (not narrated as a slice question, so no outcome comes) clears when the work turns to a different person or a new phase.
