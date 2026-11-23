@@ -907,6 +907,33 @@ def is_analysis_artifact(title: str) -> bool:
     return any(m in t for m in ANALYSIS_ARTIFACT_MARKERS)
 
 
+def screen_title(title: str) -> "List[str]":
+    """Every rule-8 policy screen a collection or source TITLE trips, in one call.
+
+    The batch FS reader (`scripts/fs_sources_reader.js`) deliberately does not
+    re-implement these screens in the browser; it hands its distinct titles to
+    `--screen-titles`, which calls this. An EMPTY list means "no screen fired", which
+    is NOT "this is a record": a title no screen recognises still has to be read.
+
+    Labels: `book` (limb c), `memorial` (limb e: decides the CLASS, not the tier),
+    `reference-c` / `reference-d` (limb c or d), `obituary` (limb f: a screen, not a
+    verdict), `analysis-artifact` (off-metric DNA-class artifact).
+    """
+    hits = []
+    if is_book_collection(title):
+        hits.append("book")
+    if is_memorial_collection(title):
+        hits.append("memorial")
+    limb = reference_work_limb(title)
+    if limb:
+        hits.append("reference-" + limb)
+    if is_obituary_collection(title):
+        hits.append("obituary")
+    if is_analysis_artifact(title):
+        hits.append("analysis-artifact")
+    return hits
+
+
 def extract_arks(text: str) -> set:
     """Extract all source-record-IDs from vault narrative text, normalized.
 
@@ -2605,9 +2632,28 @@ def main():
                         help="List credited obituaries dated AFTER the person's own death "
                              "(rule 8 limb (f)/(g)/(h)). A FLOOR, not a total: it can only see "
                              "sub-bullets that DESCRIBE the source, and most are bare locators.")
+    parser.add_argument("--screen-titles", action="store_true",
+                        help="Read collection/source titles from stdin, one per line, and print "
+                             "which rule-8 policy screens each trips (book, memorial, reference, "
+                             "obituary, analysis artifact). Feed it the title list that "
+                             "scripts/fs_sources_reader.js prints.")
     parser.add_argument("--heartbeat", action="store_true",
                         help="Print a one-line coverage + cadence status for the SessionStart audit suite (reads .maintenance.json `harvest`).")
     args = parser.parse_args()
+
+    if args.screen_titles:
+        n = flagged = 0
+        for line in sys.stdin:
+            t = line.strip()
+            if not t:
+                continue
+            n += 1
+            hits = screen_title(t)
+            flagged += bool(hits)
+            print(f"{(','.join(hits) or '-'):<22} {t}")
+        print(f"\nSCREENED {n} title(s): {flagged} tripped a screen; '-' means no screen "
+              "fired, which is not the same as 'is a record'.")
+        raise SystemExit(0)
 
     if args.obituary_audit:
         rows = list(obituary_postdates_findings())

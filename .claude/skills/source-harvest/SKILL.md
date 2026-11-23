@@ -56,7 +56,11 @@ locator form alone cannot tell a register leaf from a book page.
 
 ## The FamilySearch leg
 
-`prompts/19-fs-source-harvest.md` is the home for the mechanics: the Detail View
+Read attached sources in bulk with `scripts/fs_sources_reader.js` (paste into a
+Chrome `javascript_tool` call, `await fsSources([PIDs])`, read with `get_page_text`),
+then screen its title list with `python3 scripts/harvest_sources.py --screen-titles`.
+Never batch-read the Sources tab in an iframe: it does not render there and reads as
+empty. `prompts/19-fs-source-harvest.md` is the home for the mechanics: the Detail View
 requirement, the Research Help endpoints (which never render under automation), the
 Recipe-S loop, the `harvest_sources.py` CLI, and per-region yield calibration.
 
