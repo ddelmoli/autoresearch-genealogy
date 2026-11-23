@@ -306,10 +306,16 @@ def question_context(label):
                     _plain(settle_raw), flags=re.I) if settle_raw else ""
     gist = next((_plain(p) for p in paras
                  if not p.startswith(("#", "|", "-")) and p is not settle_raw), "")
+    # The people the question is ABOUT, by vault id: the page keeps a question that
+    # was only read along the way while the work stays on one of them, and clears
+    # it when the work turns to anyone else. (Operator, 23 NOV 2026: a question read
+    # for one row stayed up when the next row was a different person, because the
+    # page had taken "the first person after the read" to be its subject.)
+    people = sorted(set(re.findall(r"\bP-[0-9A-HJKMNP-TV-Z]{6}\b", "\n".join(lines))))
     return {"label": f"Q{num}{suffix}", "title": title, "status": status,
             "raised": _plain(raised.group(1)) if raised else "",
             "file": pathlib.Path(path).stem, "live": bool(live),
-            "gist": clip(gist, 500), "settle": clip(settle, 500)}
+            "gist": clip(gist, 500), "settle": clip(settle, 500), "people": people}
 
 
 # --- Who the next piece of work is about ---------------------------------------

@@ -253,6 +253,9 @@ function clearQuestionIfDone(ev) {
   if (!done && !question.pos) {
     const who = ev.type === "person" ? ev.id : (ev.subject && ev.subject.id);
     if (ev.type === "phase") done = true;
+    // The question names the people it is about: work on anyone else moves on.
+    else if (who && Array.isArray(question.people) && question.people.length) done = !question.people.includes(who);
+    // Older events carry no list: fall back to the first person the work turns to.
     else if (who && question.personAtShow === undefined) question.personAtShow = who;  // the person it was read for
     else if (who && who !== question.personAtShow) done = true;
   }
