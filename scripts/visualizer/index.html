@@ -82,6 +82,7 @@
   #tally h3 { margin: 0 0 6px; font-size: .8em; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
   #tally .who { margin: 10px 0 2px; }
   #tally .who b { font-size: 1.05em; }
+  #tally .who .rel { color: var(--accent); font-size: .92em; }
   #tally ul { list-style: none; margin: 0; padding: 0 0 0 14px; }
   #tally li { padding: 3px 0; border-left: 3px solid var(--line); padding-left: 10px; margin-bottom: 2px; }
   #tally.counted li { border-color: var(--good); } #tally.excluded li { border-color: var(--bad); }
@@ -172,8 +173,10 @@ function renderTally() {
   if (!rows.length) html += `<div class="empty">None yet.</div>`;
   for (const g of groups.values()) {
     const w = g.who;
+    const rel = lineage({ ...w, gen: null }).join("<br>");
     const meta = [w.gen && `Generation ${w.gen}`, w.id].filter(Boolean).map(esc).join(" &middot; ");
-    html += `<div class="who"><b>${esc(w.name || w.id || "Unnamed")}</b> <span class="sub">${meta}</span></div><ul>`
+    html += `<div class="who"><b>${esc(w.name || w.id || "Unnamed")}</b> <span class="sub">${meta}</span>`
+      + (rel ? `<div class="rel">${rel}</div>` : "") + `</div><ul>`
       + g.items.map(r => `<li><span class="t">${hhmm(r.ts)}</span>${esc(r.record)}<div class="why">${esc(r.why)}</div></li>`).join("")
       + `</ul>`;
   }
@@ -235,8 +238,9 @@ function clearPerson(msg) {
   $("ledger").innerHTML = '<li class="empty">No records judged yet.</li>';
 }
 
-function showPerson(ev, keepLedger) {
-  person = ev;
+// The person's lineage lines, shared by the person card and the counted-records
+// panel so the two always say the same thing. (Operator, 23 NOV 2026.)
+function lineage(ev) {
   const lines = [];
   if (ev.gen) lines.push(`Generation ${ev.gen}`);
   // Relationships come only from narrate.py's walk of the parent edges (ev.kin).
@@ -254,7 +258,12 @@ function showPerson(ev, keepLedger) {
       if (v) lines.push(`${esc(viewerLabel)}'s ${relation(v.steps)}`);
     }
   }
-  const rel = lines.join("<br>");
+  return lines;
+}
+
+function showPerson(ev, keepLedger) {
+  person = ev;
+  const rel = lineage(ev).join("<br>");
   const rows = [["Born", readableDate(ev.born)], ["Died", readableDate(ev.died)], ["Place", ev.place], ["Vault id", ev.id], ["Why now", ev.why]]
     .filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join("");
   $("person").innerHTML = `<h2>Person being researched</h2><div class="name">${esc(ev.name)}</div><div class="rel">${rel}</div><dl>${rows}</dl>`;
