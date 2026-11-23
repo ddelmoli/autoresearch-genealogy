@@ -39,7 +39,7 @@ The hook does nothing while the visualizer is off, so it can stay wired. (`PreTo
 
 **Claude's chat text reaches the page on its own.** Before each tool runs and at the end of each turn, the hook reads the session transcript and adds any chat message written since the sitting started as a narration line (operator, 23 NOV 2026: the running commentary to the operator was missing from the page). Narration through `narrate.py` is still how records, outcomes, people and findings get their structure; plain `say` lines are now mostly redundant with the chat.
 
-**A finished question leaves the card.** Once a question's outcome is recorded, its card stays only until the work moves on (a new phase, a person, a record judged, a search, a finding), then clears; the outcome stays in the timeline.
+**A finished question leaves the card.** Once a question's outcome is recorded, its card stays only until the work moves on (a new phase, a person, a record judged, a search, a finding), then clears; the outcome stays in the timeline. A question that was only read along the way (not narrated as a slice question, so no outcome comes) clears when the work turns to a different person or a new phase.
 
 **The page lists research actions, not plumbing.** Shell commands (including finished background ones) and app or connector calls (tab bookkeeping, password-manager steps) are kept in the stream but not shown: the narration says what they were for. Edits to the tree, file reads and browser work still show. Narration still adds the why; it no longer has to come first for the cards to be right.
 

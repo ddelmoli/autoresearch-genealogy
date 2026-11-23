@@ -244,14 +244,25 @@ function showQuestion(ev) {
 // (a new phase, a person, a record judged, a search, a finding). Then the card
 // clears, so a finished question never sits above unrelated work. (Operator,
 // 23 NOV 2026.) The next question replaces the card directly in any case.
-function clearQuestionIfDone() {
-  if (question && question.outcome) { question = null; $("question").hidden = true; $("qbody").innerHTML = ""; }
+// A question READ outside the slice (no position given, so no outcome will be
+// recorded) also clears once the work turns to a different person or a new phase.
+// (Operator, 23 NOV 2026: Q325 stayed up after the work moved to Edward Colman.)
+function clearQuestionIfDone(ev) {
+  if (!question) return;
+  let done = !!question.outcome;
+  if (!done && !question.pos) {
+    const who = ev.type === "person" ? ev.id : (ev.subject && ev.subject.id);
+    if (ev.type === "phase") done = true;
+    else if (who && question.personAtShow === undefined) question.personAtShow = who;  // the person it was read for
+    else if (who && who !== question.personAtShow) done = true;
+  }
+  if (done) { question = null; $("question").hidden = true; $("qbody").innerHTML = ""; }
 }
 const MOVES_ON = new Set(["phase", "person", "evidence", "negative", "finding"]);
 
 function handle(ev) {
   const ts = ev.ts;
-  if (MOVES_ON.has(ev.type)) clearQuestionIfDone();
+  if (MOVES_ON.has(ev.type)) clearQuestionIfDone(ev);
   switch (ev.type) {
     case "start": reset(); $("title").textContent = ev.title; add("phase", "Sitting started", ts); break;
     case "stop": add("phase", "Sitting ended", ts); break;
@@ -288,6 +299,7 @@ function handle(ev) {
       // (narration after the automatic read, or the reverse) rewrites that line.
       const same = showQuestion(ev);
       const q = question;
+      if (!same) q.personAtShow = undefined;   // set by the first person the work turns to
       const html = `<span class="t">${hhmm(q.ts || ts)}</span><span class="chip">question ${esc(q.label)}${q.pos ? " &middot; " + esc(q.pos) : ""}</span><b>${esc(q.title)}</b>`
         + (q.settle ? `<div class="why">What would settle it: ${esc(q.settle)}</div>` : "")
         + (q.why ? `<div class="why">Why now: ${esc(q.why)}</div>` : "");
