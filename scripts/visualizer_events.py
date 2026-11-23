@@ -390,6 +390,46 @@ def _remember(pid=...):
     return pid
 
 
+# --- Prompts that are not the operator -----------------------------------------
+# The harness delivers some of its own messages through the prompt channel: a
+# background command finishing arrives as a <task-notification>, and other
+# sessions and CI report the same way. Shown raw they read as the operator typing
+# XML. A finished background command is real work, so it becomes a tool line; the
+# other harness messages are plumbing and are dropped.
+TAG_RE = re.compile(r"^\s*<([a-z][a-z0-9-]*)[\s>]")
+
+
+def _tag(text, name):
+    m = re.search(rf"<{name}>(.*?)</{name}>", text, re.S)
+    return m.group(1).strip() if m else ""
+
+
+def prompt_event(text):
+    m = TAG_RE.match(text or "")
+    if not m:
+        return {"type": "prompt", "text": clip(text, 1500)}
+    if m.group(1) != "task-notification":
+        return None
+    summary = _tag(text, "summary")
+    status = _tag(text, "status")
+    desc = re.search(r'"([^"]+)"', summary)
+    result = re.search(r"\(([^()]*)\)\s*$", summary)
+    title = (desc.group(1) if desc else summary or "Background command") + " (finished in the background"
+    plain = re.sub(r"^exit code \d+:\s*", "", result.group(1)).strip().lower() if result else ""
+    title += f": {plain})" if plain else ")"
+    output = ""
+    out_file = _tag(text, "output-file")
+    if out_file:
+        try:
+            output = _output_head({"stdout": pathlib.Path(out_file).read_text(encoding="utf-8", errors="replace")})
+        except OSError:
+            pass
+    # grep's exit 1 means "no matches", an answer rather than a failure; only a
+    # command that did not complete is shown as failed.
+    return {"type": "tool", "tool": "Background", "category": "command", "label": "Background",
+            "title": title, "output": output, "failed": status not in ("completed", "")}
+
+
 def hook_main():
     try:
         if not is_active():
@@ -410,7 +450,7 @@ def hook_main():
         if kind == "PostToolUse":
             ev = tool_event(payload)
         elif kind == "UserPromptSubmit":
-            ev = {"type": "prompt", "text": clip(payload.get("prompt", ""), 1500)}
+            ev = prompt_event(payload.get("prompt", ""))
         elif kind == "Stop":
             ev = {"type": "turn_end"}
         else:
