@@ -298,12 +298,44 @@ def main():
         check("heading retitled via --replace",
               any(ln.startswith("### 92. A better title (raised ") for ln in lines))
 
+    # --replace-outside corrects text BETWEEN blocks (router tables, preamble)
+    # and refuses anything that would touch a block (23 NOV 2026)
+    with tempfile.TemporaryDirectory() as d:
+        build(d)
+        shard = os.path.join(d, "Open_Questions_Testland.md")
+        before = [pathlib.Path(shard).read_text(encoding="utf-8").split("\n")[s:e]
+                  for s, e in QB.split_blocks(pathlib.Path(shard).read_text(encoding="utf-8").split("\n"))]
+        QS.op_replace_outside(d, Namespace(replace_outside="testland", old=["# Open Questions \u2014 Testland"],
+                                           with_text=["# Open Questions \u2014 Testland, corrected"], apply=True))
+        txt = pathlib.Path(shard).read_text(encoding="utf-8")
+        ls = txt.split("\n")
+        check("replace-outside lands in the preamble", "Testland, corrected" in txt)
+        check("replace-outside leaves every block as it was",
+              [ls[s:e] for s, e in QB.split_blocks(ls)] == before)
+        for why, kw in (
+                ("replace-outside refuses text inside a block",
+                 dict(replace_outside="testland", old=["body line"], with_text=["x"])),
+                ("replace-outside refuses a zero-match --old",
+                 dict(replace_outside="testland", old=["no such text"], with_text=["x"])),
+                ("replace-outside refuses a new question boundary",
+                 dict(replace_outside="testland", old=["Testland, corrected"],
+                      with_text=["Testland\n\n### 99. A smuggled question"])),
+                ("replace-outside refuses changing the Resolved-index head",
+                 dict(replace_outside="testland", old=["## Resolved & Closed"],
+                      with_text=["## Closed"]))):
+            try:
+                QS.op_replace_outside(d, Namespace(apply=True, **kw))
+                check(why, False)
+            except SystemExit:
+                pass
+        check("refusals wrote nothing", pathlib.Path(shard).read_text(encoding="utf-8") == txt)
+
     if bad:
         print("QUESTION_STORE test FAIL: " + ", ".join(bad))
         return 1
     print("QUESTION_STORE test ok (shared boundary, liveness, minting spans the "
           "Resolved store, writer refuses em-dash titles / re-resolve / duplicates, "
-          "append stays inside its block)")
+          "append stays inside its block, replace-outside never touches a block)")
     return 0
 
 

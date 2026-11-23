@@ -38,6 +38,12 @@ Operations (all dry-run by default; --apply writes):
         line, or to introduce a line that would open a new question block.
         This is also how a HEADING is retitled: pass the old title text as --old
         (long enough to occur once in the block) and the new one as --with.
+  --replace-outside SHARD --old TEXT --with TEXT [--old TEXT --with TEXT ...]
+        Exact-substring replacement in a live register file OUTSIDE every
+        question block: the router tables, the shard preamble, an index line.
+        Each --old must occur exactly once in the file and lie outside all
+        blocks (text inside a block is --replace's). Refuses any edit that
+        adds, removes or changes a question block, or the Resolved index head.
   --where QLABEL       locate a question (any state) across every file
   --show QLABEL        print ONE question block, whole, using the shared boundary
   --next-number        print the next free global Q integer
@@ -640,6 +646,70 @@ def op_replace(vault, args):
     return 0
 
 
+def op_replace_outside(vault, args):
+    """Exact-substring replacement in a live register file, OUTSIDE every block.
+
+    ⭐ WHY THIS EXISTS (23 NOV 2026). The router file `Open_Questions.md` carries
+    tables (the brick-walls table among them) that belong to no question block.
+    A row there repeated a negative the sitting had just shown to be a misread,
+    and nothing could correct it: --replace is scoped to one block, and the guard
+    (rightly) refuses a hand edit of the register. Same reasoning as --replace:
+    a correction is a write like any other, so it goes through the store.
+
+    ⚠ The scope is the text BETWEEN blocks. An --old inside a block is refused
+    (that is --replace's, with its own checks), and the result must leave every
+    block and the Resolved-index head exactly as they were, so this can never
+    mint, split, merge, retitle or resolve a question.
+    """
+    path = resolve_shard(vault, args.replace_outside)
+    if not args.old or len(args.old) != len(args.with_text):
+        raise SystemExit("--replace-outside needs matching --old/--with pairs")
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    lines = text.split("\n")
+
+    def block_texts(ls):
+        return ["\n".join(ls[s:e]) for s, e in QB.split_blocks(ls)]
+
+    def index_heads(ls):
+        return [ln for ln in ls if QB.RESOLVED_INDEX.match(ln)]
+
+    # character spans of every block, to judge where each --old sits
+    offsets, pos = [], 0
+    for ln in lines:
+        offsets.append(pos)
+        pos += len(ln) + 1
+    spans = [(offsets[s], offsets[e] if e < len(lines) else len(text))
+             for s, e in QB.split_blocks(lines)]
+    before_blocks, before_index = block_texts(lines), index_heads(lines)
+    for old, new in zip(args.old, args.with_text):
+        n = text.count(old)
+        if n != 1:
+            raise SystemExit(f"--old {old[:60]!r} occurs {n} time(s) in "
+                             f"{os.path.basename(path)}; it must occur exactly once")
+        at = text.index(old)
+        if any(a <= at < b or a < at + len(old) <= b for a, b in spans):
+            raise SystemExit(f"--old {old[:60]!r} lies inside a question block: "
+                             "use --replace QLABEL for text in a block")
+        text = text.replace(old, new)
+        lines = text.split("\n")
+        offsets, pos = [], 0
+        for ln in lines:
+            offsets.append(pos)
+            pos += len(ln) + 1
+        spans = [(offsets[s], offsets[e] if e < len(lines) else len(text))
+                 for s, e in QB.split_blocks(lines)]
+    if block_texts(lines) != before_blocks:
+        raise SystemExit("refusing: the replacement would add, remove or change a "
+                         "question block (judged by the shared boundary rule)")
+    if index_heads(lines) != before_index:
+        raise SystemExit("refusing: the replacement changes the Resolved-index head")
+    print(f"replace {len(args.old)} substring(s) outside the question blocks of "
+          f"{os.path.basename(path)}")
+    _write(path, lines, args.apply, "replace in")
+    return 0
+
+
 def op_show(vault, args):
     """Print one question block WHOLE, cut by the shared boundary.
 
@@ -728,6 +798,10 @@ def main():
     ap.add_argument("--replace", metavar="QLABEL",
                     help="exact-substring replacement inside one live block "
                          "(needs --old/--with pairs)")
+    ap.add_argument("--replace-outside", metavar="SHARD",
+                    help="exact-substring replacement OUTSIDE every question block "
+                         "of one live register file (router tables, preamble); "
+                         "needs --old/--with pairs")
     ap.add_argument("--old", action="append", default=[], metavar="TEXT",
                     help="substring to replace; must occur exactly once in the block")
     ap.add_argument("--with", dest="with_text", action="append", default=[],
@@ -770,6 +844,8 @@ def main():
         return op_trim(vault, args)
     if args.replace:
         return op_replace(vault, args)
+    if args.replace_outside:
+        return op_replace_outside(vault, args)
     if args.show:
         return op_show(vault, args)
     if args.where:
