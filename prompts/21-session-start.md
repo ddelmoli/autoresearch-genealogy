@@ -141,6 +141,13 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
       line's BIO_COMPLETE and recent facets gained: phase 2 also owes a
       biography slice every sitting (bio_slice.py, since 22 SEP 2026).
    e. Anything above baseline from step 1.
+   f. SITE LOGIN CHECK (if the vault has a `logins` block): check every research
+      site is signed in, with the session-logins skill (scripts/session_logins.py
+      probes, then ONE password-manager request for the signed-out ones). Report
+      one line: N signed in, and name any still signed out or down. If I am
+      away, probe only and report; do not start a sign-in nobody can approve. A
+      signed-out site answers with a sign-in page, and its "no records" is not a
+      finding, so the lanes that need a signed-out site wait for it.
    Then: if I am present, ask with AskUserQuestion (multiSelect) and act on the
    answers. If I am away or this is an autonomous run, Operating_Protocol wins
    ("keep working, do not stop to ask"): queue the item in deferred_decisions.md
@@ -248,5 +255,6 @@ passes through as [ITERATIONS].
 3. Derive and state the session number.
 4. Surface housekeeping DUE items, blocking deferred decisions and the FS
    write-back queue depth once: ask if the operator is present, queue if away.
+   Check the site sign-ins (session-logins skill) and report any still out.
 5. Propose the rename command from the Handoff's stored suggestion, reconciled.
 6. Report the six items and hand off to `22-research-iterations`.

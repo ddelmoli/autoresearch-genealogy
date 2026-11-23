@@ -293,6 +293,19 @@ def get_hosts(vault_dir):
     return load_config(vault_dir).get("hosts", {})
 
 
+def get_logins(vault_dir):
+    """Return the operator's pre-session sign-in list: a list of site dicts.
+
+    Each site: {id, label, url, website, keywords, probe?, login_url?, note?}.
+    `probe` = {kind: signout_visible (default) | text | cookie | fetch_json, ...};
+    see scripts/session_logins.py, which is the only reader. Per-OPERATOR data (the
+    accounts this person holds), so it lives in the vault config, never the
+    framework. No secret ever goes here: passwords stay in the password manager.
+    An absent block means no list, and session_logins.py says so."""
+    rows = load_config(vault_dir).get("logins", []) or []
+    return [r for r in rows if isinstance(r, dict) and r.get("id") and r.get("url")]
+
+
 def get_known_gen_collapse(vault_dir):
     """Return the declared pedigree-collapse edges as a set of (child_id, parent_id)
     pairs, plus the id->note map for display.
@@ -367,3 +380,4 @@ if __name__ == "__main__":
     print("repositories ->", json.dumps(get_repositories(_vault), ensure_ascii=False))
     print("hosts ->", json.dumps(get_hosts(_vault), ensure_ascii=False))
     print("person_model ->", get_person_model(_vault))
+    print("logins ->", ", ".join(r["id"] for r in get_logins(_vault)) or "(none)")

@@ -48,6 +48,13 @@
     "agad":             { "label": "AGAD (Fond 300)",        "url_pattern": "agadd2.home.net.pl",      "locator_kind": "id" }
   },
 
+  "_comment_logins": "OPTIONAL. The research websites the operator signs in to, checked before each sitting by scripts/session_logins.py (skill: session-logins). Per-OPERATOR data, never a secret: passwords stay in the password manager. probe.kind: signout_visible (default; a VISIBLE sign-out control), text (pattern = a regex the signed-in page shows), cookie (name = a cookie that exists only when signed in; only the name is read), fetch_json (url = a same-origin path that answers JSON only when signed in). keywords = 1-5 hints the password manager matches its items on.",
+  "logins": [
+    { "id": "familysearch", "label": "FamilySearch", "url": "https://www.familysearch.org/en/tree/", "website": "https://www.familysearch.org", "keywords": ["familysearch"],
+      "probe": { "kind": "fetch_json", "url": "/service/tree/tree-data/groups/current-groups?includePending=false" }, "login_url": "https://www.familysearch.org/auth/familysearch/login" },
+    { "id": "wikitree", "label": "WikiTree", "url": "https://www.wikitree.com/", "website": "https://www.wikitree.com", "keywords": ["wikitree"] }
+  ],
+
   "_comment_structural_gap": "Entries that can essentially never acquire an indexed ARK (deep pre-registration lines). deep_gen_threshold: Gen >= this is peerage/visitation-documented. rules: exemptions from the SOURCE_GAP to-do count. PREFER before_year -- it states the CRITERION (every DATED vital falls before the year that region's civil registration begins) instead of enumerating opaque FS PIDs, so it does not drift as people are added. An entry with NO dated vitals never satisfies it: that condition is vacuously true of someone nobody has dated, and an undated person is unevidenced rather than unresearchable. Keep pids for the class a date cannot express -- people whose records exist and are simply not on FamilySearch.",
   "structural_gap": {
     "deep_gen_threshold": 16,
