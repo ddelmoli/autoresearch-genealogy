@@ -45,6 +45,8 @@ The hook does nothing while the visualizer is off, so it can stay wired. (`PreTo
 
 **The header counts open into lists.** Clicking *records counted* or *set aside* in the header opens a panel listing those records, grouped by the person each is evidence for (with the same lineage lines as the person card), with the time and the reason; click again to close (operator, 23 NOV 2026). It lists only what was narrated with `narrate.py evidence`, so a record judged without narration is missing from it: narrate every counted record, not one per person.
 
+**Questions closed opens the same way:** the closed questions with how each ended, then the rest of the slice that was worked and is still open. It reads `narrate.py outcome` events, so an outcome recorded only with `question_drain.py --record` does not appear: narrate every outcome.
+
 **The page lists research actions, not plumbing.** Shell commands (including finished background ones) and app or connector calls (tab bookkeeping, password-manager steps) are kept in the stream but not shown: the narration says what they were for. Edits to the tree, file reads and browser work still show. Narration still adds the why; it no longer has to come first for the cards to be right.
 
 ## Running a visualized sitting
