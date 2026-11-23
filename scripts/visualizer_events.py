@@ -430,6 +430,76 @@ def prompt_event(text):
             "title": title, "output": output, "failed": status not in ("completed", "")}
 
 
+
+# --- Claude's chat text, carried onto the page -------------------------------
+# The running commentary Claude writes to the operator between tool calls is the
+# best plain-English account of what is happening, and it never passed through
+# narrate.py, so the page missed it (operator, 23 NOV 2026). The hooks receive the
+# session transcript path; before each tool runs and at the end of each turn, any
+# assistant text written since the sitting started and not yet shown becomes a
+# "say" event. SAID keeps the ids already shown.
+SAID = VIS_DIR / "said"
+TAIL_BYTES = 3_000_000          # screenshots sit in the transcript as base64, so text can be far back
+
+
+def _since_start():
+    try:
+        return _dt.datetime.fromtimestamp(ACTIVE.stat().st_mtime, _dt.timezone.utc)
+    except OSError:
+        return None
+
+
+def chat_events(payload):
+    path = payload.get("transcript_path")
+    start = _since_start()
+    if not path or start is None:
+        return []
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - TAIL_BYTES))
+            raw = f.read().decode("utf-8", "replace")
+    except OSError:
+        return []
+    try:
+        seen = set(SAID.read_text(encoding="utf-8").split())
+    except OSError:
+        seen = set()
+    out, new_ids = [], []
+    for line in raw.splitlines():
+        if '"assistant"' not in line or '"text"' not in line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue                      # the first line of the tail may be cut
+        if e.get("type") != "assistant" or e.get("isSidechain"):
+            continue
+        uid = e.get("uuid")
+        if not uid or uid in seen:
+            continue
+        try:
+            ts = _dt.datetime.fromisoformat(str(e.get("timestamp", "")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if ts < start:
+            continue
+        text = " ".join(c.get("text", "") for c in (e.get("message") or {}).get("content") or []
+                        if isinstance(c, dict) and c.get("type") == "text").strip()
+        if not text:
+            continue
+        new_ids.append(uid)
+        out.append({"type": "say", "text": clip(_plain(text), 1500), "source": "chat"})
+    if new_ids:
+        try:
+            keep = (list(seen) + new_ids)[-500:]
+            SAID.write_text("\n".join(keep) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+    return out
+
+
 def hook_main():
     try:
         if not is_active():
@@ -443,6 +513,9 @@ def hook_main():
         own = owner()
         if own and sid and sid != own:
             return
+        if kind in ("PreToolUse", "Stop"):
+            for e in chat_events(payload):
+                append(e)
         if kind == "PreToolUse":
             for e in pre_events(payload):
                 append(e)

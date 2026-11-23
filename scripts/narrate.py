@@ -42,6 +42,8 @@ def cmd_start(a):
         stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.move(str(ve.EVENTS), str(ve.VIS_DIR / f"events-{stamp}.jsonl"))
     ve.ACTIVE.write_text(a.title + "\n", encoding="utf-8")
+    if ve.SAID.exists():
+        ve.SAID.unlink()             # a new sitting shows its own chat text only
     ve._remember(None)
     ve.append({"type": "start", "title": a.title})
     print(f"visualizer active: {ve.EVENTS}")
