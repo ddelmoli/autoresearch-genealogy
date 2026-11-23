@@ -18,7 +18,7 @@ secret ever goes in it.
 ```bash
 python3 scripts/session_logins.py                  # the list and each site's probe kind
 python3 scripts/session_logins.py --probe <id>     # that site's check, for javascript_tool
-python3 scripts/session_logins.py --request <id>…  # ONE request_credentials payload
+python3 scripts/session_logins.py --request <id>…  # request_credentials payloads (a list, <=5 sites each)
 ```
 
 ## Procedure
@@ -28,11 +28,17 @@ python3 scripts/session_logins.py --request <id>…  # ONE request_credentials p
 2. Open one tab per site in this session's own tab group (navigate each to the
    site's `url`), wait for load, and run each site's `--probe` expression with
    `javascript_tool`; batch them with `browser_batch`. Each returns
-   `{state: SIGNED_IN | SIGNED_OUT | UNKNOWN, how, login_href}`.
+   `{state: SIGNED_IN | SIGNED_OUT | UNKNOWN, how, login_href}`. Run the
+   probe straight after the navigate: it waits up to 8 s for a slow page on its
+   own, so a real SIGNED_OUT takes the full 8 s.
    - `UNKNOWN` is never signed in. Re-load once; if it stays UNKNOWN (a site
      error page, a 503), report it as down, not as signed out.
-3. For the `SIGNED_OUT` ids only, run `--request` and make that ONE
-   `request_credentials` call: one consent prompt, not one per site.
+   - A `sign-out control inside a closed menu` reading is SIGNED_IN: several
+     sites keep "Sign out" only in an account menu.
+3. For the `SIGNED_OUT` ids only, run `--request` and make one
+   `request_credentials` call per payload it prints: one consent prompt per
+   batch of up to five sites, never one per site. The password manager refuses
+   a request with more than five entries (`invalid: schema`, no field named).
 4. For each: navigate to `login_href` (or the configured `login_url`; if the
    sign-in control is a button with no link, click it), call
    `autofill_credential` on the first page that offers to sign in, submit, and

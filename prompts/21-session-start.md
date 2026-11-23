@@ -143,11 +143,12 @@ Environment: the toolkit needs AUTORESEARCH_VAULT="[VAULT_PATH]".
    e. Anything above baseline from step 1.
    f. SITE LOGIN CHECK (if the vault has a `logins` block): check every research
       site is signed in, with the session-logins skill (scripts/session_logins.py
-      probes, then ONE password-manager request for the signed-out ones). Report
-      one line: N signed in, and name any still signed out or down. If I am
-      away, probe only and report; do not start a sign-in nobody can approve. A
-      signed-out site answers with a sign-in page, and its "no records" is not a
-      finding, so the lanes that need a signed-out site wait for it.
+      probes, then one password-manager request per batch of up to five
+      signed-out sites). Report one line: N signed in, and name any still
+      signed out or down. If I am away, probe only and report; do not start a
+      sign-in nobody can approve. A signed-out site answers with a sign-in
+      page, and its "no records" is not a finding, so the lanes that need a
+      signed-out site wait for it.
    Then: if I am present, ask with AskUserQuestion (multiSelect) and act on the
    answers. If I am away or this is an autonomous run, Operating_Protocol wins
    ("keep working, do not stop to ask"): queue the item in deferred_decisions.md
