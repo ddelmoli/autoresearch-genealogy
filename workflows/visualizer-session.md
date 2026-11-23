@@ -43,6 +43,8 @@ The hook does nothing while the visualizer is off, so it can stay wired. (`PreTo
 
 **A finished question leaves the card.** Once a question's outcome is recorded, its card stays only until the work moves on (a new phase, a person, a record judged, a search, a finding), then clears; the outcome stays in the timeline. A question that was only read along the way (not narrated as a slice question, so no outcome comes) stays while the work is on a person the question names, and clears when the work turns to anyone else or a new phase.
 
+**The header counts open into lists.** Clicking *records counted* or *set aside* in the header opens a panel listing those records, grouped by the person each is evidence for, with the time and the reason; click again to close (operator, 23 NOV 2026). It lists only what was narrated with `narrate.py evidence`, so a record judged without narration is missing from it: narrate every counted record, not one per person.
+
 **The page lists research actions, not plumbing.** Shell commands (including finished background ones) and app or connector calls (tab bookkeeping, password-manager steps) are kept in the stream but not shown: the narration says what they were for. Edits to the tree, file reads and browser work still show. Narration still adds the why; it no longer has to come first for the cards to be right.
 
 ## Running a visualized sitting

@@ -74,6 +74,18 @@
   .empty { color: var(--muted); font-style: italic; }
   #phasebar { font-size: .95em; }
   #phasebar .lane { color: var(--accent); font-weight: 600; }
+  .stat.toggle { cursor: pointer; border-radius: 6px; padding: 2px 6px; border: 1px solid transparent; }
+  .stat.toggle:hover, .stat.toggle.open { border-color: var(--line); background: var(--panel2); }
+  .stat.toggle span::after { content: " \25BE"; }
+  .stat.toggle.open span::after { content: " \25B4"; }
+  #tally { grid-column: 1 / -1; max-height: 42vh; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 8px; font-size: .88em; }
+  #tally h3 { margin: 0 0 6px; font-size: .8em; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  #tally .who { margin: 10px 0 2px; }
+  #tally .who b { font-size: 1.05em; }
+  #tally ul { list-style: none; margin: 0; padding: 0 0 0 14px; }
+  #tally li { padding: 3px 0; border-left: 3px solid var(--line); padding-left: 10px; margin-bottom: 2px; }
+  #tally.counted li { border-color: var(--good); } #tally.excluded li { border-color: var(--bad); }
+  #tally li .t { color: var(--muted); font-size: .8em; margin-right: .5em; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -84,8 +96,8 @@
   </div>
   <div class="stats">
     <div class="stat"><b id="n-actions">0</b><span>actions</span></div>
-    <div class="stat"><b id="n-counted" style="color:var(--good)">0</b><span>records counted</span></div>
-    <div class="stat"><b id="n-excluded" style="color:var(--bad)">0</b><span>set aside</span></div>
+    <div class="stat toggle" id="s-counted" title="Show which records were counted, by person"><b id="n-counted" style="color:var(--good)">0</b><span>records counted</span></div>
+    <div class="stat toggle" id="s-excluded" title="Show which records were set aside, by person"><b id="n-excluded" style="color:var(--bad)">0</b><span>set aside</span></div>
     <div class="stat"><b id="n-qclosed" style="color:var(--accent)">0</b><span>questions closed</span></div>
     <div class="stat"><b id="n-negative" style="color:var(--neg)">0</b><span>empty searches</span></div>
     <div class="stat"><b id="n-edits">0</b><span>tree edits</span></div>
@@ -95,6 +107,7 @@
     <button id="b-quiet">Hide file reads</button>
     <button id="b-big">Large text</button>
   </div>
+  <div id="tally" hidden></div>
 </header>
 <main>
   <div>
@@ -124,11 +137,11 @@ const params = new URLSearchParams(location.search);
 // or an anchor's parent: those are the people narrate.py measures descent to.
 const viewerId = params.get("viewer") || "";
 const viewerLabel = params.get("viewer_label") || "";
-let follow = true, counts, person, question;
+let follow = true, counts, person, question, tally = [], tallyMode = null;
 
 function reset() {
   counts = { actions: 0, counted: 0, excluded: 0, qclosed: 0, negative: 0, edits: 0 };
-  person = null; question = null;
+  person = null; question = null; tally = [];
   $("question").hidden = true; $("qbody").innerHTML = "";
   $("timeline").innerHTML = '<li class="empty">Nothing yet.</li>';
   $("ledger").innerHTML = '<li class="empty">No records judged yet.</li>';
@@ -136,8 +149,38 @@ function reset() {
   $("person").innerHTML = '<h2>Person being researched</h2><div class="empty">None drawn yet.</div>';
   $("phasebar").textContent = "Waiting for the sitting to start.";
   renderCounts();
+  if (typeof renderTally === 'function' && $("tally")) renderTally();
 }
 function renderCounts() { for (const k in counts) $("n-" + k).textContent = counts[k]; }
+
+// The header's "records counted" and "set aside" numbers open a list of those records,
+// grouped by the person each one is evidence for, so a watcher can see WHICH records
+// and WHOSE moved this sitting. (Operator, 23 NOV 2026.)
+function renderTally() {
+  const box = $("tally");
+  for (const k of ["counted", "excluded"]) $("s-" + k).classList.toggle("open", tallyMode === k);
+  if (!tallyMode) { box.hidden = true; return; }
+  const rows = tally.filter(r => r.verdict === tallyMode);
+  const groups = new Map();
+  for (const r of rows) {
+    const key = r.who.id || r.who.name || "?";
+    if (!groups.has(key)) groups.set(key, { who: r.who, items: [] });
+    groups.get(key).items.push(r);
+  }
+  const head = tallyMode === "counted" ? "Records counted this sitting" : "Records set aside this sitting";
+  let html = `<h3>${head}: ${rows.length} record${rows.length === 1 ? "" : "s"} for ${groups.size} ${groups.size === 1 ? "person" : "people"}</h3>`;
+  if (!rows.length) html += `<div class="empty">None yet.</div>`;
+  for (const g of groups.values()) {
+    const w = g.who;
+    const meta = [w.gen && `Generation ${w.gen}`, w.id].filter(Boolean).map(esc).join(" &middot; ");
+    html += `<div class="who"><b>${esc(w.name || w.id || "Unnamed")}</b> <span class="sub">${meta}</span></div><ul>`
+      + g.items.map(r => `<li><span class="t">${hhmm(r.ts)}</span>${esc(r.record)}<div class="why">${esc(r.why)}</div></li>`).join("")
+      + `</ul>`;
+  }
+  box.className = tallyMode;
+  box.innerHTML = html;
+  box.hidden = false;
+}
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 function hhmm(ts) { return ts ? ts.slice(11, 16) : ""; }
 function ordinal(n) { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
@@ -297,6 +340,9 @@ function handle(ev) {
         add("person", `<span class="chip">person</span>Now looking at records for <b>${esc(ev.subject.name)}</b>`, ts);
       }
       if (ev.verdict in counts) counts[ev.verdict]++;
+      tally.push({ verdict: ev.verdict, record: ev.record, why: ev.why, ts,
+        who: (ev.subject && (ev.subject.id || ev.subject.name)) ? ev.subject : (person || {}) });
+      if (tallyMode === ev.verdict) renderTally();
       ledger(ev);
       add(`evidence ${ev.verdict}`, `<span class="verdict">${esc(ev.verdict === "excluded" ? "set aside" : ev.verdict)}</span>${esc(ev.record)}<div class="why">${esc(ev.why)}</div>`, ts);
       break;
@@ -357,6 +403,7 @@ es.onerror = () => $("live").classList.remove("on");
 
 $("b-follow").onclick = e => { follow = !follow; e.target.classList.toggle("on", follow); };
 $("b-quiet").onclick = e => e.target.classList.toggle("on", document.body.classList.toggle("quiet"));
+for (const k of ["counted", "excluded"]) $("s-" + k).onclick = () => { tallyMode = tallyMode === k ? null : k; renderTally(); };
 $("b-big").onclick = e => e.target.classList.toggle("on", document.body.classList.toggle("big"));
 </script>
 </body>
