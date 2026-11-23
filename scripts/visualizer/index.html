@@ -86,6 +86,10 @@
   #tally ul { list-style: none; margin: 0; padding: 0 0 0 14px; }
   #tally li { padding: 3px 0; border-left: 3px solid var(--line); padding-left: 10px; margin-bottom: 2px; }
   #tally.counted li { border-color: var(--good); } #tally.excluded li { border-color: var(--bad); }
+  #tally.qclosed li.resolved { border-color: var(--good); } #tally.qclosed li.advanced, #tally.qclosed li.swapped { border-color: var(--cand); }
+  #tally.qclosed li.blocked, #tally.qclosed li.untouched { border-color: var(--bad); }
+  #tally .qlabel { color: var(--accent); font-weight: 600; margin-right: .4em; }
+  #tally .qstat { font-weight: 700; text-transform: uppercase; font-size: .72em; letter-spacing: .06em; margin-right: .5em; color: var(--muted); }
   #tally li .t { color: var(--muted); font-size: .8em; margin-right: .5em; font-variant-numeric: tabular-nums; }
 </style>
 </head>
@@ -99,7 +103,7 @@
     <div class="stat"><b id="n-actions">0</b><span>actions</span></div>
     <div class="stat toggle" id="s-counted" title="Show which records were counted, by person"><b id="n-counted" style="color:var(--good)">0</b><span>records counted</span></div>
     <div class="stat toggle" id="s-excluded" title="Show which records were set aside, by person"><b id="n-excluded" style="color:var(--bad)">0</b><span>set aside</span></div>
-    <div class="stat"><b id="n-qclosed" style="color:var(--accent)">0</b><span>questions closed</span></div>
+    <div class="stat toggle" id="s-qclosed" title="Show which questions were closed, and the rest worked"><b id="n-qclosed" style="color:var(--accent)">0</b><span>questions closed</span></div>
     <div class="stat"><b id="n-negative" style="color:var(--neg)">0</b><span>empty searches</span></div>
     <div class="stat"><b id="n-edits">0</b><span>tree edits</span></div>
   </div>
@@ -138,11 +142,11 @@ const params = new URLSearchParams(location.search);
 // or an anchor's parent: those are the people narrate.py measures descent to.
 const viewerId = params.get("viewer") || "";
 const viewerLabel = params.get("viewer_label") || "";
-let follow = true, counts, person, question, tally = [], tallyMode = null;
+let follow = true, counts, person, question, tally = [], qtally = [], tallyMode = null;
 
 function reset() {
   counts = { actions: 0, counted: 0, excluded: 0, qclosed: 0, negative: 0, edits: 0 };
-  person = null; question = null; tally = [];
+  person = null; question = null; tally = []; qtally = [];
   $("question").hidden = true; $("qbody").innerHTML = "";
   $("timeline").innerHTML = '<li class="empty">Nothing yet.</li>';
   $("ledger").innerHTML = '<li class="empty">No records judged yet.</li>';
@@ -157,10 +161,29 @@ function renderCounts() { for (const k in counts) $("n-" + k).textContent = coun
 // The header's "records counted" and "set aside" numbers open a list of those records,
 // grouped by the person each one is evidence for, so a watcher can see WHICH records
 // and WHOSE moved this sitting. (Operator, 23 NOV 2026.)
+// The "questions closed" number opens the closed questions, then the rest of the
+// slice that was worked and is still open, each with how it ended. (Operator, 23 NOV 2026.)
+function renderQuestionTally(box) {
+  const last = new Map();                       // latest outcome per question
+  for (const q of qtally) last.set(q.label, q);
+  const all = [...last.values()];
+  const closed = all.filter(q => q.status === "resolved");
+  const rest = all.filter(q => q.status !== "resolved");
+  const row = q => `<li class="${esc(q.status)}"><span class="t">${hhmm(q.ts)}</span><span class="qstat">${esc(OUTCOME_WORDS[q.status] || q.status)}</span>`
+    + `<span class="qlabel">${esc(q.label)}</span>${esc(q.title || "")}<div class="why">${esc(q.why)}</div></li>`;
+  let html = `<h3>Questions closed this sitting: ${closed.length}</h3>`
+    + (closed.length ? `<ul>${closed.map(row).join("")}</ul>` : `<div class="empty">None yet.</div>`);
+  if (rest.length) html += `<h3 style="margin-top:12px">Also worked, still open: ${rest.length}</h3><ul>${rest.map(row).join("")}</ul>`;
+  box.className = "qclosed";
+  box.innerHTML = html;
+  box.hidden = false;
+}
+
 function renderTally() {
   const box = $("tally");
-  for (const k of ["counted", "excluded"]) $("s-" + k).classList.toggle("open", tallyMode === k);
+  for (const k of ["counted", "excluded", "qclosed"]) $("s-" + k).classList.toggle("open", tallyMode === k);
   if (!tallyMode) { box.hidden = true; return; }
+  if (tallyMode === "qclosed") { renderQuestionTally(box); return; }
   const rows = tally.filter(r => r.verdict === tallyMode);
   const groups = new Map();
   for (const r of rows) {
@@ -373,6 +396,8 @@ function handle(ev) {
     }
     case "q_outcome":
       if (ev.status === "resolved") counts.qclosed++;
+      qtally.push({ label: ev.label, title: ev.title || (question && question.label === ev.label ? question.title : ""), status: ev.status, why: ev.why, ts });
+      if (tallyMode === "qclosed") renderTally();
       if (question && question.label === ev.label) { question.outcome = ev; showQuestion({ label: ev.label }); }
       add(`q_outcome ${esc(ev.status)}`, `<span class="chip">${esc(ev.label)} ${esc(OUTCOME_WORDS[ev.status] || ev.status)}</span>${esc(ev.why)}`, ts);
       break;
@@ -412,7 +437,7 @@ es.onerror = () => $("live").classList.remove("on");
 
 $("b-follow").onclick = e => { follow = !follow; e.target.classList.toggle("on", follow); };
 $("b-quiet").onclick = e => e.target.classList.toggle("on", document.body.classList.toggle("quiet"));
-for (const k of ["counted", "excluded"]) $("s-" + k).onclick = () => { tallyMode = tallyMode === k ? null : k; renderTally(); };
+for (const k of ["counted", "excluded", "qclosed"]) $("s-" + k).onclick = () => { tallyMode = tallyMode === k ? null : k; renderTally(); };
 $("b-big").onclick = e => e.target.classList.toggle("on", document.body.classList.toggle("big"));
 </script>
 </body>
