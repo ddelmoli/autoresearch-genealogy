@@ -16,7 +16,7 @@ and each change written to the tree.
 
 | Part | Role |
 |---|---|
-| `scripts/visualizer_events.py --hook` | Claude Code hook (PostToolUse, UserPromptSubmit, Stop). Records WHAT ran. A no-op unless the visualizer is active. |
+| `scripts/visualizer_events.py --hook` | Claude Code hook (PreToolUse, PostToolUse, UserPromptSubmit, Stop). Records WHAT ran; before a tool runs, switches the question and person cards to what it is about to touch. A no-op unless the visualizer is active. |
 | `scripts/narrate.py` | Records WHY: narration, phase, person, evidence verdicts, negatives, findings. |
 | `scripts/visualizer.py` | Serves the page on `127.0.0.1` and streams the events live. |
 | `.claude/visualizer/events.jsonl` | The stream. Gitignored. Holds vault text, so it is private. |
@@ -27,12 +27,15 @@ and each change written to the tree.
 Add the hook to `.claude/settings.json` (local, not tracked) beside the existing ones:
 
 ```json
+"PreToolUse":       [{"matcher": "*", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/visualizer_events.py\" --hook", "timeout": 5}]}],
 "PostToolUse":      [{"matcher": "*", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/visualizer_events.py\" --hook", "timeout": 5}]}],
 "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/visualizer_events.py\" --hook", "timeout": 5}]}],
 "Stop":             [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PROJECT_DIR:-.}/scripts/visualizer_events.py\" --hook", "timeout": 5}]}]
 ```
 
-The hook does nothing while the visualizer is off, so it can stay wired.
+The hook does nothing while the visualizer is off, so it can stay wired. (`PreToolUse` may already hold the destructive-command guard: add this as a second entry, never replace that one.)
+
+**The cards move at the START of the work.** Before each tool runs, the `PreToolUse` hook reads its input. Reading a question (`question_store.py --show`) puts that question on the card. An input naming exactly ONE person, by vault id or by an FS PID the vault holds (a grep for `P-XXXXXX`, a FamilySearch person URL), puts that person on the card. Inputs naming two or more people (an audit, a roster grep) change nothing. Narration still adds the why; it no longer has to come first for the cards to be right.
 
 ## Running a visualized sitting
 

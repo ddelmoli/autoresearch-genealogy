@@ -191,7 +191,7 @@ function clearPerson(msg) {
   $("ledger").innerHTML = '<li class="empty">No records judged yet.</li>';
 }
 
-function showPerson(ev) {
+function showPerson(ev, keepLedger) {
   person = ev;
   const lines = [];
   if (ev.gen) lines.push(`Generation ${ev.gen}`);
@@ -214,7 +214,7 @@ function showPerson(ev) {
   const rows = [["Born", readableDate(ev.born)], ["Died", readableDate(ev.died)], ["Place", ev.place], ["Vault id", ev.id], ["Why now", ev.why]]
     .filter(r => r[1]).map(r => `<dt>${r[0]}</dt><dd>${esc(r[1])}</dd>`).join("");
   $("person").innerHTML = `<h2>Person being researched</h2><div class="name">${esc(ev.name)}</div><div class="rel">${rel}</div><dl>${rows}</dl>`;
-  $("ledger").innerHTML = '<li class="empty">No records judged yet for this person.</li>';
+  if (!keepLedger) $("ledger").innerHTML = '<li class="empty">No records judged yet for this person.</li>';
 }
 
 const OUTCOME_WORDS = { resolved: "closed", advanced: "moved forward, still open", blocked: "blocked",
@@ -249,7 +249,14 @@ function handle(ev) {
       $("phasebar").innerHTML = esc(ev.name) + (ev.lane ? ` &middot; lane <span class="lane">${esc(ev.lane)}</span>` : "");
       add("phase", esc(ev.name) + (ev.lane ? ` &middot; ${esc(ev.lane)}` : "") + (ev.detail ? `<div class="why">${esc(ev.detail)}</div>` : ""), ts);
       break;
-    case "person": showPerson(ev); add("person", `<span class="chip">person</span>Now researching <b>${esc(ev.name)}</b>` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts); break;
+    case "person":
+      // Automatic events come from the hook just BEFORE a tool touches this
+      // person; one for the person already on the card is a repeat, not news.
+      if (ev.auto && person && person.id === ev.id) break;
+      if (person && person.id === ev.id) showPerson({ ...person, ...ev }, true);  // narration adds the why
+      else showPerson(ev);
+      add("person", `<span class="chip">person</span>${ev.auto ? "Starting work on" : "Now researching"} <b>${esc(ev.name)}</b>` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts);
+      break;
     case "evidence":
       // Evidence names whose record it is: if that is not the person on the card,
       // switch the card first so the ledger never sits under the wrong name.

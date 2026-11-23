@@ -9,7 +9,7 @@ writes those moments to one append-only JSON Lines file that
 `scripts/visualizer.py` streams to a browser page.
 
 TWO WRITERS, ONE FILE.
-  * The Claude Code hooks (PostToolUse, UserPromptSubmit, Stop) call
+  * The Claude Code hooks (PreToolUse, PostToolUse, UserPromptSubmit, Stop) call
     `python3 scripts/visualizer_events.py --hook`. That records WHAT ran.
   * `scripts/narrate.py` records WHY: plain-English narration, the phase and
     lane, the person being worked, and each evidence verdict.
@@ -312,6 +312,84 @@ def question_context(label):
             "gist": clip(gist, 500), "settle": clip(settle, 500)}
 
 
+# --- Who the next piece of work is about ---------------------------------------
+# WHY BEFORE, NOT AFTER. The cards on the right used to change only when the
+# session narrated a record it had already read, so the watcher saw the work
+# happen under the previous person's name and the card catch up afterwards. The
+# PreToolUse hook now looks at what a tool is ABOUT to touch: when its input names
+# exactly one person (a vault id, or an FS PID the vault holds), the card switches
+# before the tool runs. Two or more people in one call (a roster grep, an audit)
+# say nothing about who is being worked, so they switch nothing.
+VAULT_ID_RE = re.compile(r"\bP-[0-9A-HJKMNP-TV-Z]{6}\b")
+FS_PID_RE = re.compile(r"(?<![:\w-])[0-9A-Z]{4}-[0-9A-Z]{3}(?![\w-])")
+SUBJECT = VIS_DIR / "subject"          # last person put on the card, so repeats are quiet
+
+
+def _input_text(inp):
+    if isinstance(inp, dict):
+        return "\n".join(_input_text(v) for v in inp.values())
+    if isinstance(inp, list):
+        return "\n".join(_input_text(v) for v in inp)
+    return inp if isinstance(inp, str) else ""
+
+
+def subject_of(text):
+    """The one vault id a tool input is about, or None."""
+    ids = set(VAULT_ID_RE.findall(text))
+    pids = set(FS_PID_RE.findall(text))
+    if pids:
+        try:
+            import person_store as ps
+            import vault_config as vc
+            for r in ps.iter_people(vc.resolve_vault(None)):
+                fs = str((r.external_ids or {}).get("fs") or "")
+                if fs in pids:
+                    ids.add(r.id)
+        except Exception:
+            pass
+    return ids.pop() if len(ids) == 1 else None
+
+
+def pre_events(payload):
+    """Events to show BEFORE a tool runs: the question it opens, the person it is about."""
+    name = payload.get("tool_name", "")
+    inp = payload.get("tool_input") or {}
+    cmd = inp.get("command", "") if name == "Bash" else ""
+    if "narrate.py" in cmd or name.startswith("mcp__ccd_") or name == "ToolSearch":
+        return []
+    m = QSHOW_RE.search(cmd)
+    if m:
+        q = question_context(m.group(1))
+        if q:
+            _remember(None)          # a new question starts with nobody on the card
+            return [{"type": "question", "auto": True, **q}]
+        return []
+    pid = subject_of(_input_text(inp))
+    if not pid or pid == _remember():
+        return []
+    import narrate                   # lazy: narrate imports this module
+    ev = narrate.person_event(pid=pid)
+    if not ev.get("name") or (ev["name"] == pid and ev.get("kin") is None):
+        return []                    # not a person the vault holds
+    _remember(pid)
+    ev["auto"] = True
+    return [{k: v for k, v in ev.items() if v not in (None, "")}]
+
+
+def _remember(pid=...):
+    """Read (no argument) or set the id last shown on the person card."""
+    if pid is ...:
+        try:
+            return SUBJECT.read_text(encoding="utf-8").strip() or None
+        except OSError:
+            return None
+    try:
+        SUBJECT.write_text(pid or "", encoding="utf-8")
+    except OSError:
+        pass
+    return pid
+
+
 def hook_main():
     try:
         if not is_active():
@@ -325,14 +403,12 @@ def hook_main():
         own = owner()
         if own and sid and sid != own:
             return
-        extra = None
+        if kind == "PreToolUse":
+            for e in pre_events(payload):
+                append(e)
+            return
         if kind == "PostToolUse":
             ev = tool_event(payload)
-            m = QSHOW_RE.search(cmd)
-            if ev and m and not ev.get("failed"):
-                q = question_context(m.group(1))
-                if q:
-                    extra = {"type": "question", "auto": True, **q}
         elif kind == "UserPromptSubmit":
             ev = {"type": "prompt", "text": clip(payload.get("prompt", ""), 1500)}
         elif kind == "Stop":
@@ -341,8 +417,6 @@ def hook_main():
             ev = None
         if ev:
             append(ev)
-        if extra:
-            append(extra)
     except Exception as exc:  # never fail a tool call because of the viewer
         try:
             append({"type": "error", "text": f"visualizer hook: {exc!r}"})

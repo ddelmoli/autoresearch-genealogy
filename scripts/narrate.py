@@ -42,6 +42,7 @@ def cmd_start(a):
         stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.move(str(ve.EVENTS), str(ve.VIS_DIR / f"events-{stamp}.jsonl"))
     ve.ACTIVE.write_text(a.title + "\n", encoding="utf-8")
+    ve._remember(None)
     ve.append({"type": "start", "title": a.title})
     print(f"visualizer active: {ve.EVENTS}")
 
@@ -187,11 +188,15 @@ def main(argv=None):
         if not (a.name or a.id):
             p.error("person needs a name or --id")
         emit(person_event(a.name, a.id, gen=a.gen, born=a.born, died=a.died, place=a.place, why=a.why))
+        if a.id and ve.is_active():
+            ve._remember(a.id)
     elif a.cmd == "evidence":
         subject = None
         if a.person:
             pe = person_event(pid=a.person)
             subject = {k: v for k, v in pe.items() if k != "type" and v not in (None, "")}
+            if ve.is_active():
+                ve._remember(a.person)
         emit({"type": "evidence", "record": a.record, "verdict": a.verdict, "why": a.why,
               "subject": subject,
               "host": a.host})
@@ -202,6 +207,8 @@ def main(argv=None):
     elif a.cmd == "question":
         q = ve.question_context(a.label) or {"label": a.label.upper(), "title": "(not found in the register)"}
         emit({"type": "question", **q, "pos": a.pos, "why": a.why})
+        if ve.is_active():
+            ve._remember(None)       # the page clears the person card for a new question
     elif a.cmd == "outcome":
         q = ve.question_context(a.label) or {}
         emit({"type": "q_outcome", "label": q.get("label", a.label.upper()), "title": q.get("title"),
