@@ -218,6 +218,7 @@ function showPerson(ev, keepLedger) {
   if (!keepLedger) $("ledger").innerHTML = '<li class="empty">No records judged yet for this person.</li>';
 }
 
+const HIDDEN_TOOL_CATEGORIES = new Set(["command", "other"]);
 const OUTCOME_WORDS = { resolved: "closed", advanced: "moved forward, still open", blocked: "blocked",
   untouched: "not worked", swapped: "swapped for another question" };
 
@@ -294,6 +295,10 @@ function handle(ev) {
     }
     case "turn_end": add("turn_end", "Claude paused for the operator", ts); break;
     case "tool": {
+      // Shell commands and app/connector plumbing (tab bookkeeping, password-manager
+      // calls) are not research a watcher follows; the narration says what they were
+      // for. Edits, file reads and browser work still show. (Operator, 23 NOV 2026.)
+      if (HIDDEN_TOOL_CATEGORIES.has(ev.category)) break;
       counts.actions++;
       let body = `<span class="chip">${esc(ev.label || ev.tool)}</span>${esc(ev.title)}`;
       if (ev.failed) body += ` <span class="chip" style="color:var(--bad)">failed</span>`;
