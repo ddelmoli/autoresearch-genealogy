@@ -37,3 +37,10 @@ assert (sex["P-S1"], src["P-S1"]) == ("M", "spouse")
 assert "P-U" not in sex
 assert si.given_name("Captain Thomas West [the elder]") == "thomas"
 print("sex inference: layers and overrides ok")
+
+# The vault field wins over the GEDCOM and every guess; a recorded U stops guessing.
+sex, src = si.infer(people, bodies, {"P-G1": "F"}, {"P-G1": "M", "P-AN": "U"})
+assert (sex["P-G1"], src["P-G1"]) == ("M", "field")
+assert "P-AN" not in sex
+assert sex["P-S1"] == "F"                                   # spouse now follows the field
+print("sex inference: the recorded field wins ok")

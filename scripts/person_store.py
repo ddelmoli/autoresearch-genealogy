@@ -907,6 +907,35 @@ def route(record_or_line):
     return v if v and ROUTE_SLUG_RE.match(v) else None
 
 
+SEX_VALUES = ("M", "F", "X", "U")
+
+
+def sex(record_or_line):
+    """Return the person's recorded sex, a GEDCOM 7 `SEX` value (M, F, X, U), or None.
+
+    ** WHY A FIELD (operator, 24 NOV 2026). ** The narrative model had no sex, so the
+    session visualizer had to say "aunt or uncle", and `sex_inference.py` was written
+    to GUESS it for wording. A guess is not a vault fact; this key is. It is written
+    ON TOUCH, when a record the entry cites shows it ("son of", "wife of", a
+    baptism of a daughter), and was SEEDED once from the GEDCOM's `SEX` tag (matched
+    on FS PID). Read it here, never with a regex; write it with `set_meta_key`.
+
+    ⚠ `U` means "looked, and unknown"; ABSENCE means nobody has recorded it. An
+    unrecognised value reads as None and is reported by `gen_person_index
+    --integrity` as SEX_GRAMMAR (advisory, baseline 0). (pinned:
+    scripts/test_sex_field.py)
+    """
+    v = _meta_key_value(record_or_line, "sex")
+    v = v.upper() if v else None
+    return v if v in SEX_VALUES else None
+
+
+def raw_sex_value(record_or_line):
+    """The `sex` key exactly as stored (upper-cased), valid or not; for the grammar gate."""
+    v = _meta_key_value(record_or_line, "sex")
+    return v.upper() if v else None
+
+
 def _meta_key_value(record_or_line, key):
     """Read one scalar key out of a `- meta:` flow mapping. Shared by the readers
     above so the parsing lives in ONE place, per the two-readers-one-entry rule."""

@@ -471,6 +471,10 @@ def integrity_check(entries, args):
                        decision, not a cleanup. What this check is for is stopping
                        the drift GROWING. `mint_ids.py` already emits conforming ids;
                        every violation is hand-authored.
+      SEX_GRAMMAR    — a `sex` meta key that is not a GEDCOM 7 SEX value (M, F, X,
+                       U; ADVISORY, baseline 0, added 24 NOV 2026). The reader
+                       `person_store.sex()` treats such a value as absent, so a typo
+                       would otherwise vanish silently.
     Exit 1 only on a HARD violation (DUP_ID, MISSING_ID or DUP_META_KEY)."""
     from collections import Counter
     import re as _re
@@ -491,6 +495,13 @@ def integrity_check(entries, args):
                   if not (e["id"] and e["gen"] is not None)]
     odd_ids = [e for e in entries if e["id"] and not _ID_GRAMMAR.match(e["id"])]
     couple_names = [e for e in entries if _is_couple_name(e["name"] or "")]
+    import person_store as _ps
+    bad_sex = []
+    for e in entries:
+        meta = next((l for l in (e.get("block") or "").splitlines() if l.lstrip().startswith("- meta:")), "")
+        v = _ps.raw_sex_value(meta.strip())
+        if v and v not in _ps.SEX_VALUES:
+            bad_sex.append((e, v))
     dup_keys = [(e, duplicate_meta_keys(e.get("block") or ""))
                 for e in entries]
     dup_keys = [(e, d) for e, d in dup_keys if d]
@@ -504,6 +515,7 @@ def integrity_check(entries, args):
     print(f"  NEEDS_META (no id or no generation): {len(needs_meta)}   [advisory]")
     print(f"  ID_GRAMMAR (id not P- + 6 Crockford):  {len(odd_ids)}   [advisory; hand-authored, see docstring]")
     print(f"  COUPLE_NAME (one entry names TWO people): {len(couple_names)}   [advisory; baseline 0, see docstring]")
+    print(f"  SEX_GRAMMAR (sex not M/F/X/U):       {len(bad_sex)}   [advisory; baseline 0]")
     for i, c in list(dup_ids.items())[:args.limit]:
         print(f"    DUP_ID {i} x{c}")
     for e in noid[:args.limit]:
@@ -519,6 +531,8 @@ def integrity_check(entries, args):
         print(f"    ID_GRAMMAR {e['id']:<10} {e['file']:<34} {e['name'][:34]}")
     for e in couple_names[:args.limit]:
         print(f"    COUPLE_NAME {e['id'] or '-':<10} {e['file']:<34} {e['name'][:44]}")
+    for e, v in bad_sex[:args.limit]:
+        print(f"    SEX_GRAMMAR {e['id'] or '-':<10} {e['file']:<34} {e['name'][:34]:<34} sex: {v}")
     hard = len(dup_ids) + len(noid) + len(dup_keys)
     print(f"\n  HARD violations (DUP_ID + MISSING_ID + DUP_META_KEY): {hard}")
     return 1 if hard else 0

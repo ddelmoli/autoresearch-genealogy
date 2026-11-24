@@ -30,7 +30,7 @@ found or corrected) goes to the session log, never the entry — see
 
 ```
 **[Full Name]** (b. [DateValue], [place]; d. [DateValue], [place]; FS PID [XXXX-XXX])
-- meta: {id: P-XXXXXX, evidence_tier: strong_signal, profile_status: complete, life_status: deceased, generation: [N], fs: [XXXX-XXX], born: '3 SEP 1780', died: 'BET 1816 AND 13 FEB 1823'}
+- meta: {id: P-XXXXXX, evidence_tier: strong_signal, profile_status: complete, life_status: deceased, generation: [N], fs: [XXXX-XXX], born: '3 SEP 1780', died: 'BET 1816 AND 13 FEB 1823', sex: F}
 - [lede: who this person was, in one sentence]
 - [the life, chronological, source-first: origin, parents, occupation, residences,
   migration, marriage(s), children, death, burial — cite inline]

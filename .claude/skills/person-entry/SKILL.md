@@ -56,6 +56,13 @@ write the entry with no id → `python3 scripts/mint_ids.py --apply` → read th
 id back from the file → wire any edges that reference it. A deleted entry's id is
 retired, never reused.
 
+## Sex, on touch
+
+When an entry you are editing has no `sex` key and a record it cites shows the sex
+("son of", "wife of", a daughter's baptism), add it with `person_store.set_meta_key`
+(`M` / `F`, or `X` / `U`). Never from a guess: `sex_inference.py` is for display
+wording only. Rule and grammar: CLAUDE.method.md, the `sex` field.
+
 ## Verify before committing
 
 ```bash
