@@ -99,6 +99,10 @@ def kinship(person_id):
       * kind "spouse": {id, name, role, spouse, rel}. No blood path, but a spouse has
         one; `rel` is that spouse's own entry (an ancestor or collateral dict).
 
+    Each entry also carries `sex` ('M'/'F') when sex_inference.py can guess the
+    person's, and a spouse entry `spouse_sex`; the page then says "aunt", not
+    "aunt or uncle". A guess for wording only, never a vault fact.
+
     An empty list means no edge path joins the person to any anchor (a line not yet
     wired). None means the vault could not be read, and the page then makes no
     relationship claim at all.
@@ -121,7 +125,20 @@ def kinship(person_id):
         return None
     if person_id not in people:
         return None
-    return relations(person_id, people, anchors)
+    out = relations(person_id, people, anchors)
+    try:
+        import sex_inference as si
+        sex, _src = si.vault_sexes(vault, people)
+    except Exception:
+        sex = {}
+    # The person's own guessed sex picks the word ("aunt", not "aunt or uncle"); a
+    # spouse entry also carries the spouse's. Display only: see sex_inference.py.
+    for k in out:
+        if person_id in sex:
+            k["sex"] = sex[person_id]
+        if k.get("kind") == "spouse" and k.get("spouse_id") in sex:
+            k["spouse_sex"] = sex[k["spouse_id"]]
+    return out
 
 
 def _ids(tokens):
@@ -186,7 +203,8 @@ def relations(person_id, people, anchors):
         if s in people:
             for rel in _blood(s, people, watchers):
                 out.append({"kind": "spouse", "id": rel["id"], "name": rel["name"],
-                            "role": rel["role"], "spouse": _display(people[s]), "rel": rel})
+                            "role": rel["role"], "spouse": _display(people[s]), "spouse_id": s,
+                            "rel": rel})
     return out
 
 

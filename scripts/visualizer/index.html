@@ -211,24 +211,33 @@ function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;"
 function hhmm(ts) { return ts ? ts.slice(11, 16) : ""; }
 function ordinal(n) { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
 
-function relation(steps) {
-  if (steps === 1) return "parent";
-  if (steps === 2) return "grandparent";
-  if (steps === 3) return "great-grandparent";
-  if (steps > 3) return ordinal(steps - 2) + " great-grandparent";
+// `sex` is narrate.py's GUESS (sex_inference.py: GEDCOM, then the entry's own
+// pronouns, given names and spouses). Unknown keeps the neutral word.
+function sexWord(sex, m, f, n) { return sex === "M" ? m : sex === "F" ? f : n; }
+
+function relation(steps, sex) {
+  const p = sexWord(sex, "father", "mother", "parent");
+  if (steps === 1) return p;
+  if (steps === 2) return "grand" + p;
+  if (steps === 3) return "great-grand" + p;
+  if (steps > 3) return ordinal(steps - 2) + " great-grand" + p;
   return null;
 }
 
 // Blood kin who is not an ancestor. `up` = parent links from the person to the
 // closest shared ancestor, `down` = from the anchor to the same one. The vault
 // records no sex, so the terms stay neutral ("aunt or uncle").
-function kinTerm(up, down) {
+function kinTerm(up, down, sex) {
   const greats = n => n === 1 ? "great-" : ordinal(n) + " great-";
-  if (down === 0) return up === 1 ? "child" : up === 2 ? "grandchild" : greats(up - 2) + "grandchild";
-  if (up === 1 && down === 1) return "sibling";
-  if (up === 1) return down === 2 ? "aunt or uncle" : greats(down - 2) + "aunt or " + greats(down - 2) + "uncle";
-  if (down === 1) return up === 2 ? "niece or nephew" : up === 3 ? "grandniece or grandnephew"
-    : greats(up - 3) + "grandniece or " + greats(up - 3) + "grandnephew";
+  const both = (pre, f, m) => sexWord(sex, pre + m, pre + f, pre + f + " or " + pre + m);
+  if (down === 0) {
+    const c = sexWord(sex, "son", "daughter", "child");
+    return up === 1 ? c : up === 2 ? "grand" + c : greats(up - 2) + "grand" + c;
+  }
+  if (up === 1 && down === 1) return sexWord(sex, "brother", "sister", "sibling");
+  if (up === 1) return down === 2 ? both("", "aunt", "uncle") : both(greats(down - 2), "aunt", "uncle");
+  if (down === 1) return up === 2 ? both("", "niece", "nephew") : up === 3 ? both("grand", "niece", "nephew")
+    : both(greats(up - 3) + "grand", "niece", "nephew");
   const removed = Math.abs(up - down);
   const times = removed === 0 ? "" : removed === 1 ? " once removed" : removed === 2 ? " twice removed" : ` ${removed} times removed`;
   return `${ordinal(Math.min(up, down) - 1)} cousin${times}`;
@@ -237,9 +246,9 @@ function kinTerm(up, down) {
 // One kin entry (from narrate.py's kinship) as a noun phrase: "2nd great-grandparent",
 // "1st cousin twice removed". Entries written before 24 NOV 2026 have no kind: ancestors.
 function kinPhrase(k) {
-  if (!k.kind || k.kind === "ancestor") return relation(k.steps);
-  if (k.kind === "collateral") return kinTerm(k.up, k.down);
-  if (k.kind === "spouse") return `spouse of ${esc(k.spouse)}, who is the ${kinPhrase(k.rel)}`;
+  if (!k.kind || k.kind === "ancestor") return relation(k.steps, k.sex);
+  if (k.kind === "collateral") return kinTerm(k.up, k.down, k.sex);
+  if (k.kind === "spouse") return `${sexWord(k.sex, "husband", "wife", "spouse")} of ${esc(k.spouse)}, who is the ${kinPhrase({ ...k.rel, sex: k.spouse_sex })}`;
   return null;
 }
 
@@ -298,12 +307,13 @@ function lineage(ev) {
     for (const a of anchors) {
       if (!a.kind || a.kind === "ancestor") {
         const via = parents.find(p => p.steps === a.steps - 1);
-        lines.push(`${relation(a.steps)} of ${esc(a.name)}` + (via ? `, through ${esc(via.name)}` : ""));
+        lines.push(`${relation(a.steps, a.sex)} of ${esc(a.name)}` + (via ? `, through ${esc(via.name)}` : ""));
       } else if (a.kind === "collateral") {
         const shared = (a.common || []).map(esc).join(" and ");
-        lines.push(`${kinTerm(a.up, a.down)} of ${esc(a.name)}` + (shared ? ` (closest shared ancestor${a.common.length > 1 ? "s" : ""}: ${shared})` : ""));
+        lines.push(`${kinTerm(a.up, a.down, a.sex)} of ${esc(a.name)}` + (shared ? ` (closest shared ancestor${a.common.length > 1 ? "s" : ""}: ${shared})` : ""));
       } else if (a.kind === "spouse") {
-        lines.push(`Spouse of ${esc(a.spouse)}, who is the ${kinPhrase(a.rel)} of ${esc(a.name)}`);
+        const s = kinPhrase(a);
+        lines.push(`${s[0].toUpperCase()}${s.slice(1)} of ${esc(a.name)}`);
       }
     }
     if (!anchors.length) lines.push("No parent or spouse links join this person to either anchor yet (a line not yet wired)");
