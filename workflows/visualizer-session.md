@@ -37,6 +37,10 @@ The hook does nothing while the visualizer is off, so it can stay wired. (`PreTo
 
 **The cards move at the START of the work.** Before each tool runs, the `PreToolUse` hook reads its input. Reading a question (`question_store.py --show`) puts that question on the card. An input naming exactly ONE person, by vault id or by an FS PID the vault holds (a grep for `P-XXXXXX`, a FamilySearch person URL), puts that person on the card. Inputs naming two or more people (an audit, a roster grep) change nothing. A background command finishing (which the harness delivers as a `<task-notification>` prompt) is recorded as a command, never as the operator speaking; other harness messages are dropped.
 
+**A finished person leaves the card.** `narrate.py done --id P-XXXXXX` clears the person card (only if it still shows that person) and adds a "Finished with" line to the timeline. Without it a card stays up until the next person or phase replaces it, which leaves the last person sitting above unrelated work (operator, 24 NOV 2026).
+
+**A person with no link to the anchors says where the gap is.** When no parent or spouse path joins someone to either anchor, the card names the descendant the vault holds them for, the one nearest the anchors ("In the vault as the 2nd great-grandfather of X (Gen 3), whose own link to the family is not recorded"), instead of the old "a line not yet wired", which read as missing work on the person on screen (operator, 24 NOV 2026). With no descendant either, it says so.
+
 **Review and close clear the cards.** A phase whose name contains *review* or *close* empties both the question card and the person card.
 
 **Claude's chat text reaches the page on its own.** Before each tool runs and at the end of each turn, the hook reads the session transcript and adds any chat message written since the sitting started as a narration line (operator, 23 NOV 2026: the running commentary to the operator was missing from the page). Narration through `narrate.py` is still how records, outcomes, people and findings get their structure; plain `say` lines are now mostly redundant with the chat.
@@ -86,7 +90,8 @@ this vault's tooling: plain words, no script names, no internal jargon (say
 "a record naming her" rather than "limb (g)").
 
 - **Every phase and lane draw**: `narrate.py phase "Research iterations" --lane EXPAND --detail "why this lane"`.
-- **Every person drawn**: `narrate.py person --id P-XXXXXX --place ... --why "<why this person now>"`. Name, generation and dates are filled from the vault; pass them only to override.
+- **Every person drawn**: `narrate.py person --id P-XXXXXX --place ... --why "<why this person now>"`. Name, generation and dates are filled from the vault; pass them only to override. ⚠ Narrate it BEFORE the first search on that person, and check the name beside the id: a batched browser call names several people, so the hook cannot switch the card for you, and the card trails the work if the narration comes after it.
+- **Every person finished**: `narrate.py done --id P-XXXXXX --why "<what it came to>"`, so the card clears before the next piece of work.
 - **Before a search**: one `say` line naming what is about to be searched and what it would show.
 - **Every record judged**: `narrate.py evidence "<record, in words>" --verdict counted|excluded|candidate --why "<the reason>" --person P-XXXXXX`. Always pass `--person` (the vault id the record is evidence FOR): the page switches its person card to match, so the ledger never sits under the previous person's name. This matters most in the question slice, where no `person` narration precedes the records. This is the heart of the visualizer. Say the reason the method gives (a user tree is not evidence; an image-less memorial page is a contributor's assertion; a sibling's baptism does not name her; a hint is a candidate until its identifiers match).
 - **Every empty search**: `narrate.py negative "<what was searched, which years>"`. A negative is data; show it.

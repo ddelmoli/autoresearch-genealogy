@@ -15,6 +15,8 @@ subcommand appends one event to the stream `scripts/visualizer.py` serves (see
   narrate.py evidence "1850 census, Somewhereton" --verdict counted|excluded|candidate
                     --why "names her with husband and three children" [--host fs]
                     [--person P-XXXXXX]   (whose evidence it is; switches the person card)
+  narrate.py done [--id P-XXXXXX] [--why "what the work on this person came to"]
+                    (clears the person card; with --id, only if the card still shows them)
   narrate.py negative "Searched the town vital records 1790-1810" [--why "..."]
   narrate.py finding "Her father is named in the 1805 deed" [--tier strong|moderate|speculative]
   narrate.py term "ARK" "a permanent link to one record on FamilySearch"
@@ -80,7 +82,66 @@ def person_event(name=None, pid=None, **given):
           "born": given.get("born") or rec.get("born"),
           "died": given.get("died") or rec.get("died"),
           "place": given.get("place"), "why": given.get("why"), "kin": kinship(pid)}
+    if ev["kin"] == []:
+        ev["unlinked_via"] = unlinked_via(pid)
     return ev
+
+
+def unlinked_via(person_id):
+    """For a person with no recorded path to an anchor: the descendant the vault
+    holds them for (see descended_to), read from the vault, or None."""
+    try:
+        import person_store as ps
+        import vault_config as vc
+        vault = vc.resolve_vault(None)
+        people = {r.id: r for r in ps.iter_people(vault)}
+    except Exception:
+        return None
+    out = descended_to(person_id, people)
+    if out:
+        try:                         # the person's guessed sex, for "great-grandmother"
+            import sex_inference as si
+            sex, _src = si.vault_sexes(vault, people)
+            if person_id in sex:
+                out["sex"] = sex[person_id]
+        except Exception:
+            pass
+    return out
+
+
+def descended_to(person_id, people):
+    """The descendant through whom an UNLINKED person is in the vault at all.
+
+    A person with no blood or spouse path to an anchor is usually not an orphan
+    entry: they were added as the ancestry of somebody nearer the anchors (a cousin
+    cluster whose own link was never found). The card said "a line not yet wired",
+    which reads as missing work on THIS person (operator, 24 NOV 2026: the Sant'Arsenio
+    ancestors of a collateral cousin). Naming that descendant says where the gap is.
+
+    Walks child edges down and returns the descendant with the lowest `generation`
+    (closest to the anchors), fewest steps on a tie: {id, name, gen, steps}, or None
+    when the person has no recorded descendant.
+    """
+    children = {}
+    for r in people.values():
+        for p in _ids(r.parents):
+            children.setdefault(p, []).append(r.id)
+    dist, frontier = {person_id: 0}, [person_id]
+    while frontier:
+        nxt = []
+        for n in frontier:
+            for c in children.get(n, []):
+                if c not in dist:
+                    dist[c] = dist[n] + 1
+                    nxt.append(c)
+        frontier = nxt
+    gens = {c: getattr(people[c], "generation", None) for c in dist if c in people}
+    found = [(gens[c] if gens[c] is not None else 10**6, d, c)
+             for c, d in dist.items() if d > 0 and c in people]
+    if not found:
+        return None
+    _g, steps, cid = min(found)
+    return {"id": cid, "name": _display(people[cid]), "steps": steps, "gen": gens[cid]}
 
 
 def kinship(person_id):
@@ -230,6 +291,8 @@ def main(argv=None):
     s.add_argument("--why", required=True); s.add_argument("--host")
     s.add_argument("--person", help="vault id of the person this record is evidence FOR; "
                    "switches the page's person card when it differs")
+    s = sub.add_parser("done"); s.add_argument("--id", help="clear the card only if it still shows this person")
+    s.add_argument("--why", help="one line: what the work on this person came to")
     s = sub.add_parser("negative"); s.add_argument("text"); s.add_argument("--why")
     s = sub.add_parser("finding"); s.add_argument("text")
     s.add_argument("--tier", choices=["strong", "moderate", "speculative"])
@@ -265,6 +328,11 @@ def main(argv=None):
         emit({"type": "evidence", "record": a.record, "verdict": a.verdict, "why": a.why,
               "subject": subject,
               "host": a.host})
+    elif a.cmd == "done":
+        rec = vault_person(a.id) or {}
+        emit({"type": "person_done", "id": a.id, "name": rec.get("name") or a.id, "why": a.why})
+        if ve.is_active():
+            ve._remember(None)       # the hook's next single-person input starts a fresh card
     elif a.cmd == "negative":
         emit({"type": "negative", "text": a.text, "why": a.why})
     elif a.cmd == "finding":

@@ -316,7 +316,15 @@ function lineage(ev) {
         lines.push(`${s[0].toUpperCase()}${s.slice(1)} of ${esc(a.name)}`);
       }
     }
-    if (!anchors.length) lines.push("No parent or spouse links join this person to either anchor yet (a line not yet wired)");
+    // No path to an anchor. Say WHERE the gap is: a person like this is usually in the
+    // vault as the ancestry of somebody nearer the family whose own link was never
+    // found, and "not yet wired" read as missing work on this person. (Operator, 24 NOV 2026.)
+    if (!anchors.length) {
+      const u = ev.unlinked_via;
+      if (u && u.name) lines.push(`No recorded blood or marriage link to the family. In the vault as the ${relation(u.steps, u.sex) || "ancestor"} of ${esc(u.name)}`
+        + (u.gen ? ` (Gen ${esc(u.gen)})` : "") + `, whose own link to the family is not recorded`);
+      else lines.push("No recorded blood or marriage link to the family, and no descendant in the vault to explain why it is here");
+    }
     if (viewerId && viewerLabel) {
       const v = ev.kin.find(k => k.id === viewerId);
       if (v) lines.push(`${esc(viewerLabel)}'s ${kinPhrase(v)}`);
@@ -405,6 +413,16 @@ function handle(ev) {
       else showPerson(ev);
       add("person", `<span class="chip">person</span>${ev.auto ? "Starting work on" : "Now researching"} <b>${esc(ev.name)}</b>` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts);
       break;
+    case "person_done":
+      // The work on this person is finished: clear the card rather than leave it up
+      // over unrelated work until somebody else replaces it. With an id, only that
+      // person's card clears. (Operator, 24 NOV 2026.)
+    {
+      const who = ev.name || (person && person.name) || "this person";
+      if (!ev.id || (person && person.id === ev.id)) clearPerson("Between people: no one is being researched right now.");
+      add("person", `<span class="chip">done</span>Finished with <b>${esc(who)}</b>` + (ev.why ? `<div class="why">${esc(ev.why)}</div>` : ""), ts);
+      break;
+    }
     case "evidence":
       // Evidence names whose record it is: if that is not the person on the card,
       // switch the card first so the ledger never sits under the wrong name.
