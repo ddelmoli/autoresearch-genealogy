@@ -25,9 +25,12 @@ meta_presence_audit.py — two structural checks on `- meta:` blocks.
    11 are real, all in one file. The residue is 3 label bullets whose
    parenthetical happens to open with a date (`Sources`, `WWII Draft
    Registration`, a `Society of Descendants ...` line) plus 2 `SURNAME,FORENAME`
-   military-audit rows that are arguably real people. Two structural false-positive
-   classes ARE filtered: role-prefixed cross-references (`- **Wife: ...**`) and
-   indented child-list items. **This is an ADVISORY count with a known ~30% false
+   military-audit rows that are arguably real people. Three structural false-positive
+   classes ARE filtered: role-prefixed cross-references (`- **Wife: ...**`),
+   indented child-list items, and (24 NOV 2026) record or organisation LABELS
+   (`- **WWII Draft Registration** (16 OCT 1940 ...)`, a lineage society), screened
+   by `LABEL_WORD`; that last screen took the reference vault's long-standing
+   2 to 0. **This is an ADVISORY count with a known ~30% false
    positive rate — read the rows, do not treat the number as a defect total.**
    There is also a known FALSE NEGATIVE class: `T._is_person` rejects bold names
    carrying an embedded parenthetical (`Duncan I (Donnchad mac Crínáin), King of
@@ -193,6 +196,26 @@ def _is_crossref_bullet(raw_line, name):
     return bool(raw_line[:1].isspace() or ":" in name or ROLE_PREFIX.match(name))
 
 
+# A third never-an-entry shape: a bullet LABEL naming a record or a body, whose
+# parenthetical happens to open with a date, e.g. `- **WWII Draft Registration**
+# (16 OCT 1940, ...)` or `- **Society of Descendants of ...** (founded 1950, ...)`.
+# Both passed the vitals-slot test because a dated record IS dated. The screen is
+# a whole-word match on nouns that name a document, a register or an
+# organisation and never stand as a personal name. ⚠ Keep it to such nouns:
+# "Will", "Grant", "Bishop", "Mason" and the like are given names or surnames,
+# so they are deliberately absent. Applied to BULLET candidates only, so it
+# cannot mask a line-start entry header.
+LABEL_WORD = re.compile(
+    r"\b(?:registration|register|registry|census|draft|certificate|record|records|"
+    r"index|sources|society|association|descendants|petition|manifest|passenger|"
+    r"naturali[sz]ation|declaration|obituary|newspaper|probate|inventory|deed|deeds)\b",
+    re.I)
+
+
+def _is_label_bullet(name):
+    return bool(LABEL_WORD.search(name))
+
+
 def audit(vault=VAULT):
     issues = []
     for path in sorted(glob.glob(os.path.join(vault, "Family_Tree*.md"))):
@@ -218,6 +241,8 @@ def audit(vault=VAULT):
                 if not _is_entry_paren(paren):
                     continue
                 if _is_crossref_bullet(lines[i], name):
+                    continue
+                if _is_label_bullet(name):
                     continue
             if not any(META.match(b) for b in lines[i:bounds[k + 1]]):
                 issues.append((os.path.basename(path), name.strip()))
