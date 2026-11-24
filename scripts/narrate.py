@@ -84,18 +84,30 @@ def person_event(name=None, pid=None, **given):
 
 
 def kinship(person_id):
-    """Who this person is actually an ancestor OF, read from the vault's parent edges.
+    """How this person is related to each anchor (Gen 1) and each anchor's parent,
+    read from the vault's parent edges.
 
-    Returns a list of {id, name, role, steps} for each anchor (Gen 1) and each
-    anchor's parent the person descends to, steps being the shortest number of
-    parent links between them. An empty list means no edge path joins the person
-    to any anchor (a collateral, or a line not yet wired). None means the vault
-    could not be read, and the page then makes no relationship claim at all.
+    Returns a list of dicts, one per anchor or anchor parent the person is related to:
+
+      * kind "ancestor": {id, name, role, steps}. The person is that watcher's
+        ancestor, `steps` parent links up (1 = parent).
+      * kind "collateral": {id, name, role, up, down, common}. Blood kin who is not
+        an ancestor: `up` parent links from the person to the closest shared
+        ancestor, `down` from the watcher to the same ancestor, `common` the shared
+        ancestor's (or ancestral couple's) display names. The page turns (up, down)
+        into sibling / aunt or uncle / niece or nephew / cousin N times removed.
+      * kind "spouse": {id, name, role, spouse, rel}. No blood path, but a spouse has
+        one; `rel` is that spouse's own entry (an ancestor or collateral dict).
+
+    An empty list means no edge path joins the person to any anchor (a line not yet
+    wired). None means the vault could not be read, and the page then makes no
+    relationship claim at all.
 
     WHY FROM EDGES. The first version took a watcher's generation number and
     subtracted. In a couple-anchored vault, and for any one parent of an anchor,
     most of the tree is on somebody else's line: a generation number says how far
-    up a person is, never whose ancestor they are.
+    up a person is, never whose ancestor they are. Unconfirmed (`?`) edges are walked
+    like confirmed ones, as everywhere else in the session plan.
     """
     if not person_id:
         return None
@@ -109,40 +121,73 @@ def kinship(person_id):
         return None
     if person_id not in people:
         return None
+    return relations(person_id, people, anchors)
 
-    def parent_ids(r):
-        return [str(p).rstrip("?") for p in (r.parents or [])]
 
-    children = {}
-    for r in people.values():
-        for p in parent_ids(r):
-            children.setdefault(p, []).append(r.id)
+def _ids(tokens):
+    return [str(p).rstrip("?") for p in (tokens or [])]
 
+
+def _display(r):
+    return (r.name or r.id).split(" [", 1)[0].strip()
+
+
+def _ancestors(pid, people):
+    """{ancestor id: fewest parent links up}, the person itself at 0."""
+    dist, frontier = {pid: 0}, [pid]
+    while frontier:
+        nxt = []
+        for n in frontier:
+            for p in _ids(people[n].parents) if n in people else []:
+                if p in people and p not in dist:
+                    dist[p] = dist[n] + 1
+                    nxt.append(p)
+        frontier = nxt
+    return dist
+
+
+def _blood(person_id, people, watchers):
+    up_p = _ancestors(person_id, people)
+    out = []
+    for w, role in watchers.items():
+        if w == person_id:
+            continue
+        up_w = _ancestors(w, people)
+        name = _display(people[w])
+        if person_id in up_w:
+            out.append({"kind": "ancestor", "id": w, "name": name, "role": role,
+                        "steps": up_w[person_id]})
+            continue
+        shared = set(up_p) & set(up_w)
+        if not shared:
+            continue
+        best = min((up_p[c] + up_w[c], max(up_p[c], up_w[c])) for c in shared)
+        closest = sorted(c for c in shared if (up_p[c] + up_w[c], max(up_p[c], up_w[c])) == best)
+        a, b = up_p[closest[0]], up_w[closest[0]]
+        out.append({"kind": "collateral", "id": w, "name": name, "role": role,
+                    "up": a, "down": b,
+                    "common": [_display(people[c]) for c in closest[:2]]})
+    return out
+
+
+def relations(person_id, people, anchors):
+    """kinship() on an already-read vault: `people` {id: record}, `anchors` [ids]."""
     watchers = {}
     for aid in anchors:
         if aid in people:
             watchers[aid] = "anchor"
-            for pid in parent_ids(people[aid]):
+            for pid in _ids(people[aid].parents):
                 if pid in people:
                     watchers.setdefault(pid, "anchor parent")
-
-    # Breadth-first DOWN from the person: the first time a watcher is reached is
-    # the shortest descent path to them.
-    dist, frontier = {person_id: 0}, [person_id]
-    while frontier:
-        nxt = []
-        for n in frontier:
-            for c in children.get(n, []):
-                if c not in dist:
-                    dist[c] = dist[n] + 1
-                    nxt.append(c)
-        frontier = nxt
-
-    def display(r):
-        return (r.name or r.id).split(" [", 1)[0].strip()
-
-    return [{"id": w, "name": display(people[w]), "role": role, "steps": dist[w]}
-            for w, role in watchers.items() if w in dist and dist[w] > 0]
+    out = _blood(person_id, people, watchers)
+    if out:
+        return out
+    for s in _ids(people[person_id].spouse):
+        if s in people:
+            for rel in _blood(s, people, watchers):
+                out.append({"kind": "spouse", "id": rel["id"], "name": rel["name"],
+                            "role": rel["role"], "spouse": _display(people[s]), "rel": rel})
+    return out
 
 
 def emit(ev):

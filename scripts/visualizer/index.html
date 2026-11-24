@@ -219,6 +219,30 @@ function relation(steps) {
   return null;
 }
 
+// Blood kin who is not an ancestor. `up` = parent links from the person to the
+// closest shared ancestor, `down` = from the anchor to the same one. The vault
+// records no sex, so the terms stay neutral ("aunt or uncle").
+function kinTerm(up, down) {
+  const greats = n => n === 1 ? "great-" : ordinal(n) + " great-";
+  if (down === 0) return up === 1 ? "child" : up === 2 ? "grandchild" : greats(up - 2) + "grandchild";
+  if (up === 1 && down === 1) return "sibling";
+  if (up === 1) return down === 2 ? "aunt or uncle" : greats(down - 2) + "aunt or " + greats(down - 2) + "uncle";
+  if (down === 1) return up === 2 ? "niece or nephew" : up === 3 ? "grandniece or grandnephew"
+    : greats(up - 3) + "grandniece or " + greats(up - 3) + "grandnephew";
+  const removed = Math.abs(up - down);
+  const times = removed === 0 ? "" : removed === 1 ? " once removed" : removed === 2 ? " twice removed" : ` ${removed} times removed`;
+  return `${ordinal(Math.min(up, down) - 1)} cousin${times}`;
+}
+
+// One kin entry (from narrate.py's kinship) as a noun phrase: "2nd great-grandparent",
+// "1st cousin twice removed". Entries written before 24 NOV 2026 have no kind: ancestors.
+function kinPhrase(k) {
+  if (!k.kind || k.kind === "ancestor") return relation(k.steps);
+  if (k.kind === "collateral") return kinTerm(k.up, k.down);
+  if (k.kind === "spouse") return `spouse of ${esc(k.spouse)}, who is the ${kinPhrase(k.rel)}`;
+  return null;
+}
+
 function diffHtml(text) {
   return text.split("\n").map(l => {
     const c = l.startsWith("+") ? "add" : l.startsWith("-") ? "del" : l.startsWith("@@") ? "hunk" : "";
@@ -270,15 +294,22 @@ function lineage(ev) {
   // A generation number alone never says whose ancestor someone is.
   if (Array.isArray(ev.kin)) {
     const anchors = ev.kin.filter(k => k.role === "anchor");
-    const parents = ev.kin.filter(k => k.role === "anchor parent");
+    const parents = ev.kin.filter(k => k.role === "anchor parent" && (!k.kind || k.kind === "ancestor"));
     for (const a of anchors) {
-      const via = parents.find(p => p.steps === a.steps - 1);
-      lines.push(`${relation(a.steps)} of ${esc(a.name)}` + (via ? `, through ${esc(via.name)}` : ""));
+      if (!a.kind || a.kind === "ancestor") {
+        const via = parents.find(p => p.steps === a.steps - 1);
+        lines.push(`${relation(a.steps)} of ${esc(a.name)}` + (via ? `, through ${esc(via.name)}` : ""));
+      } else if (a.kind === "collateral") {
+        const shared = (a.common || []).map(esc).join(" and ");
+        lines.push(`${kinTerm(a.up, a.down)} of ${esc(a.name)}` + (shared ? ` (closest shared ancestor${a.common.length > 1 ? "s" : ""}: ${shared})` : ""));
+      } else if (a.kind === "spouse") {
+        lines.push(`Spouse of ${esc(a.spouse)}, who is the ${kinPhrase(a.rel)} of ${esc(a.name)}`);
+      }
     }
-    if (!anchors.length) lines.push("No parent links join this person to either anchor yet (a collateral, or a line not yet wired)");
+    if (!anchors.length) lines.push("No parent or spouse links join this person to either anchor yet (a line not yet wired)");
     if (viewerId && viewerLabel) {
       const v = ev.kin.find(k => k.id === viewerId);
-      if (v) lines.push(`${esc(viewerLabel)}'s ${relation(v.steps)}`);
+      if (v) lines.push(`${esc(viewerLabel)}'s ${kinPhrase(v)}`);
     }
   }
   return lines;

@@ -59,7 +59,12 @@ The hook does nothing while the visualizer is off, so it can stay wired. (`PreTo
 
    Then open `http://127.0.0.1:8765/`. Each person card names whose ancestor the
    person is, walked from the vault's parent edges (never from the generation
-   number: in a couple-anchored vault most people are on only one line). To add a
+   number: in a couple-anchored vault most people are on only one line). A person
+   who is blood kin but not an ancestor gets the collateral term from the closest
+   shared ancestor (sibling, aunt or uncle, niece or nephew, 2nd cousin 4 times
+   removed), with that ancestor named; the vault records no sex, so the terms stay
+   neutral. A person with no blood path but a spouse who has one reads "Spouse of
+   X, who is the ...". To add a
    line for a watcher who is an anchor's parent, pass their vault id:
    `?viewer=P-XXXXXX&viewer_label=Dad`; the line appears only for people on that watcher's line.
 
