@@ -14,7 +14,16 @@ so it works for both person models. What goes into the file:
   FAM    built from the edges: one family per distinct parent set named by a
          child's `parents`, plus one per `spouse` pair not already covered. A
          parent edge still carrying `?` (not yet FS-confirmed) is exported with a
-         NOTE saying so, never silently promoted.
+         NOTE saying so, never silently promoted. HUSB and WIFE are SLOTS, not
+         sexes: GEDCOM 7 keeps the two tags for compatibility and reads no sex
+         from them, but a file has no third slot, so an order must be picked.
+         Where NEITHER partner has a recorded `sex`, the order comes from
+         `sex_inference` (the inferred male in HUSB) instead of from whichever
+         slot happened to be free, because a consumer that labels ancestors by
+         slot alone then says "father" and "mother" the right way round. That is
+         the display wording the module exists for, and it is not a SEX claim:
+         no SEX tag is emitted for an inferred person, nothing is written to the
+         vault, and a recorded `sex` always decides the slot it owns.
   SOUR   one record per distinct source LOCATOR cited in a person's rule-8
          `- **Sources**` bullet: TITL is the sub-bullet's record description,
          REFN carries the `host:locator` token itself. Each citing person gets a
@@ -269,6 +278,43 @@ def host_labels(vault):
     return out
 
 
+def inferred_sexes(vault, people=None):
+    """`sex_inference`'s best guess at each person's sex, or {} if it cannot be had.
+
+    A GUESS FOR WORDING, read here for ONE purpose: which of two partners goes in
+    HUSB (see the FAM paragraph above). It is never emitted as SEX and never
+    written back. BaseException for the reason `host_labels` documents: losing the
+    guess costs the slot ORDER, which must never cost the export."""
+    try:
+        import sex_inference
+        return sex_inference.vault_sexes(vault, people)[0]
+    except BaseException:
+        return {}
+
+
+def partner_slots(partners, recorded, inferred):
+    """(husb, wife, extra, ordered_by) for one family's partner ids.
+
+    `recorded` {id: SEX} is the vault's own field and always wins: a partner with
+    a recorded M or F takes that slot. `inferred` {id: 'M'|'F'} is consulted only
+    to ORDER two partners who have no recorded M or F between them, and only when
+    it resolves them to opposite sexes; an unresolved or same-sex pair keeps the
+    arbitrary fill. `ordered_by` says which of the three decided, for the counts
+    the export prints. `extra` is every partner past the two slots."""
+    husb = [p for p in partners if recorded.get(p) == "M"]
+    wife = [p for p in partners if recorded.get(p) == "F"]
+    rest = [p for p in partners if p not in husb and p not in wife]
+    ordered_by = "recorded" if (husb or wife) else "arbitrary"
+    if ordered_by == "arbitrary" and len(rest) == 2:
+        a, b = rest
+        if {inferred.get(a), inferred.get(b)} == {"M", "F"}:
+            m, f = (a, b) if inferred.get(a) == "M" else (b, a)
+            return [m], [f], [], "inference"
+    for p in rest:  # no recorded or inferred answer: fill whichever slot is free
+        (husb if not husb else wife).append(p)
+    return husb[:1], wife[:1], husb[1:] + wife[1:], ordered_by
+
+
 def strip_q(tok):
     return tok.rstrip("?")
 
@@ -323,10 +369,12 @@ def build(vault, include_living_details=False):
         "2 NAME autoresearch-genealogy vault export",
         "1 DATE %s" % today.strftime("%d %b %Y").upper().lstrip("0"),
         "1 NOTE Exported from an autoresearch-genealogy vault. Vault ids are in REFN (TYPE autoresearch-vault-id). "
-        "Living and unknown-status people carry RESN PRIVACY.",
+        "Living and unknown-status people carry RESN PRIVACY. Where neither partner has a recorded SEX, "
+        "HUSB/WIFE order is inferred for wording and asserts no sex.",
     ]
 
     labels = host_labels(vault)
+    inferred = inferred_sexes(vault, people)
     sources = OrderedDict()   # locator -> {"xref", "titl"}
 
     def source_for(locator, desc):
@@ -338,7 +386,8 @@ def build(vault, include_living_details=False):
         return entry
 
     stats = {"indi": 0, "fam": len(fams), "private": 0, "birt": 0, "deat": 0,
-             "unconfirmed_famc": 0, "sourced": 0, "citations": 0, "sour": 0}
+             "unconfirmed_famc": 0, "sourced": 0, "citations": 0, "sour": 0,
+             "inferred_slots": 0, "slots_swapped": 0}
     for pid, rec in people.items():
         private = (rec.life_status or "unknown") in PRIVATE
         hide = private and not include_living_details
@@ -403,16 +452,15 @@ def build(vault, include_living_details=False):
         lines.append("0 %s FAM" % fam_ids[key])
         partners = f["partners"]
         sexes = {p: ps.sex(people[p]) for p in partners}
-        husb = [p for p in partners if sexes[p] == "M"]
-        wife = [p for p in partners if sexes[p] == "F"]
-        rest = [p for p in partners if p not in husb and p not in wife]
-        for p in rest:  # unrecorded sex: fill whichever slot is free
-            (husb if not husb else wife).append(p)
-        for p in husb[:1]:
+        husb, wife, extra, ordered_by = partner_slots(partners, sexes, inferred)
+        if ordered_by == "inference":
+            stats["inferred_slots"] += 1
+            stats["slots_swapped"] += husb[0] != partners[0]   # the arbitrary fill's pick
+        for p in husb:
             lines.append("1 HUSB %s" % xref("I", p))
-        for p in wife[:1]:
+        for p in wife:
             lines.append("1 WIFE %s" % xref("I", p))
-        for p in (husb[1:] + wife[1:]):  # same-sex or >2 partners: keep as notes, not lost
+        for p in extra:  # same-sex or >2 partners: keep as notes, not lost
             lines.append("1 NOTE Also a partner in this family: vault id %s" % p)
         for c, _u in f["children"]:
             lines.append("1 CHIL %s" % xref("I", c))
@@ -477,6 +525,8 @@ def main():
           "dated deaths %(deat)d, unconfirmed parent links %(unconfirmed_famc)d" % stats)
     print("sourced individuals %(sourced)d, source citations %(citations)d, "
           "SOUR records %(sour)d" % stats)
+    print("partner slots ordered by inference %(inferred_slots)d "
+          "(swapped against the arbitrary fill %(slots_swapped)d)" % stats)
     print("structural errors: %d" % len(errors))
     if a.check_only or errors:
         return 1 if errors else 0

@@ -315,6 +315,147 @@ class PrivacyTests(unittest.TestCase):
         self.assertEqual(stats["sourced"], 2)
 
 
+# --------------------------------------------------------------------------- #
+# PARTNER SLOTS. HUSB/WIFE is a slot, not a sex: GEDCOM 7 reads no sex from the
+# tag, but the file has no third slot, so an order must be picked. A recorded
+# `sex` decides; with none recorded the order is `sex_inference`'s guess, which
+# is wording and NEVER a SEX tag. Ada is the alphabetically first id throughout,
+# so the arbitrary fill would always put HER in HUSB.
+# --------------------------------------------------------------------------- #
+
+COUPLE_TREE = """---
+type: lineage
+created: 2026-01-01
+tags: [test]
+---
+
+# Test Lineage
+
+### Generation 3
+
+**Ada Placeholder** (b. 1850; d. 1920)
+- meta: {id: P-AAAAAA, generation: 3, life_status: deceased, spouse: [P-BBBBBB], born: '1850', died: '1920'}
+- She kept the shop after her father died, and her daughters worked beside her.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - her 1850 birth record - fs:1:1:AAAA-AAA
+
+**Bruno Placeholder** (b. 1848; d. 1915)
+- meta: {id: P-BBBBBB, generation: 3, life_status: deceased, spouse: [P-AAAAAA], born: '1848', died: '1915'}
+- He carted stone for the quarry, and his brothers followed him into the trade.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - his 1848 birth record - fs:1:1:BBBB-BBB
+
+### Generation 1
+
+**Cora Placeholder** (b. 1985)
+- meta: {id: P-CCCCCC, generation: 1, life_status: living, spouse: [P-DDDDDD]}
+- She teaches, and her own note says which school.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - her birth record - fs:1:1:CCCC-CCC
+
+**Dov Placeholder** (b. 1983)
+- meta: {id: P-DDDDDD, generation: 1, life_status: living, spouse: [P-CCCCCC]}
+- He works for the railway, and his own note says which line.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - his birth record - fs:1:1:DDDD-DDD
+"""
+
+
+def _couple_vault(tmp):
+    with open(os.path.join(tmp, ".autoresearch.json"), "w", encoding="utf-8") as fh:
+        json.dump({"person_model": "narrative"}, fh)
+    with open(os.path.join(tmp, "Family_Tree_Couples.md"), "w", encoding="utf-8") as fh:
+        fh.write(COUPLE_TREE)
+    vault_config.load_config.cache_clear()
+    return tmp
+
+
+class PartnerSlotTests(unittest.TestCase):
+    PAIR = ["P-AAAAAA", "P-BBBBBB"]
+    GUESS = {"P-AAAAAA": "F", "P-BBBBBB": "M"}
+
+    def test_inference_orders_a_couple_the_fill_would_have_got_wrong(self):
+        self.assertEqual(ex.partner_slots(self.PAIR, {}, self.GUESS),
+                         (["P-BBBBBB"], ["P-AAAAAA"], [], "inference"))
+
+    def test_a_recorded_sex_is_not_overridden_by_inference(self):
+        # The vault says Ada is M. Only a record may say that, and it wins.
+        self.assertEqual(
+            ex.partner_slots(self.PAIR, {"P-AAAAAA": "M"}, self.GUESS),
+            (["P-AAAAAA"], ["P-BBBBBB"], [], "recorded"))
+
+    def test_one_recorded_partner_still_fills_the_other_slot(self):
+        self.assertEqual(
+            ex.partner_slots(self.PAIR, {"P-BBBBBB": "F"}, {}),
+            (["P-AAAAAA"], ["P-BBBBBB"], [], "recorded"))
+
+    def test_an_unresolved_couple_keeps_the_arbitrary_fill(self):
+        self.assertEqual(ex.partner_slots(self.PAIR, {}, {"P-AAAAAA": "F"}),
+                         (["P-AAAAAA"], ["P-BBBBBB"], [], "arbitrary"))
+
+    def test_an_inferred_same_sex_couple_keeps_the_arbitrary_fill(self):
+        self.assertEqual(
+            ex.partner_slots(self.PAIR, {}, {"P-AAAAAA": "F", "P-BBBBBB": "F"}),
+            (["P-AAAAAA"], ["P-BBBBBB"], [], "arbitrary"))
+
+    def test_a_recorded_u_is_an_answer_and_not_a_slot(self):
+        # `U` = looked, unknown. It takes no slot and invites no guess.
+        self.assertEqual(ex.partner_slots(self.PAIR, {"P-AAAAAA": "U"}, {}),
+                         (["P-AAAAAA"], ["P-BBBBBB"], [], "arbitrary"))
+
+    def test_a_third_partner_is_never_reordered_only_noted(self):
+        trio = self.PAIR + ["P-CCCCCC"]
+        husb, wife, extra, how = ex.partner_slots(trio, {}, self.GUESS)
+        self.assertEqual((husb, wife, extra), (["P-AAAAAA"], ["P-BBBBBB"], ["P-CCCCCC"]))
+        self.assertEqual(how, "arbitrary")
+
+
+class InferredSlotExportTests(unittest.TestCase):
+    """The same rule through the whole exporter, over a vault with no recorded sex."""
+
+    @staticmethod
+    def _fam(lines, xref):
+        out, inside = [], False
+        for ln in lines:
+            if ln.startswith("0 "):
+                inside = ln == "0 %s FAM" % xref
+                continue
+            if inside:
+                out.append(ln)
+        return out
+
+    def _build(self, **kw):
+        with tempfile.TemporaryDirectory() as tmp:
+            return ex.build(_couple_vault(tmp), **kw)
+
+    def test_the_inferred_male_goes_in_husb(self):
+        lines, stats = self._build()
+        fam = self._fam(lines, "@F1@")
+        self.assertEqual(fam[:2], ["1 HUSB %s" % ex.xref("I", "P-BBBBBB"),
+                                   "1 WIFE %s" % ex.xref("I", "P-AAAAAA")])
+        self.assertEqual(stats["inferred_slots"], 2)       # both couples
+        self.assertEqual(stats["slots_swapped"], 2)        # both wrong under the fill
+        self.assertEqual(ex.check(lines), [])
+
+    def test_no_sex_tag_is_emitted_for_an_inferred_person(self):
+        lines, _ = self._build()
+        self.assertEqual([ln for ln in lines if ln.startswith("1 SEX")], [])
+
+    def test_a_private_couple_is_ordered_but_gains_no_field(self):
+        lines, _ = self._build()
+        fam = self._fam(lines, "@F2@")
+        self.assertEqual(fam, ["1 HUSB %s" % ex.xref("I", "P-DDDDDD"),
+                               "1 WIFE %s" % ex.xref("I", "P-CCCCCC")])
+        text = "\n".join(lines)
+        self.assertIn("1 RESN PRIVACY", text)
+        self.assertNotIn("fs:1:1:CCCC-CCC", text)          # the guess reads the entry;
+        self.assertNotIn("fs:1:1:DDDD-DDD", text)          # the file still gets none of it
+        self.assertNotIn("railway", text)
+
+    def test_a_lost_inference_costs_the_order_not_the_export(self):
+        self.assertEqual(ex.inferred_sexes("/nonexistent-vault-path"), {})
+
+
 class CheckTests(unittest.TestCase):
     def test_dangling_pointer_is_an_error(self):
         lines = ["0 HEAD", "1 GEDC", "2 VERS 7.0", "0 @F1@ FAM", "1 HUSB @IX@", "0 TRLR"]
