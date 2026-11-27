@@ -358,7 +358,43 @@ tags: [test]
 - He works for the railway, and his own note says which line.
 - **Sources** (harvest 01 JAN 2026, 1 record):
   - his birth record - fs:1:1:DDDD-DDD
+
+### Generation 4
+
+**Elin Placeholder** (b. 1820; d. 1890)
+- meta: {id: P-EEEEEE, generation: 4, life_status: deceased, born: '1820', died: '1890'}
+- The marriage is known only from the child's record, which names both parents
+  and nothing else about this one.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - the 1850 baptism naming both parents - fs:1:1:EEEE-EEE
+
+**Frans Placeholder** (b. 1818; d. 1885)
+- meta: {id: P-FFFFFF, generation: 4, life_status: deceased, born: '1818', died: '1885'}
+- He kept the mill, and his sons sold it after him.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - his 1818 birth record - fs:1:1:FFFF-FFF
+
+**Gerd Placeholder** (b. 1850; d. 1920)
+- meta: {id: P-GGGGGG, generation: 3, life_status: deceased, parents: [P-EEEEEE, P-FFFFFF], born: '1850', died: '1920'}
+- The child whose baptism names the couple above.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - the 1850 baptism - fs:1:1:GGGG-GGG
+
+**Hanne Placeholder** (b. 1800; d. 1870)
+- meta: {id: P-HHHHHH, generation: 5, life_status: deceased, born: '1800', died: '1870'}
+- She is named alone on her daughter's baptism, and her own parents are unknown.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - her daughter's 1830 baptism - fs:1:1:HHHH-HHH
+
+**Inge Placeholder** (b. 1830; d. 1900)
+- meta: {id: P-IIIIII, generation: 4, life_status: deceased, parents: [P-HHHHHH], born: '1830', died: '1900'}
+- The daughter named with her mother and no father.
+- **Sources** (harvest 01 JAN 2026, 1 record):
+  - her 1830 baptism - fs:1:1:IIII-III
 """
+
+COUPLE_PIDS = ("P-AAAAAA", "P-BBBBBB", "P-CCCCCC", "P-DDDDDD", "P-EEEEEE",
+               "P-FFFFFF", "P-GGGGGG", "P-HHHHHH", "P-IIIIII")
 
 
 def _couple_vault(tmp):
@@ -389,9 +425,37 @@ class PartnerSlotTests(unittest.TestCase):
             ex.partner_slots(self.PAIR, {"P-BBBBBB": "F"}, {}),
             (["P-AAAAAA"], ["P-BBBBBB"], [], "recorded"))
 
-    def test_an_unresolved_couple_keeps_the_arbitrary_fill(self):
+    def test_one_inferred_partner_names_the_slot_and_the_other_takes_what_is_left(self):
+        # Half an answer is still an answer: Ada guessed F puts Bruno in HUSB,
+        # where the fill would have put HER because her id sorts first.
         self.assertEqual(ex.partner_slots(self.PAIR, {}, {"P-AAAAAA": "F"}),
+                         (["P-BBBBBB"], ["P-AAAAAA"], [], "inference"))
+
+    def test_a_couple_the_guess_does_not_reach_keeps_the_arbitrary_fill(self):
+        self.assertEqual(ex.partner_slots(self.PAIR, {}, {}),
                          (["P-AAAAAA"], ["P-BBBBBB"], [], "arbitrary"))
+
+    def test_an_inferred_partner_is_placed_beside_a_recorded_u(self):
+        # `U` takes no slot of its own, so the guessed partner still names one.
+        self.assertEqual(
+            ex.partner_slots(self.PAIR, {"P-AAAAAA": "U"}, {"P-BBBBBB": "M"}),
+            (["P-BBBBBB"], ["P-AAAAAA"], [], "inference"))
+
+    def test_a_lone_inferred_woman_is_a_wife_and_not_a_husband(self):
+        self.assertEqual(ex.partner_slots(["P-AAAAAA"], {}, {"P-AAAAAA": "F"}),
+                         ([], ["P-AAAAAA"], [], "inference"))
+
+    def test_a_lone_inferred_man_is_a_husband(self):
+        self.assertEqual(ex.partner_slots(["P-BBBBBB"], {}, {"P-BBBBBB": "M"}),
+                         (["P-BBBBBB"], [], [], "inference"))
+
+    def test_a_lone_recorded_woman_needs_no_guess(self):
+        self.assertEqual(ex.partner_slots(["P-AAAAAA"], {"P-AAAAAA": "F"}, {}),
+                         ([], ["P-AAAAAA"], [], "recorded"))
+
+    def test_a_lone_partner_nobody_can_place_stays_in_husb(self):
+        self.assertEqual(ex.partner_slots(["P-AAAAAA"], {}, {}),
+                         (["P-AAAAAA"], [], [], "arbitrary"))
 
     def test_an_inferred_same_sex_couple_keeps_the_arbitrary_fill(self):
         self.assertEqual(
@@ -411,18 +475,24 @@ class PartnerSlotTests(unittest.TestCase):
 
 
 class InferredSlotExportTests(unittest.TestCase):
-    """The same rule through the whole exporter, over a vault with no recorded sex."""
+    """The same rule through the whole exporter, over a vault with no recorded sex.
+    Families are looked up by their PARTNER SET: the @F..@ numbers depend on the
+    order the fixture happens to mint them in, and the rule does not."""
 
     @staticmethod
-    def _fam(lines, xref):
-        out, inside = [], False
+    def _fam_slots(lines):
+        """{frozenset(partner ids): {"HUSB": id|None, "WIFE": id|None}} from the file."""
+        back = {ex.xref("I", p): p for p in COUPLE_PIDS}
+        out, slots = {}, None
         for ln in lines:
-            if ln.startswith("0 "):
-                inside = ln == "0 %s FAM" % xref
-                continue
-            if inside:
-                out.append(ln)
-        return out
+            if ln.startswith("0 ") and ln.endswith(" FAM"):
+                slots = {"HUSB": None, "WIFE": None}
+                out[id(slots)] = slots
+            elif ln.startswith("0 "):
+                slots = None
+            elif slots is not None and ln[:7] in ("1 HUSB ", "1 WIFE "):
+                slots[ln[2:6]] = back.get(ln[7:], ln[7:])
+        return {frozenset(v for v in sl.values() if v): sl for sl in out.values()}
 
     def _build(self, **kw):
         with tempfile.TemporaryDirectory() as tmp:
@@ -430,11 +500,24 @@ class InferredSlotExportTests(unittest.TestCase):
 
     def test_the_inferred_male_goes_in_husb(self):
         lines, stats = self._build()
-        fam = self._fam(lines, "@F1@")
-        self.assertEqual(fam[:2], ["1 HUSB %s" % ex.xref("I", "P-BBBBBB"),
-                                   "1 WIFE %s" % ex.xref("I", "P-AAAAAA")])
-        self.assertEqual(stats["inferred_slots"], 2)       # both couples
-        self.assertEqual(stats["slots_swapped"], 2)        # both wrong under the fill
+        self.assertEqual(self._fam_slots(lines)[frozenset(("P-AAAAAA", "P-BBBBBB"))],
+                         {"HUSB": "P-BBBBBB", "WIFE": "P-AAAAAA"})
+        self.assertEqual(stats["inferred_slots"], 4)   # two couples, one half-known, one lone
+        self.assertEqual(stats["slots_swapped"], 4)    # all four wrong under the fill
+        self.assertEqual(ex.check(lines), [])
+
+    def test_a_partner_known_only_by_the_guess_still_names_the_slot(self):
+        # The couple is known from their child's baptism and neither has a spouse
+        # edge, so the spouse layer cannot reach Elin: she is genuinely unresolved
+        # and Frans's slot is the only one decided.
+        lines, _ = self._build()
+        self.assertEqual(self._fam_slots(lines)[frozenset(("P-EEEEEE", "P-FFFFFF"))],
+                         {"HUSB": "P-FFFFFF", "WIFE": "P-EEEEEE"})
+
+    def test_a_lone_inferred_woman_ships_as_a_wife(self):
+        lines, _ = self._build()
+        self.assertEqual(self._fam_slots(lines)[frozenset(("P-HHHHHH",))],
+                         {"HUSB": None, "WIFE": "P-HHHHHH"})
         self.assertEqual(ex.check(lines), [])
 
     def test_no_sex_tag_is_emitted_for_an_inferred_person(self):
@@ -443,9 +526,8 @@ class InferredSlotExportTests(unittest.TestCase):
 
     def test_a_private_couple_is_ordered_but_gains_no_field(self):
         lines, _ = self._build()
-        fam = self._fam(lines, "@F2@")
-        self.assertEqual(fam, ["1 HUSB %s" % ex.xref("I", "P-DDDDDD"),
-                               "1 WIFE %s" % ex.xref("I", "P-CCCCCC")])
+        self.assertEqual(self._fam_slots(lines)[frozenset(("P-CCCCCC", "P-DDDDDD"))],
+                         {"HUSB": "P-DDDDDD", "WIFE": "P-CCCCCC"})
         text = "\n".join(lines)
         self.assertIn("1 RESN PRIVACY", text)
         self.assertNotIn("fs:1:1:CCCC-CCC", text)          # the guess reads the entry;

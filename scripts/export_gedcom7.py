@@ -17,10 +17,13 @@ so it works for both person models. What goes into the file:
          NOTE saying so, never silently promoted. HUSB and WIFE are SLOTS, not
          sexes: GEDCOM 7 keeps the two tags for compatibility and reads no sex
          from them, but a file has no third slot, so an order must be picked.
-         Where NEITHER partner has a recorded `sex`, the order comes from
-         `sex_inference` (the inferred male in HUSB) instead of from whichever
-         slot happened to be free, because a consumer that labels ancestors by
-         slot alone then says "father" and "mother" the right way round. That is
+         Where NO partner in the family has a recorded `sex`, the slots come
+         from `sex_inference` (the inferred male in HUSB, the inferred female in
+         WIFE, a leftover partner in what is left) instead of from whichever slot
+         happened to be free, because a consumer that labels ancestors by slot
+         alone then says "father" and "mother" the right way round. A family with
+         ONE partner is ordered the same way, so a lone inferred woman ships as
+         `1 WIFE` and is not called a father. That is
          the display wording the module exists for, and it is not a SEX claim:
          no SEX tag is emitted for an inferred person, nothing is written to the
          vault, and a recorded `sex` always decides the slot it owns.
@@ -296,22 +299,34 @@ def partner_slots(partners, recorded, inferred):
     """(husb, wife, extra, ordered_by) for one family's partner ids.
 
     `recorded` {id: SEX} is the vault's own field and always wins: a partner with
-    a recorded M or F takes that slot. `inferred` {id: 'M'|'F'} is consulted only
-    to ORDER two partners who have no recorded M or F between them, and only when
-    it resolves them to opposite sexes; an unresolved or same-sex pair keeps the
-    arbitrary fill. `ordered_by` says which of the three decided, for the counts
-    the export prints. `extra` is every partner past the two slots."""
+    a recorded M or F takes that slot, and a recorded `X` or `U` is an answer too,
+    so it takes no slot and invites no guess. `inferred` {id: 'M'|'F'} names a
+    slot only where the vault has answered for NOBODY in the family, and only
+    where the guesses cannot collide: one partner, or two guessed opposite, or
+    two of which only one is guessed at all. Two partners guessed the SAME sex
+    name no order between them and keep the arbitrary fill, as does a third
+    partner and anyone the guess does not reach. Whoever is left over takes the
+    slot the named partner did not. `ordered_by` says which of the three decided,
+    for the counts the export prints; `extra` is every partner past the two
+    slots. A one-partner family can therefore ship `1 WIFE` with no `1 HUSB`,
+    which is what the lone partner of an inferred woman should read as."""
     husb = [p for p in partners if recorded.get(p) == "M"]
     wife = [p for p in partners if recorded.get(p) == "F"]
     rest = [p for p in partners if p not in husb and p not in wife]
     ordered_by = "recorded" if (husb or wife) else "arbitrary"
-    if ordered_by == "arbitrary" and len(rest) == 2:
-        a, b = rest
-        if {inferred.get(a), inferred.get(b)} == {"M", "F"}:
-            m, f = (a, b) if inferred.get(a) == "M" else (b, a)
-            return [m], [f], [], "inference"
+    if ordered_by == "arbitrary" and len(rest) <= 2:
+        guess = [inferred.get(p) if not recorded.get(p) else None for p in rest]
+        if guess.count("M") < 2 and guess.count("F") < 2:   # a collision names nothing
+            for p, g in zip(rest, guess):
+                if g == "M":
+                    husb.append(p)
+                elif g == "F":
+                    wife.append(p)
+            if husb or wife:
+                ordered_by = "inference"
     for p in rest:  # no recorded or inferred answer: fill whichever slot is free
-        (husb if not husb else wife).append(p)
+        if p not in husb and p not in wife:
+            (husb if not husb else wife).append(p)
     return husb[:1], wife[:1], husb[1:] + wife[1:], ordered_by
 
 
@@ -369,8 +384,8 @@ def build(vault, include_living_details=False):
         "2 NAME autoresearch-genealogy vault export",
         "1 DATE %s" % today.strftime("%d %b %Y").upper().lstrip("0"),
         "1 NOTE Exported from an autoresearch-genealogy vault. Vault ids are in REFN (TYPE autoresearch-vault-id). "
-        "Living and unknown-status people carry RESN PRIVACY. Where neither partner has a recorded SEX, "
-        "HUSB/WIFE order is inferred for wording and asserts no sex.",
+        "Living and unknown-status people carry RESN PRIVACY. Where a family has no recorded SEX, "
+        "HUSB/WIFE placement is inferred for wording and asserts no sex.",
     ]
 
     labels = host_labels(vault)
@@ -455,7 +470,9 @@ def build(vault, include_living_details=False):
         husb, wife, extra, ordered_by = partner_slots(partners, sexes, inferred)
         if ordered_by == "inference":
             stats["inferred_slots"] += 1
-            stats["slots_swapped"] += husb[0] != partners[0]   # the arbitrary fill's pick
+            # The fill would have put partners[0] in HUSB -- or, for a lone
+            # partner, the only partner there. An empty HUSB counts as moved.
+            stats["slots_swapped"] += husb[:1] != partners[:1]
         for p in husb:
             lines.append("1 HUSB %s" % xref("I", p))
         for p in wife:
