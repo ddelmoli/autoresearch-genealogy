@@ -14,10 +14,25 @@ so it works for both person models. What goes into the file:
          child's `parents`, plus one per `spouse` pair not already covered. A
          parent edge still carrying `?` (not yet FS-confirmed) is exported with a
          NOTE saying so, never silently promoted.
+  SOUR   one record per distinct source LOCATOR cited in a person's rule-8
+         `- **Sources**` bullet: TITL is the sub-bullet's record description,
+         REFN carries the `host:locator` token itself. Each citing person gets a
+         `1 SOUR @S..@` citation, with `2 PAGE` only where that entry words the
+         record differently from the SOUR record's own TITL. A locator cited by a
+         whole household therefore resolves to ONE shared SOUR record. The
+         include/exclude POLICY is not re-decided here: the locators come from
+         `harvest_sources`, which owns rule 8.
+
+The evidence tier is NOT a source. It is a confidence label and it stays in the
+NOTE where it has always been; promoting it to a SOUR claim would write exactly
+the guess this exporter refuses to write elsewhere. A person with no cited
+locators gets no SOUR, and that absence is the honest reading.
 
 Privacy: a person whose life_status is `living` or `unknown` is exported with
-`RESN PRIVACY`, name, sex and family links only. Their dates, places and
-external ids are withheld unless `--include-living-details` is passed. Rejected
+`RESN PRIVACY`, name, sex and family links only. Their dates, places, external
+ids AND source locators are withheld unless `--include-living-details` is
+passed: a locator is a record identifier for a named person, so it sits on the
+withheld side of that line with the dates it would otherwise reveal. Rejected
 external ids (`~PID`) and the `TBD`/`none` states are never exported.
 
 Usage:
@@ -36,6 +51,7 @@ from collections import OrderedDict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gdate  # noqa: E402
+import harvest_sources as hs  # noqa: E402
 import person_store as ps  # noqa: E402
 import vault_config as vc  # noqa: E402
 
@@ -112,6 +128,107 @@ def event_lines(tag, date, phrase, place):
     return out
 
 
+# ── SOURCES (rule 8) ───────────────────────────────────────────────────────────
+#
+# ** THE POLICY IS NOT RE-DECIDED HERE. ** Which locator counts as a source is
+# rule 8, and rule 8's one implementation is `harvest_sources`: the include limbs,
+# the `~` negation, the title screens and the Sources-bullet boundary all come
+# from there. This file only shapes what those helpers return into GEDCOM. A
+# second opinion about what a source is would be a second policy.
+#
+# ⚠ NEGATION IS RESOLVED OVER THE WHOLE BODY *BEFORE* THE BODY IS NARROWED to the
+# Sources bullet, the ordering `count_records_strict` documents: the `~` is almost
+# never written inside the Sources bullet, it is written where the rejection is
+# explained (a write-back queue bullet, an audit note, a `Named-in` block), so
+# narrowing first throws the negation away and re-credits the exact locators the
+# vault did the work to reject.
+#
+# ⚠ TWO SCREENS ARE DELIBERATELY NOT APPLIED as exclusions, and both of their own
+# docstrings say why. `is_memorial_collection` decides the CLASS and not the TIER,
+# and a tier-1 photographed stone IS a record (rule 8 limb (e)). The obituary
+# screen is, in its own words, "safe as a screen and unsafe as a verdict": applied
+# as one on the reference vault it fires on six Sources lines of which THREE are
+# real records, among them a state birth index and a government interment register
+# that limb (e) explicitly counts, because the stem `obituar` turns up elsewhere in
+# the same prose line. Both classes are already kept out by the `~` the vault
+# writes when it screens them at harvest time, which is the authoritative
+# mechanism; a false positive here would destroy a real record for nothing.
+SOURCE_SEP = re.compile(r"\s+[\u2014\u2013]\s+|\s+--\s+")
+EXCLUDED_SCREENS = frozenset(("book", "reference-c", "reference-d", "analysis-artifact"))
+SOURCE_DESC_MAX = 160
+
+
+def _close_parens(text):
+    """Drop a trailing parenthetical the length cap or the dash split cut open."""
+    while text.count("(") > text.count(")"):
+        text = text[:text.rindex("(")].rstrip(" ,;:")
+    return text
+
+
+def record_description(line):
+    """The record-NAME half of a rule-8 Sources sub-bullet, or ''.
+
+    The grammar is `- <what the record is> — <host:locator>, <host:locator>`, so
+    the description is everything before the first dash separator.
+
+    ⚠ A BARE LOCATOR IS NOT A DESCRIPTION. Rule 8 says to name the record and
+    never to cite the locator FORM, so a sub-bullet that is only its locator (the
+    tail of an un-narrated harvest) describes nothing: every locator token is
+    removed before the remainder is judged, and `1 TITL fs:1:1:XXXX-XXX` never
+    reaches the file. A locator says where; only the description says what."""
+    text = re.sub(r"^\s*[-*+]\s+", "", (line or "").strip())
+    text = SOURCE_SEP.split(text)[0]
+    text = re.sub(r"\*\*|[*`_]", "", text)
+    text = " ".join(w for w in text.split() if not hs.is_record_locator(
+        hs.strip_trailing_markup(w).lstrip("~")))
+    text = re.sub(r"^[^\w(\"]+", "", text)        # leading emphasis glyph or dash
+    text = re.sub(r"\s+", " ", text).strip(" ,;:.()\u2014\u2013-")
+    if not re.search(r"\w", text):
+        return ""
+    if len(text) > SOURCE_DESC_MAX:
+        text = text[:SOURCE_DESC_MAX].rsplit(" ", 1)[0] + "..."
+    return _close_parens(text)
+
+
+def person_sources(body):
+    """[(locator, description)] for one entry body: the include-limb record
+    locators its Sources bullet cites, in order, each locator once."""
+    if not body:
+        return []
+    bullet = hs.sources_bullet_text(hs.strip_negated_locators(body))
+    out, seen = [], set()
+    for ln in bullet.splitlines():
+        locators = hs.record_locators(ln)
+        if not locators:
+            continue
+        # The bullet's own header line is prose about the harvest, not a record.
+        desc = "" if hs.SOURCES_BULLET_RE.search(ln) else record_description(ln)
+        if desc and EXCLUDED_SCREENS & set(hs.screen_title(desc)):
+            continue
+        for tok in locators:
+            if tok not in seen:
+                seen.add(tok)
+                out.append((tok, desc))
+    return out
+
+
+def host_labels(vault):
+    """Short host id -> registry label. Registering a host is the whole job: this
+    reads the registry, never a prose list."""
+    out = {}
+    try:
+        # BaseException for the reason harvest_sources documents: a config read
+        # can signal "no vault" with SystemExit, which is not an Exception. A
+        # missing label costs a NOTE; it must never cost the export.
+        hosts = vc.get_hosts(vault) or {}
+    except BaseException:
+        return out
+    for key, spec in hosts.items():
+        spec = spec or {}
+        out[str(spec.get("short") or key).lower()] = str(spec.get("label") or key)
+    return out
+
+
 def strip_q(tok):
     return tok.rstrip("?")
 
@@ -169,7 +286,19 @@ def build(vault, include_living_details=False):
         "Living and unknown-status people carry RESN PRIVACY.",
     ]
 
-    stats = {"indi": 0, "fam": len(fams), "private": 0, "birt": 0, "deat": 0, "unconfirmed_famc": 0}
+    labels = host_labels(vault)
+    sources = OrderedDict()   # locator -> {"xref", "titl"}
+
+    def source_for(locator, desc):
+        entry = sources.get(locator)
+        if entry is None:
+            entry = sources[locator] = {"xref": "@S%d@" % (len(sources) + 1), "titl": desc}
+        elif desc and not entry["titl"]:
+            entry["titl"] = desc   # first entry to NAME the record titles it
+        return entry
+
+    stats = {"indi": 0, "fam": len(fams), "private": 0, "birt": 0, "deat": 0,
+             "unconfirmed_famc": 0, "sourced": 0, "citations": 0, "sour": 0}
     for pid, rec in people.items():
         private = (rec.life_status or "unknown") in PRIVATE
         hide = private and not include_living_details
@@ -217,6 +346,19 @@ def build(vault, include_living_details=False):
             bits.append("profile %s" % rec.profile_status)
         if bits:
             lines.append("1 NOTE Vault: %s" % "; ".join(bits))
+        if not hide:
+            # A locator is a record identifier for a named person: it is withheld
+            # for a living or unknown-status person exactly as the dates are.
+            cited = person_sources(ps.entry_text(rec))
+            stats["sourced"] += bool(cited)
+            stats["citations"] += len(cited)
+            for locator, desc in cited:
+                entry = source_for(locator, desc)
+                lines.append("1 SOUR %s" % entry["xref"])
+                if desc and desc != entry["titl"]:
+                    # Only this entry's own wording of the record; the wording that
+                    # titled the SOUR record is already on it.
+                    lines.append("2 PAGE %s" % esc(desc))
 
     for key, f in fams.items():
         lines.append("0 %s FAM" % fam_ids[key])
@@ -237,6 +379,17 @@ def build(vault, include_living_details=False):
             lines.append("1 CHIL %s" % xref("I", c))
         if "couple" in f["unconfirmed"]:
             lines.append("1 NOTE Couple link not yet confirmed (vault edge marked ?)")
+
+    stats["sour"] = len(sources)
+    for locator, entry in sources.items():
+        lines.append("0 %s SOUR" % entry["xref"])
+        if entry["titl"]:
+            lines.append("1 TITL %s" % esc(entry["titl"]))
+        lines.append("1 REFN %s" % esc(locator))
+        lines.append("2 TYPE autoresearch-source-locator")
+        label = labels.get(locator.split(":", 1)[0].lower())
+        if label:
+            lines.append("1 NOTE Cited on %s." % esc(label))
     lines.append("0 TRLR")
     return lines, stats
 
@@ -283,6 +436,8 @@ def main():
         print("ERROR", e)
     print("individuals %(indi)d (private %(private)d), families %(fam)d, births %(birt)d, "
           "dated deaths %(deat)d, unconfirmed parent links %(unconfirmed_famc)d" % stats)
+    print("sourced individuals %(sourced)d, source citations %(citations)d, "
+          "SOUR records %(sour)d" % stats)
     print("structural errors: %d" % len(errors))
     if a.check_only or errors:
         return 1 if errors else 0
