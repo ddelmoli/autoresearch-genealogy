@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import export_gedcom7 as ex  # noqa: E402
+import person_store as ps  # noqa: E402
 import vault_config  # noqa: E402
 
 
@@ -31,6 +32,94 @@ class PlaceTests(unittest.TestCase):
 
     def test_no_place(self):
         self.assertEqual(ex.place_of("1840"), "")
+
+
+# --------------------------------------------------------------------------- #
+# BRACKETED ANNOTATION (vault header convention: the annotation sits in `[...]`
+# inside the date/place slot). The brackets must come off the parenthetical BEFORE
+# the born/died split, because an annotation containing a `;` otherwise truncates
+# the slot and takes the real place tail with it. Placeholder names only.
+# --------------------------------------------------------------------------- #
+
+class StripBracketedTests(unittest.TestCase):
+    def test_span_in_the_middle_leaves_the_tail(self):
+        self.assertEqual(
+            ps.strip_bracketed("b. 5 JUL 1760, **Sampleton** [his own 1832 declaration; "
+                               "another work gives Othertown], MA"),
+            "b. 5 JUL 1760, **Sampleton**, MA")
+
+    def test_span_at_the_end(self):
+        self.assertEqual(ps.strip_bracketed("d. 1880, Somewhereton [age 22, cert. no. 534]"),
+                         "d. 1880, Somewhereton")
+
+    def test_two_spans(self):
+        self.assertEqual(ps.strip_bracketed("b. SEP 1843, Example district [incl. Othertown] [GRO Q3]"),
+                         "b. SEP 1843, Example district")
+
+    def test_nested_spans(self):
+        """A non-greedy regex closes on the INNER bracket and leaves the rest of the
+        outer one behind as prose; the vault really does nest them."""
+        self.assertEqual(
+            ps.strip_bracketed('b. 1885, Placeland [the former "Othertown [Strong]" was '
+                               'downgraded; town TBD]; d. 1972, Somewhereton'),
+            "b. 1885, Placeland; d. 1972, Somewhereton")
+
+    def test_unclosed_span_takes_the_rest(self):
+        self.assertEqual(ps.strip_bracketed("b. 1900, Somewhereton [note that runs off the end"),
+                         "b. 1900, Somewhereton")
+
+
+class HeaderVitalsUnannotatedTests(unittest.TestCase):
+    @staticmethod
+    def _rec(paren):
+        return type("R", (), {"raw": {"header_paren": paren}})()
+
+    def test_semicolon_inside_the_annotation_no_longer_eats_the_place(self):
+        """The regression this exists for: `;` terminates the born match, so with
+        the brackets left in, the `, MA` after the closing bracket is lost."""
+        paren = ('b. 5 JUL 1760, **Sampleton** [his own 1832 declaration; another work '
+                 'gives Othertown], MA; d. 12 JAN 1840, Othertown, Shire, MA')
+        self.assertEqual(ps.header_vitals_unannotated(self._rec(paren)),
+                         ("5 JUL 1760, Sampleton, MA", "12 JAN 1840, Othertown, Shire, MA"))
+        # the control: verbatim parsing keeps the annotation and drops the tail
+        self.assertEqual(ps._parse_vitals(paren)[0],
+                         "5 JUL 1760, Sampleton his own 1832 declaration")
+
+    def test_no_header_parenthetical(self):
+        self.assertEqual(ps.header_vitals_unannotated(self._rec("")), (None, None))
+        self.assertEqual(ps.header_vitals_unannotated(object()), (None, None))
+
+
+class PlaceAnnotationTests(unittest.TestCase):
+    """End to end on the three shapes, parenthetical in and PLAC out."""
+
+    @staticmethod
+    def _places(paren):
+        rec = type("R", (), {"raw": {"header_paren": paren}})()
+        hb, hd = ps.header_vitals_unannotated(rec)
+        return ex.place_of(hb or ""), ex.place_of(hd or "")
+
+    def test_annotation_with_a_tail_after_it(self):
+        self.assertEqual(
+            self._places('b. 5 JUL 1760, **Sampleton** [his own 1832 declaration; '
+                         'another work gives Othertown], MA; d. 12 JAN 1840, Othertown, Shire, MA'),
+            ("Sampleton, MA", "Othertown, Shire, MA"))
+
+    def test_annotation_at_the_end_of_the_slot(self):
+        self.assertEqual(self._places("b. 1858, Somewhereton; d. 1880, Othertown [age 22, cert. no. 534]"),
+                         ("Somewhereton", "Othertown"))
+
+    def test_cause_of_death_annotation_is_not_a_place(self):
+        self.assertEqual(
+            self._places("b. 1920, Shiretown, Example County [US-born per cert]; "
+                         "d. 29 APR 1921, Example Hospital, Shiretown, Example County "
+                         "[broncho-pneumonia, 2 days; single, male]"),
+            ("Shiretown, Example County", "Example Hospital, Shiretown, Example County"))
+
+    def test_a_stated_absence_is_not_a_place(self):
+        self.assertEqual(ex.place_of("ABT 1756, origin unknown"), "")
+        self.assertEqual(ex.place_of("1800, parish unknown"), "")
+        self.assertEqual(ex.place_of("1800, Unknown, Shire"), "Unknown, Shire")  # a real name
 
 
 class EventTests(unittest.TestCase):
@@ -161,15 +250,15 @@ tags: [test]
 
 ### Generation 1
 
-**Living Example** (b. 1980)
-- meta: {id: P-LLLLLL, generation: 1, life_status: living}
+**Living Example** (b. 1980, Hidden Town [a sensitive annotation])
+- meta: {id: P-LLLLLL, generation: 1, life_status: living, born: '1980'}
 - **Sources** (harvest 01 JAN 2026, 1 record):
   - his 1980 birth record - fs:1:1:LLLL-MMM
 
 ### Generation 2
 
-**Dead Example** (1900-1980)
-- meta: {id: P-DEADED, generation: 2, life_status: deceased}
+**Dead Example** (b. 1900, Open Town [an annotation]; d. 1980, Open Town)
+- meta: {id: P-DEADED, generation: 2, life_status: deceased, born: '1900', died: '1980'}
 - **Sources** (harvest 01 JAN 2026, 1 record):
   - his 1900 birth record - fs:1:1:DDDD-EEE
 """
@@ -210,6 +299,14 @@ class PrivacyTests(unittest.TestCase):
         self.assertEqual(self._indi(lines, ex.xref("I", "P-LLLLLL")).count("1 SOUR @S1@"), 0)
         self.assertEqual(stats["sourced"], 1)
         self.assertEqual(ex.check(lines), [])
+
+    def test_a_living_persons_place_annotation_is_withheld_with_the_place(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lines, _ = ex.build(_privacy_vault(tmp))
+        text = "\n".join(lines)
+        self.assertNotIn("Hidden Town", text)
+        self.assertNotIn("sensitive annotation", text)
+        self.assertIn("Open Town", text)       # the deceased person's place still ships
 
     def test_include_living_details_releases_them(self):
         with tempfile.TemporaryDirectory() as tmp:

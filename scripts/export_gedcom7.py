@@ -7,7 +7,8 @@ so it works for both person models. What goes into the file:
   INDI   one per vault person: NAME, SEX (only a RECORDED `sex` meta value; a
          guess is never written), BIRT/DEAT with DATE (the GEDCOM 7 DateValue
          field, authoritative) or a PHRASE, and PLAC taken from the header's
-         "date, place" display slot; REFN = the vault id; EXID = live external
+         "date, place" display slot with its bracketed research annotation
+         removed; REFN = the vault id; EXID = live external
          ids (FamilySearch, WikiTree); a NOTE with the evidence tier and profile
          status.
   FAM    built from the edges: one family per distinct parent set named by a
@@ -85,16 +86,55 @@ def gedcom_name(display):
     return clean or "Unknown"
 
 
+# ⚠ CALL THIS ON `person_store.header_vitals_unannotated`, NEVER ON
+# `raw['header_vitals']`. The latter is verbatim by design (it is the DATE_DRIFT
+# comparison target), so a header's bracketed annotation reaches it as bare prose
+# welded onto the town — `Othertown [age 22, cert. N°534]` arriving as
+# `Othertown age 22, cert. N°534`. No amount of cutting here recovers the boundary,
+# and on an annotation containing a `;` the real place tail is already gone: see
+# that function for the worked case. Strip the brackets, then split.
+#
+# ⚠ THE LIST BELOW IS WHAT SURVIVES THAT, and it is now UNBRACKETED annotation
+# only. Measured over 1,620 place halves of the reference vault once the brackets
+# are stripped upstream: dash 10, `bapt./bur./chr.` 6, `, age` 6, ` per ` 3,
+# `primary` 2, `CONFIRMED` 1 — and `⚠` and `⭐` fire ZERO times, because those two
+# only ever matched bracket contents. They are dropped rather than kept as dead
+# alternatives; everything left is a real vault spelling with a row behind it.
+#
+# ⚠ `\s\(` is a TRUNCATION and is correct as one. `_parse_vitals` matches the slot
+# with `[^;)]`, so a parenthetical in a header is ALWAYS already cut at its `)` by
+# the time it gets here (`Someland (Old Empire`, `Somewhereton (St Mary parish`).
+# There is no balanced span left to remove, so removing the span and truncating at
+# the `(` give the same answer on every row in the corpus.
+ANNOTATION = re.compile(
+    r"\s+[—–-]{1,2}\s+|\s\(|\s+(?:bapt?\.|bur\.|chr\.)\s|,\s*age\s|\s+per\s"
+    r"|\s+primary\b|\s+CONFIRMED\b")
+
+# ⚠ A STATED ABSENCE IS NOT A PLACE. The vault writes the gap honestly in the slot
+# where the place would go — `b. ABT 1756, origin unknown [the prior "of
+# Someplace, Oldshire" was a mis-link artifact …]` — and a GEDCOM consumer reading
+# that as a PLAC says "born in: origin unknown". Four lines in the reference vault
+# (`origin unknown`, `parish unknown`, `place uncertain`, `location unknown`), one
+# of which only appeared once the brackets stopped burying it. Matched whole, never
+# as a substring: `Unknown` is a real surname and `Mount Unknown` would be a place.
+NO_PLACE = re.compile(
+    r"^(?:origin|location|parish|place|town|county|birthplace)?\s*"
+    r"(?:unknown|uncertain|unclear|not known|tbd|n/?a)$", re.I)
+
+
 def place_of(header_value):
-    """The PLACE half of a header `date, place` slot, or ''."""
+    """The PLACE half of a header `date, place` slot, or ''.
+
+    Takes a slot from `person_store.header_vitals_unannotated`, not from
+    `raw['header_vitals']`; see the note above."""
     if not header_value or "," not in header_value:
         return ""
     place = header_value.split(",", 1)[1]
-    # The header slot is display prose: cut it at the first research annotation.
-    place = re.split(r"\s+[—–-]{1,2}\s+|⚠|⭐|\s\(|\s+(?:bapt?\.|bur\.|chr\.)\s|,\s*age\s|\s+per\s|\s+primary\b|\s+CONFIRMED\b",
-                     place, maxsplit=1)[0]
-    place = re.sub(r"\s+", " ", place).strip(" ,;:")
-    if not place or re.search(r"\b(FS|PID|ARK)\b", place):
+    # What is left of the slot is display prose: cut it at the first annotation.
+    place = ANNOTATION.split(place, maxsplit=1)[0]
+    place = re.sub(r"\s+", " ", place)
+    place = re.sub(r"\s+([,;])", r"\1", place).strip(" ,;:")
+    if not place or NO_PLACE.match(place) or re.search(r"\b(FS|PID|ARK)\b", place):
         return ""
     return place
 
@@ -312,8 +352,7 @@ def build(vault, include_living_details=False):
         if sex in ("M", "F", "X", "U"):
             lines.append("1 SEX %s" % sex)
         if not hide:
-            hv = (rec.raw or {}).get("header_vitals") if isinstance(rec.raw, dict) else None
-            hb, hd = (hv or ("", ""))
+            hb, hd = ps.header_vitals_unannotated(rec)
             b = event_lines("BIRT", rec.born, rec.born_phrase, place_of(hb))
             d = event_lines("DEAT", rec.died, rec.died_phrase, place_of(hd))
             if not d and rec.life_status == "deceased":

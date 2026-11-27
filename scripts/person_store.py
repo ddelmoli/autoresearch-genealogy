@@ -1264,6 +1264,65 @@ def _parse_vitals(paren):
     return clean(born), clean(died)
 
 
+def strip_bracketed(text):
+    r"""`text` with every BALANCED `[...]` span removed, whitespace tidied.
+
+    ** WHY A SCAN AND NOT A REGEX (27 NOV 2026). ** The vault nests brackets: a
+    downgraded origin is written `[⚠ the former "Someplace, Somewhere [Strong]" was
+    DOWNGRADED …]`, where a non-greedy `\[[^\]]*\]` matches the INNER span and
+    leaves the tail of the outer one behind as prose. Same reason `_vitals_paren`
+    scans for a balanced parenthesis instead of cutting at the first `)`.
+
+    An unclosed `[` takes the rest of the string with it: an annotation that was
+    never closed runs to the end of the line, and keeping it would publish it."""
+    out, depth = [], 0
+    for ch in text or "":
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            if depth:
+                depth -= 1
+        elif not depth:
+            out.append(ch)
+    s = re.sub(r"\s+", " ", "".join(out))
+    return re.sub(r"\s+([,;])", r"\1", s).strip()
+
+
+def header_vitals_unannotated(record):
+    """The header's (born, died) display slots with bracketed annotation removed.
+
+    ** WHY THIS IS NOT `raw['header_vitals']` (27 NOV 2026). ** `header_vitals` is
+    deliberately VERBATIM: it is the DATE_DRIFT gate's comparison target, so what
+    the header says is exactly what it must report. `_parse_vitals` therefore only
+    strips the bracket CHARACTERS and keeps their contents, which is right for a
+    drift comparison and wrong for anything that publishes a place — the annotation
+    arrives as bare prose welded onto the town.
+
+    ⚠⚠ AND THE ANNOTATION CANNOT BE REMOVED AFTERWARDS, which is why this splits a
+    stripped parenthetical rather than cleaning a split one. The vault's annotations
+    contain semicolons, and `;` is what terminates the born match. On a header of
+    the shape
+
+        b. 5 JUL 1760, **Somewhereton** [his own 1832 pension declaration: "born at
+        Somewhereton then in the county of Oldshire but now Newshire"; a published
+        genealogy gives Othertown — declaration wins as first-person primary], MA
+
+    the born slot already ends mid-annotation and the `, MA` after the closing
+    bracket is GONE before any consumer sees it. Strip first and the same header
+    reads `5 JUL 1760, Somewhereton, MA`.
+
+    Returns `(None, None)` for a backend that records no header parenthetical (the
+    `file` model), exactly as `header_vitals` is absent there."""
+    raw = getattr(record, "raw", None)
+    if not isinstance(raw, dict):
+        return (None, None)
+    paren = raw.get("header_paren")
+    if not paren:
+        return (None, None)
+    born, died = _parse_vitals(strip_bracketed(paren))
+    return (born or None, died or None)
+
+
 def _vitals_paren(name, rest):
     """The vitals parenthetical: first BALANCED (...) after the bold name, else in
     the name.
